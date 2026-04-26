@@ -11,8 +11,8 @@ pnpm-debug.log*
 !.env.example
 
 # Docker volumes
-downloads/
-pgdata/
+/downloads/
+/pgdata/
 
 # Build outputs
 build/

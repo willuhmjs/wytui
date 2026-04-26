@@ -40,6 +40,12 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		console.log('[File Download] Request for:', params.id);
 		console.log('[File Download] User session:', locals.session?.user?.id || 'none');
 
+		// Require authentication first
+		if (!locals.session?.user?.id) {
+			console.log('[File Download] 401: No authentication');
+			throw error(401, 'Authentication required');
+		}
+
 		const download = await prisma.download.findUnique({
 			where: { id: params.id },
 		});
@@ -55,11 +61,12 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			throw error(404, 'File not found');
 		}
 
-		// Check ownership if user is authenticated
-		if (locals.session?.user?.id && download.userId !== locals.session.user.id) {
+		// Check ownership or admin status
+		if (download.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
 			console.log('[File Download] 403: User ID mismatch', {
 				sessionUserId: locals.session.user.id,
 				downloadUserId: download.userId,
+				isAdmin: locals.session.user.isAdmin,
 			});
 			throw error(403, 'Access denied');
 		}

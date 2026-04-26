@@ -1,4 +1,4 @@
-import { hasUsers } from '$lib/server/auth';
+import { hasUsers, verifySessionToken } from '$lib/server/auth';
 import { jobScheduler } from '$lib/server/jobs/scheduler';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
@@ -18,29 +18,26 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const sessionToken = event.cookies.get('wytui.session-token');
 
 	if (sessionToken) {
-		try {
-			const sessionData = JSON.parse(Buffer.from(sessionToken, 'base64').toString());
+		const sessionData = verifySessionToken(sessionToken);
 
-			// Check if session is expired
-			if (sessionData.exp && sessionData.exp > Date.now()) {
-				// Get fresh user data from database
-				const user = await prisma.user.findUnique({
-					where: { id: sessionData.userId },
-				});
+		if (sessionData) {
+			// Get fresh user data from database
+			const user = await prisma.user.findUnique({
+				where: { id: sessionData.userId },
+			});
 
-				if (user) {
-					event.locals.session = {
-						user: {
-							id: user.id,
-							email: user.email,
-							name: user.name,
-							isAdmin: user.isAdmin,
-						},
-					};
-				}
+			if (user) {
+				event.locals.session = {
+					user: {
+						id: user.id,
+						email: user.email,
+						name: user.name,
+						isAdmin: user.isAdmin,
+					},
+				};
 			}
-		} catch (error) {
-			// Invalid session token, clear it
+		} else {
+			// Invalid or expired session token, clear it
 			event.cookies.delete('wytui.session-token', { path: '/' });
 		}
 	}

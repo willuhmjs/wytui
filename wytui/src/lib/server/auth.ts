@@ -1,28 +1,38 @@
 import { prisma } from './db';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import type { Cookies } from '@sveltejs/kit';
 
 const SESSION_COOKIE_NAME = 'wytui.session-token';
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+const JWT_SECRET = process.env.AUTH_SECRET || 'fallback-secret-change-in-production';
 
-interface SessionUser {
+export interface SessionUser {
 	id: string;
 	email: string;
 	isAdmin: boolean;
+}
+
+export interface SessionPayload extends SessionUser {
+	iat: number;
+	exp: number;
 }
 
 /**
  * Issue a signed-in session cookie for the given user.
  */
 export function issueSessionCookie(cookies: Cookies, user: SessionUser): void {
-	const sessionToken = Buffer.from(
-		JSON.stringify({
+	const sessionToken = jwt.sign(
+		{
 			userId: user.id,
 			email: user.email,
 			isAdmin: user.isAdmin,
-			exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
-		})
-	).toString('base64');
+		},
+		JWT_SECRET,
+		{
+			expiresIn: SESSION_MAX_AGE_SECONDS,
+		}
+	);
 
 	cookies.set(SESSION_COOKIE_NAME, sessionToken, {
 		path: '/',
@@ -31,6 +41,66 @@ export function issueSessionCookie(cookies: Cookies, user: SessionUser): void {
 		secure: process.env.NODE_ENV === 'production',
 		maxAge: SESSION_MAX_AGE_SECONDS,
 	});
+}
+
+/**
+ * Verify and decode a session token
+ */
+export function verifySessionToken(token: string): SessionPayload | null {
+	try {
+		const payload = jwt.verify(token, JWT_SECRET) as SessionPayload;
+		return payload;
+	} catch (error) {
+		console.error('Invalid session token:', error);
+		return null;
+	}
+}
+
+/**
+ * Validate password strength
+ */
+export function validatePassword(password: string): { valid: boolean; error?: string } {
+	if (password.length < 8) {
+		return { valid: false, error: 'Password must be at least 8 characters long' };
+	}
+
+	if (password.length > 128) {
+		return { valid: false, error: 'Password must not exceed 128 characters' };
+	}
+
+	// Require at least one lowercase letter
+	if (!/[a-z]/.test(password)) {
+		return {
+			valid: false,
+			error: 'Password must contain at least one lowercase letter',
+		};
+	}
+
+	// Require at least one uppercase letter
+	if (!/[A-Z]/.test(password)) {
+		return {
+			valid: false,
+			error: 'Password must contain at least one uppercase letter',
+		};
+	}
+
+	// Require at least one number
+	if (!/[0-9]/.test(password)) {
+		return {
+			valid: false,
+			error: 'Password must contain at least one number',
+		};
+	}
+
+	// Require at least one special character
+	if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+		return {
+			valid: false,
+			error: 'Password must contain at least one special character (!@#$%^&* etc.)',
+		};
+	}
+
+	return { valid: true };
 }
 
 /**
@@ -63,8 +133,9 @@ export async function createFirstAdmin(
 	}
 
 	// Validate password strength
-	if (password.length < 8) {
-		throw new Error('Password must be at least 8 characters long');
+	const passwordValidation = validatePassword(password);
+	if (!passwordValidation.valid) {
+		throw new Error(passwordValidation.error);
 	}
 
 	// Hash password

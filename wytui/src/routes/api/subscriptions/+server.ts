@@ -9,7 +9,12 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = locals.session?.user?.id;
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
+		const userId = locals.session.user.id;
 
 		const subscriptions = await prisma.subscription.findMany({
 			where: { userId },
@@ -20,6 +25,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		return json(subscriptions);
 	} catch (e: any) {
 		console.error('Failed to list subscriptions:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to list subscriptions');
 	}
 };
@@ -30,8 +36,13 @@ export const GET: RequestHandler = async ({ locals }) => {
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
 		const data = await request.json();
-		const userId = locals.session?.user?.id;
+		const userId = locals.session.user.id;
 
 		// Validate required fields
 		if (!data.url || !data.name || !data.profileId) {

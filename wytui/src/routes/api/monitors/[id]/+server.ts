@@ -7,8 +7,13 @@ import type { RequestHandler } from './$types';
  * GET /api/monitors/[id]
  * Get monitor
  */
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
 		const monitor = await prisma.monitor.findUnique({
 			where: { id: params.id },
 			include: { profile: true },
@@ -16,6 +21,11 @@ export const GET: RequestHandler = async ({ params }) => {
 
 		if (!monitor) {
 			throw error(404, 'Monitor not found');
+		}
+
+		// Check ownership or admin
+		if (monitor.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
 		}
 
 		return json(monitor);
@@ -30,8 +40,26 @@ export const GET: RequestHandler = async ({ params }) => {
  * PATCH /api/monitors/[id]
  * Update monitor
  */
-export const PATCH: RequestHandler = async ({ params, request }) => {
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
+		// Check ownership first
+		const existing = await prisma.monitor.findUnique({
+			where: { id: params.id },
+		});
+
+		if (!existing) {
+			throw error(404, 'Monitor not found');
+		}
+
+		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
+		}
+
 		const updates = await request.json();
 
 		const monitor = await prisma.monitor.update({
@@ -52,6 +80,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		return json(monitor);
 	} catch (e: any) {
 		console.error('Failed to update monitor:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to update monitor');
 	}
 };
@@ -60,8 +89,26 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
  * DELETE /api/monitors/[id]
  * Delete monitor
  */
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
+		// Check ownership first
+		const existing = await prisma.monitor.findUnique({
+			where: { id: params.id },
+		});
+
+		if (!existing) {
+			throw error(404, 'Monitor not found');
+		}
+
+		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
+		}
+
 		// Stop monitoring first
 		monitorService.stopMonitor(params.id);
 
@@ -72,6 +119,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		return json({ success: true });
 	} catch (e: any) {
 		console.error('Failed to delete monitor:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to delete monitor');
 	}
 };

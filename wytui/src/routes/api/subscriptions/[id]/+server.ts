@@ -7,8 +7,13 @@ import type { RequestHandler } from './$types';
  * GET /api/subscriptions/[id]
  * Get subscription
  */
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
 		const subscription = await prisma.subscription.findUnique({
 			where: { id: params.id },
 			include: { profile: true, downloads: { take: 10, orderBy: { createdAt: 'desc' } } },
@@ -16,6 +21,11 @@ export const GET: RequestHandler = async ({ params }) => {
 
 		if (!subscription) {
 			throw error(404, 'Subscription not found');
+		}
+
+		// Check ownership or admin
+		if (subscription.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
 		}
 
 		return json(subscription);
@@ -30,8 +40,26 @@ export const GET: RequestHandler = async ({ params }) => {
  * PATCH /api/subscriptions/[id]
  * Update subscription
  */
-export const PATCH: RequestHandler = async ({ params, request }) => {
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
+		// Check ownership first
+		const existing = await prisma.subscription.findUnique({
+			where: { id: params.id },
+		});
+
+		if (!existing) {
+			throw error(404, 'Subscription not found');
+		}
+
+		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
+		}
+
 		const updates = await request.json();
 
 		const subscription = await prisma.subscription.update({
@@ -52,6 +80,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		return json(subscription);
 	} catch (e: any) {
 		console.error('Failed to update subscription:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to update subscription');
 	}
 };
@@ -60,8 +89,26 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
  * DELETE /api/subscriptions/[id]
  * Delete subscription
  */
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
 	try {
+		// Require authentication
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+
+		// Check ownership first
+		const existing = await prisma.subscription.findUnique({
+			where: { id: params.id },
+		});
+
+		if (!existing) {
+			throw error(404, 'Subscription not found');
+		}
+
+		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
+			throw error(403, 'Access denied');
+		}
+
 		// Unschedule first
 		subscriptionService.unscheduleSubscription(params.id);
 
@@ -72,6 +119,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		return json({ success: true });
 	} catch (e: any) {
 		console.error('Failed to delete subscription:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to delete subscription');
 	}
 };

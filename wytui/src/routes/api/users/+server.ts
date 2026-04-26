@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
-import { hashPassword } from '$lib/server/auth';
+import { hashPassword, validatePassword } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
@@ -57,8 +57,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Email, password, and name are required');
 		}
 
-		if (password.length < 8) {
-			throw error(400, 'Password must be at least 8 characters long');
+		// Validate password strength
+		const passwordValidation = validatePassword(password);
+		if (!passwordValidation.valid) {
+			throw error(400, passwordValidation.error!);
 		}
 
 		// Check if user already exists
