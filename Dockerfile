@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package files
 COPY wytui/package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source code
 COPY wytui/ ./
@@ -15,6 +15,9 @@ RUN npx prisma generate
 
 # Build the app
 RUN npm run build
+
+# Remove dev dependencies
+RUN npm prune --production
 
 # Production stage
 FROM node:24-alpine3.23
