@@ -39,10 +39,7 @@
 					<h1 data-pronunciation="/ˈwaɪti/">wytui</h1>
 				</a>
 				<div class="nav-links">
-					<a href="/" class:active={isActive('/')}>Downloads</a>
-					<a href="/archive" class:active={isActive('/archive')}>Archive</a>
-					<a href="/subscriptions" class:active={isActive('/subscriptions')}>Subscriptions</a>
-					<a href="/monitors" class:active={isActive('/monitors')}>Monitors</a>
+					<a href="/" class:active={isActive('/')}>Dashboard</a>
 					<a href="/settings" class:active={isActive('/settings')}>Settings</a>
 					{#if data.session?.user}
 						<button class="signout-btn" onclick={handleSignout}>
