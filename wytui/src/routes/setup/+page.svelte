@@ -140,19 +140,19 @@
 		background: var(--bg-elevated);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-lg);
-		padding: var(--spacing-xl);
-		max-width: 480px;
+		padding: var(--spacing-lg);
+		max-width: 380px;
 		width: 100%;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 	}
 
 	.logo {
 		text-align: center;
-		margin-bottom: var(--spacing-lg);
+		margin-bottom: var(--spacing-md);
 	}
 
 	.logo-gradient {
-		font-size: 3rem;
+		font-size: 2rem;
 		font-weight: 700;
 		background: linear-gradient(135deg, var(--accent-primary) 0%, #8b5cf6 100%);
 		-webkit-background-clip: text;
@@ -161,39 +161,40 @@
 	}
 
 	h1 {
-		font-size: 1.75rem;
+		font-size: 1.25rem;
 		font-weight: 600;
 		color: var(--text-primary);
-		margin-bottom: var(--spacing-sm);
+		margin-bottom: var(--spacing-xs);
 		text-align: center;
 	}
 
 	.subtitle {
 		color: var(--text-secondary);
 		text-align: center;
-		margin-bottom: var(--spacing-xl);
+		margin-bottom: var(--spacing-lg);
+		font-size: 0.875rem;
 	}
 
 	.form-group {
-		margin-bottom: var(--spacing-lg);
+		margin-bottom: var(--spacing-md);
 	}
 
 	label {
 		display: block;
 		color: var(--text-primary);
 		font-weight: 500;
-		margin-bottom: var(--spacing-sm);
-		font-size: 0.875rem;
+		margin-bottom: var(--spacing-xs);
+		font-size: 0.8125rem;
 	}
 
 	input {
 		width: 100%;
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: var(--bg-secondary);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-md);
 		color: var(--text-primary);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		transition: var(--transition-fast);
 	}
 
@@ -211,22 +212,22 @@
 	small {
 		display: block;
 		color: var(--text-tertiary);
-		font-size: 0.75rem;
+		font-size: 0.6875rem;
 		margin-top: var(--spacing-xs);
 	}
 
 	.btn-primary {
 		width: 100%;
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: var(--accent-primary);
 		color: white;
 		border: none;
 		border-radius: var(--border-radius-md);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
 		transition: var(--transition-fast);
-		margin-top: var(--spacing-md);
+		margin-top: var(--spacing-sm);
 	}
 
 	.btn-primary:hover:not(:disabled) {
@@ -243,20 +244,21 @@
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid var(--error);
 		color: var(--error);
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		border-radius: var(--border-radius-md);
-		margin-bottom: var(--spacing-lg);
-		font-size: 0.875rem;
+		margin-bottom: var(--spacing-md);
+		font-size: 0.8125rem;
 	}
 
 	.info-box {
-		margin-top: var(--spacing-lg);
-		padding: var(--spacing-md);
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: rgba(59, 130, 246, 0.1);
 		border: 1px solid rgba(59, 130, 246, 0.3);
 		border-radius: var(--border-radius-md);
-		font-size: 0.875rem;
+		font-size: 0.75rem;
 		color: var(--text-secondary);
+		line-height: 1.5;
 	}
 
 	.info-box strong {

@@ -81,21 +81,21 @@
 
 	.signin-card {
 		width: 100%;
-		max-width: 420px;
+		max-width: 360px;
 		background: var(--bg-elevated);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-lg);
-		padding: var(--spacing-xl);
+		padding: var(--spacing-lg);
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 	}
 
 	.logo {
 		text-align: center;
-		margin-bottom: var(--spacing-lg);
+		margin-bottom: var(--spacing-sm);
 	}
 
 	.logo-gradient {
-		font-size: 3rem;
+		font-size: 2rem;
 		font-weight: 700;
 		background: linear-gradient(135deg, var(--accent-primary) 0%, #8b5cf6 100%);
 		-webkit-background-clip: text;
@@ -106,30 +106,30 @@
 	.subtitle {
 		text-align: center;
 		color: var(--text-secondary);
-		margin-bottom: var(--spacing-xl);
-		font-size: 1rem;
+		margin-bottom: var(--spacing-lg);
+		font-size: 0.875rem;
 	}
 
 	.form-group {
-		margin-bottom: var(--spacing-lg);
+		margin-bottom: var(--spacing-md);
 	}
 
 	label {
 		display: block;
-		margin-bottom: var(--spacing-sm);
+		margin-bottom: var(--spacing-xs);
 		color: var(--text-primary);
 		font-weight: 500;
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
 	}
 
 	input {
 		width: 100%;
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: var(--bg-secondary);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-md);
 		color: var(--text-primary);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		transition: var(--transition-fast);
 	}
 
@@ -148,30 +148,30 @@
 		background: rgba(16, 185, 129, 0.1);
 		border: 1px solid var(--success);
 		border-radius: var(--border-radius-md);
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		color: var(--success);
-		font-size: 0.875rem;
-		margin-bottom: var(--spacing-lg);
+		font-size: 0.8125rem;
+		margin-bottom: var(--spacing-md);
 	}
 
 	.error-message {
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid var(--error);
 		border-radius: var(--border-radius-md);
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		color: var(--error);
-		font-size: 0.875rem;
-		margin-bottom: var(--spacing-lg);
+		font-size: 0.8125rem;
+		margin-bottom: var(--spacing-md);
 	}
 
 	.btn-primary {
 		width: 100%;
-		padding: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: var(--accent-primary);
 		color: white;
 		border: none;
 		border-radius: var(--border-radius-md);
-		font-size: 1rem;
+		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
 		transition: var(--transition-fast);
