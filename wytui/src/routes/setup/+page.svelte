@@ -41,8 +41,8 @@
 				throw new Error(data.message || 'Failed to create admin account');
 			}
 
-			// Redirect to signin
-			goto('/auth/signin?setup=complete');
+			// Account created and session set by /api/setup — go straight to home
+			goto('/', { invalidateAll: true });
 		} catch (e: any) {
 			error = e.message;
 		} finally {

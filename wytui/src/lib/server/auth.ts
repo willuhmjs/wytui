@@ -1,5 +1,37 @@
 import { prisma } from './db';
 import bcrypt from 'bcrypt';
+import type { Cookies } from '@sveltejs/kit';
+
+const SESSION_COOKIE_NAME = 'wytui.session-token';
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
+interface SessionUser {
+	id: string;
+	email: string;
+	isAdmin: boolean;
+}
+
+/**
+ * Issue a signed-in session cookie for the given user.
+ */
+export function issueSessionCookie(cookies: Cookies, user: SessionUser): void {
+	const sessionToken = Buffer.from(
+		JSON.stringify({
+			userId: user.id,
+			email: user.email,
+			isAdmin: user.isAdmin,
+			exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+		})
+	).toString('base64');
+
+	cookies.set(SESSION_COOKIE_NAME, sessionToken, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: process.env.NODE_ENV === 'production',
+		maxAge: SESSION_MAX_AGE_SECONDS,
+	});
+}
 
 /**
  * Hash password with bcrypt
@@ -23,7 +55,7 @@ export async function createFirstAdmin(
 	email: string,
 	password: string,
 	name: string
-): Promise<void> {
+): Promise<SessionUser> {
 	// Check if users already exist
 	const userCount = await prisma.user.count();
 	if (userCount > 0) {
@@ -39,7 +71,7 @@ export async function createFirstAdmin(
 	const hashedPassword = await hashPassword(password);
 
 	// Create admin user
-	await prisma.user.create({
+	const user = await prisma.user.create({
 		data: {
 			email,
 			password: hashedPassword,
@@ -47,5 +79,8 @@ export async function createFirstAdmin(
 			isAdmin: true,
 			emailVerified: new Date(),
 		},
+		select: { id: true, email: true, isAdmin: true },
 	});
+
+	return user;
 }

@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
-import { createFirstAdmin, hasUsers } from '$lib/server/auth';
+import { createFirstAdmin, hasUsers, issueSessionCookie } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
  * POST /api/setup
  * Create first admin user
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, cookies }) => {
 	try {
 		// Check if users already exist
 		const usersExist = await hasUsers();
@@ -31,8 +31,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			throw error(400, 'Invalid email format');
 		}
 
-		// Create first admin
-		await createFirstAdmin(email, password, name);
+		// Create first admin and sign them in
+		const user = await createFirstAdmin(email, password, name);
+		issueSessionCookie(cookies, user);
 
 		return json({ success: true, message: 'Admin account created successfully' });
 	} catch (e: any) {

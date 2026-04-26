@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { issueSessionCookie } from '$lib/server/auth';
 import bcrypt from 'bcrypt';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -40,23 +41,10 @@ export const actions = {
 			return fail(400, { error: 'Invalid email or password', email });
 		}
 
-		// Create session token (simple JWT-like approach)
-		const sessionToken = Buffer.from(
-			JSON.stringify({
-				userId: user.id,
-				email: user.email,
-				isAdmin: user.isAdmin,
-				exp: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
-			})
-		).toString('base64');
-
-		// Set cookie
-		cookies.set('wytui.session-token', sessionToken, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			secure: process.env.NODE_ENV === 'production',
-			maxAge: 30 * 24 * 60 * 60, // 30 days
+		issueSessionCookie(cookies, {
+			id: user.id,
+			email: user.email,
+			isAdmin: user.isAdmin,
 		});
 
 		// Redirect to home
