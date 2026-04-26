@@ -65,6 +65,7 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
+		overflow: visible;
 	}
 
 	.header {
@@ -160,8 +161,10 @@
 	}
 
 	.main {
-		flex: 1;
+		flex: 1 1 auto;
 		padding: var(--spacing-2xl) 0;
+		min-height: 0;
+		overflow: visible;
 	}
 
 	@media (max-width: 768px) {

@@ -602,6 +602,8 @@
 	.page {
 		max-width: 1400px;
 		margin: 0 auto;
+		width: 100%;
+		min-height: 0;
 	}
 
 	.page-header {
@@ -678,8 +680,10 @@
 	}
 
 	.tab-content {
-		display: grid;
+		display: flex;
+		flex-direction: column;
 		gap: var(--spacing-2xl);
+		min-height: 0;
 	}
 
 	.tab-header {
