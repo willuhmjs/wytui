@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: wytui
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./wytui
+      dockerfile: ../Dockerfile.dev
+    volumes:
+      - ./wytui:/app
+      - /app/node_modules
+      - downloads:/downloads
+    ports:
+      - "5173:5173"
+      - "5555:5555"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/wytui?schema=public
+      - AUTH_SECRET=your-auth-secret-change-in-production
+      - AUTH_TRUST_HOST=true
+      - NODE_ENV=development
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npx prisma db push && npx prisma db seed && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  pgdata:
+  downloads:

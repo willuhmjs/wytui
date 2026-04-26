@@ -1,0 +1,33 @@
+FROM node:20-alpine
+
+# Install build dependencies for bcrypt and other native modules
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    ffmpeg \
+    tzdata \
+    curl \
+    make \
+    g++ \
+    gcc \
+    libc-dev \
+    linux-headers
+
+# Install yt-dlp
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
+
+# Create downloads directory
+RUN mkdir -p /downloads && chmod 777 /downloads
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Expose ports (5173 for Vite, 5555 for Prisma Studio)
+EXPOSE 5173 5555
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

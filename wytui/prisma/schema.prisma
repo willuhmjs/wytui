@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Auth.js models
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String    // Bcrypt hashed password
+  name          String?
+  emailVerified DateTime?
+  image         String?
+  isAdmin       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  downloads     Download[]
+  profiles      DownloadProfile[]
+  subscriptions Subscription[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Download profiles (quality presets + custom)
+model DownloadProfile {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  isDefault   Boolean   @default(false)
+  isSystem    Boolean   @default(false) // System presets cannot be deleted
+
+  // Video settings
+  format      String?   // mp4, webm, mkv
+  quality     String?   // best, 2160p, 1080p, 720p, 480p, worst
+  codec       String?   // h264, vp9, av1
+
+  // Audio settings
+  audioOnly   Boolean   @default(false)
+  audioFormat String?   // mp3, aac, flac, opus, m4a
+  audioBitrate String?  // 320k, 256k, 128k
+
+  // Advanced options
+  customFlags String[]  // Additional yt-dlp flags
+
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  downloads   Download[]
+  subscriptions Subscription[]
+  monitors    Monitor[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, name])
+  @@map("download_profiles")
+}
+
+// Individual download jobs
+model Download {
+  id          String         @id @default(cuid())
+  url         String
+  status      DownloadStatus @default(PENDING)
+
+  // Metadata (fetched in phase 1)
+  title       String?
+  thumbnail   String?
+  duration    Int?      // seconds
+  uploader    String?
+  uploadDate  DateTime?
+  format      String?   // resolved format string
+  filesize    BigInt?   // bytes (estimated)
+
+  // Progress tracking
+  progress    Float     @default(0) // 0-100
+  speed       String?   // e.g., "1.2MiB/s"
+  eta         String?   // e.g., "00:15"
+  downloadedBytes BigInt? @default(0)
+  totalBytes  BigInt?
+
+  // Output
+  filename    String?
+  filepath    String?   // Absolute path on server
+
+  // Error handling
+  error       String?
+  retryCount  Int       @default(0)
+
+  // Relations
+  profileId   String
+  profile     DownloadProfile @relation(fields: [profileId], references: [id])
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // From subscription (optional)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([status])
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([createdAt])
+  @@map("downloads")
+}
+
+enum DownloadStatus {
+  PENDING       // Queued, waiting for slot
+  FETCHING_INFO // Phase 1: Getting metadata
+  DOWNLOADING   // Phase 2: Active download
+  PROCESSING    // Post-processing (audio extraction, etc.)
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Channel/playlist subscriptions
+model Subscription {
+  id          String    @id @default(cuid())
+  url         String    // Channel or playlist URL
+  name        String
+  type        SubscriptionType @default(CHANNEL)
+
+  // Monitoring settings
+  enabled     Boolean   @default(true)
+  checkInterval Int     @default(1800) // seconds (default: 30 min)
+  lastChecked DateTime?
+  lastVideoDate DateTime?
+
+  // Download settings
+  profileId   String
+  profile     DownloadProfile @relation(fields: [profileId], references: [id])
+  autoDownload Boolean  @default(true)
+  maxVideos   Int?      // Limit backlog downloads (null = all)
+
+  // Metadata
+  thumbnail   String?
+  description String?
+  videoCount  Int?
+
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  downloads   Download[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+enum SubscriptionType {
+  CHANNEL
+  PLAYLIST
+  USER
+}
+
+// Livestream monitoring
+model Monitor {
+  id          String    @id @default(cuid())
+  url         String    @unique
+  name        String
+  type        MonitorType
+
+  // Status
+  enabled     Boolean   @default(true)
+  isLive      Boolean   @default(false)
+  lastChecked DateTime?
+  waitTime    Int?      // seconds until live
+  liveDate    DateTime?
+
+  // Download settings
+  profileId   String
+  profile     DownloadProfile @relation(fields: [profileId], references: [id])
+  autoDownload Boolean  @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([isLive])
+  @@map("monitors")
+}
+
+enum MonitorType {
+  YOUTUBE_LIVE
+  TWITCH
+}
+
+// Global application settings (singleton)
+model Settings {
+  id          String    @id @default("singleton")
+
+  // Download settings
+  maxConcurrentDownloads Int @default(3)
+  downloadPath String   @default("/downloads")
+
+  // yt-dlp settings
+  ytdlpPath   String    @default("/usr/local/bin/yt-dlp")
+  ytdlpVersion String?
+  lastYtdlpUpdate DateTime?
+  autoUpdateYtdlp Boolean @default(true)
+  updateCheckInterval Int @default(86400) // seconds (daily)
+
+  // Archive
+  enableArchive Boolean @default(true)
+  archivePath String?   // Path to archive.txt for yt-dlp
+
+  // Cleanup
+  autoDeleteAfter Int?  // days (null = never)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("settings")
+}
+
+// Archive entries (tracks completed downloads for deduplication)
+model Archive {
+  id          String    @id @default(cuid())
+  videoId     String    @unique // e.g., YouTube video ID
+  url         String
+  title       String
+  downloadedAt DateTime @default(now())
+
+  @@index([videoId])
+  @@map("archive")
+}

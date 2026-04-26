@@ -1,0 +1,47 @@
+{
+	"name": "wytui",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"db:push": "prisma db push",
+		"db:migrate": "prisma migrate dev",
+		"db:studio": "prisma studio",
+		"db:seed": "tsx prisma/seed.ts"
+	},
+	"dependencies": {
+		"@auth/core": "^0.37.2",
+		"@auth/prisma-adapter": "^2.7.4",
+		"@auth/sveltekit": "^1.7.2",
+		"@prisma/client": "^6.1.0",
+		"archiver": "^7.0.1",
+		"bcrypt": "^5.1.1",
+		"node-cron": "^3.0.3",
+		"p-limit": "^6.1.0"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/adapter-node": "^5.2.10",
+		"@sveltejs/kit": "^2.57.0",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@types/archiver": "^6.0.2",
+		"@types/bcrypt": "^5.0.2",
+		"@types/node": "^22.10.2",
+		"@types/node-cron": "^3.0.11",
+		"prisma": "^6.1.0",
+		"svelte": "^5.55.2",
+		"svelte-check": "^4.4.6",
+		"tsx": "^4.19.2",
+		"typescript": "^6.0.2",
+		"vite": "^8.0.7"
+	},
+	"prisma": {
+		"seed": "tsx prisma/seed.ts"
+	}
+}
