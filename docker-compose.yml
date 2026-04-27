@@ -34,7 +34,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: sh -c "npx prisma db push && npx prisma db seed && npm run dev -- --host 0.0.0.0"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && npm run dev -- --host 0.0.0.0"
 
 volumes:
   pgdata:
