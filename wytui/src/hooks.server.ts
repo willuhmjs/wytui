@@ -1,15 +1,19 @@
 import { hasUsers, verifySessionToken } from '$lib/server/auth';
 import { jobScheduler } from '$lib/server/jobs/scheduler';
+import { ensureDefaults } from '$lib/server/init';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 
-// Start background jobs on server startup
-let jobsStarted = false;
-if (!jobsStarted) {
+// Initialise database defaults and start background jobs on server startup
+let initialised = false;
+if (!initialised) {
+	ensureDefaults().catch((error) => {
+		console.error('Failed to initialize database defaults:', error);
+	});
 	jobScheduler.start().catch((error) => {
 		console.error('Failed to start background jobs:', error);
 	});
-	jobsStarted = true;
+	initialised = true;
 }
 
 // Session and protection middleware
