@@ -1,6 +1,9 @@
 # Build stage
 FROM node:24-alpine3.23 AS builder
 
+# Build argument for DATABASE_URL (required for Prisma 7 generate)
+ARG DATABASE_URL=postgresql://postgres:password@db:5432/wytui
+
 WORKDIR /app
 
 # Copy package files
@@ -10,7 +13,8 @@ RUN npm ci
 # Copy source code
 COPY wytui/ ./
 
-# Generate Prisma Client
+# Generate Prisma Client with DATABASE_URL
+ENV DATABASE_URL=$DATABASE_URL
 RUN npx prisma generate
 
 # Build the app

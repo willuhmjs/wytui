@@ -24,7 +24,9 @@
 		"bcrypt": "^5.1.1",
 		"jsonwebtoken": "^9.0.3",
 		"node-cron": "^4.2.1",
-		"p-limit": "^6.1.0"
+		"p-limit": "^6.1.0",
+		"@prisma/adapter-pg": "^7.4.2",
+		"pg": "^8.13.1"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.1",
@@ -36,14 +38,12 @@
 		"@types/jsonwebtoken": "^9.0.10",
 		"@types/node": "^22.10.2",
 		"@types/node-cron": "^3.0.11",
+		"@types/pg": "^8.11.10",
 		"prisma": "^7.4.2",
 		"svelte": "^5.55.4",
 		"svelte-check": "^4.4.6",
 		"tsx": "^4.19.2",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.9"
-	},
-	"prisma": {
-		"seed": "tsx prisma/seed.ts"
 	}
 }
