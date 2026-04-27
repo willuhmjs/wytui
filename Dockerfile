@@ -6,12 +6,20 @@ ARG DATABASE_URL=postgresql://postgres:password@db:5432/wytui
 
 WORKDIR /app
 
+# Install build dependencies for native modules (bcrypt)
+RUN apk add --no-cache python3 make g++ gcc musl-dev linux-headers
+
 # Copy package files
 COPY wytui/package*.json ./
-RUN npm ci
 
-# Copy source code
+# Copy source code (without node_modules due to .dockerignore)
 COPY wytui/ ./
+
+# Install dependencies (after source copy to ensure no host node_modules)
+RUN rm -rf node_modules && npm ci
+
+# Rebuild bcrypt for Alpine
+RUN npm rebuild bcrypt --build-from-source
 
 # Generate Prisma Client with DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
@@ -23,19 +31,38 @@ RUN npm run build
 # Remove dev dependencies
 RUN npm prune --production
 
+# Clean node_modules to reduce size
+RUN find node_modules -type f \( \
+    -name "*.md" -o \
+    -name "*.ts" -o \
+    -name "*.map" -o \
+    -name "LICENSE*" -o \
+    -name "CHANGELOG*" -o \
+    -name "*.txt" \
+    \) -delete && \
+    find node_modules -type d \( \
+    -name "test" -o \
+    -name "tests" -o \
+    -name "docs" -o \
+    -name "examples" -o \
+    -name ".github" \
+    \) -exec rm -rf {} + 2>/dev/null || true
+
+# Remove unused Prisma engines (keep only linux-musl-openssl-3.0.x for Alpine)
+RUN find node_modules/.prisma -type f ! -name "*linux-musl-openssl-3.0.x*" -name "*.so.*" -delete 2>/dev/null || true && \
+    find node_modules/@prisma -type f ! -name "*linux-musl-openssl-3.0.x*" -name "*.so.*" -delete 2>/dev/null || true
+
 # Production stage
 FROM node:24-alpine3.23
 
-# Install runtime dependencies
+# Install runtime dependencies in one layer, clean up in same layer
 RUN apk add --no-cache \
     ffmpeg \
     python3 \
     curl \
-    && rm -rf /var/cache/apk/*
-
-# Install yt-dlp
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && rm -rf /var/cache/apk/* /tmp/*
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
