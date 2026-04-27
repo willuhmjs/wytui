@@ -19,7 +19,7 @@ COPY wytui/ ./
 RUN rm -rf node_modules && npm ci
 
 # Rebuild bcrypt for Alpine
-RUN npm rebuild bcrypt --build-from-source
+RUN npm rebuild bcrypt
 
 # Generate Prisma Client with DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
