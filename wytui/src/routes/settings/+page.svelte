@@ -2,6 +2,20 @@
 	import { onMount } from 'svelte';
 	import { showAlert, showConfirm } from '$lib/stores/modal.svelte';
 
+	interface Props {
+		data: {
+			session: {
+				user: {
+					id: string;
+					email: string;
+					isAdmin: boolean;
+				};
+			} | null;
+		};
+	}
+
+	let { data }: Props = $props();
+
 	let settings = $state<any>(null);
 	let users = $state<any[]>([]);
 	let loading = $state(true);
@@ -12,6 +26,14 @@
 	let showCreateUser = $state(false);
 	let newUser = $state({ email: '', password: '', name: '', isAdmin: false });
 	let createUserError = $state('');
+
+	// Password change form
+	let passwordChangeUserId = $state<string | null>(null);
+	let passwordForm = $state({
+		newPassword: '',
+		confirmPassword: '',
+	});
+	let passwordError = $state('');
 
 	onMount(async () => {
 		await Promise.all([loadSettings(), loadUsers()]);
@@ -144,6 +166,59 @@
 			createUserError = e.message || 'Failed to create user';
 		}
 	}
+
+	function openPasswordChange(userId: string) {
+		passwordChangeUserId = userId;
+		passwordForm = {
+			newPassword: '',
+			confirmPassword: '',
+		};
+		passwordError = '';
+	}
+
+	function closePasswordChange() {
+		passwordChangeUserId = null;
+		passwordForm = {
+			newPassword: '',
+			confirmPassword: '',
+		};
+		passwordError = '';
+	}
+
+	async function changePassword() {
+		passwordError = '';
+
+		if (!passwordChangeUserId) return;
+
+		// Validation
+		if (!passwordForm.newPassword) {
+			passwordError = 'New password is required';
+			return;
+		}
+
+		if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+			passwordError = 'Passwords do not match';
+			return;
+		}
+
+		try {
+			const res = await fetch(`/api/users/${passwordChangeUserId}/password`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ newPassword: passwordForm.newPassword }),
+			});
+
+			if (res.ok) {
+				await showAlert('Success', 'Password changed successfully!');
+				closePasswordChange();
+			} else {
+				const data = await res.json();
+				passwordError = data.message || 'Failed to change password';
+			}
+		} catch (e: any) {
+			passwordError = e.message || 'Failed to change password';
+		}
+	}
 </script>
 
 <svelte:head>
@@ -151,11 +226,6 @@
 </svelte:head>
 
 <div class="page">
-	<div class="page-header">
-		<h1>Settings</h1>
-		<p class="text-muted">Configure your wytui instance</p>
-	</div>
-
 	<div class="tabs">
 		<button
 			class="tab"
@@ -315,6 +385,9 @@
 									{#if user.isAdmin}
 										<span class="badge badge-admin">Admin</span>
 									{/if}
+									{#if user.id === data.session?.user?.id}
+										<span class="badge badge-you">You</span>
+									{/if}
 								</div>
 								<div class="user-email">{user.email}</div>
 								<div class="user-stats">
@@ -322,18 +395,44 @@
 								</div>
 							</div>
 							<div class="user-actions">
-								<button
-									class="btn-secondary btn-sm"
-									onclick={() => toggleAdmin(user)}
-								>
-									{user.isAdmin ? 'Demote' : 'Promote'}
-								</button>
-								<button
-									class="btn-danger btn-sm"
-									onclick={() => deleteUser(user)}
-								>
-									Delete
-								</button>
+								<!-- Password change button -->
+								{#if user.id === data.session?.user?.id}
+									<!-- User can always change their own password -->
+									<button
+										class="btn-secondary btn-sm"
+										onclick={() => openPasswordChange(user.id)}
+									>
+										Change Password
+									</button>
+								{:else if data.session?.user?.isAdmin && !user.isAdmin}
+									<!-- Admin can change non-admin users' passwords -->
+									<button
+										class="btn-secondary btn-sm"
+										onclick={() => openPasswordChange(user.id)}
+									>
+										Change Password
+									</button>
+								{/if}
+
+								<!-- Admin toggle (admin only) -->
+								{#if data.session?.user?.isAdmin}
+									<button
+										class="btn-secondary btn-sm"
+										onclick={() => toggleAdmin(user)}
+									>
+										{user.isAdmin ? 'Demote' : 'Promote'}
+									</button>
+								{/if}
+
+								<!-- Delete (admin only) -->
+								{#if data.session?.user?.isAdmin}
+									<button
+										class="btn-danger btn-sm"
+										onclick={() => deleteUser(user)}
+									>
+										Delete
+									</button>
+								{/if}
 							</div>
 						</div>
 					{/each}
@@ -347,16 +446,61 @@
 	{/if}
 </div>
 
+	<!-- Password Change Modal -->
+	{#if passwordChangeUserId}
+		<div class="modal-overlay" onclick={closePasswordChange}>
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<div class="modal-header">
+					<h3>Change Password</h3>
+					<button class="modal-close" onclick={closePasswordChange}>&times;</button>
+				</div>
+
+				<div class="modal-body">
+					{#if passwordError}
+						<div class="error-message">{passwordError}</div>
+					{/if}
+
+					<form onsubmit={(e) => { e.preventDefault(); changePassword(); }}>
+						<div class="form-group">
+							<label for="new-password">New Password</label>
+							<input
+								type="password"
+								id="new-password"
+								bind:value={passwordForm.newPassword}
+								placeholder="Enter new password"
+								required
+							/>
+							<p class="help-text">
+								Recommended: at least 8 characters with uppercase, lowercase, number, and special character
+							</p>
+						</div>
+
+						<div class="form-group">
+							<label for="confirm-password">Confirm New Password</label>
+							<input
+								type="password"
+								id="confirm-password"
+								bind:value={passwordForm.confirmPassword}
+								placeholder="Re-enter new password"
+								required
+							/>
+						</div>
+
+						<div class="modal-actions">
+							<button type="button" class="btn-secondary" onclick={closePasswordChange}>
+								Cancel
+							</button>
+							<button type="submit" class="btn-primary">
+								Change Password
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 <style>
-	.page-header {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.page-header p {
-		margin-top: var(--spacing-sm);
-		color: var(--text-secondary);
-	}
-
 	.tabs {
 		display: flex;
 		gap: var(--spacing-sm);
@@ -612,5 +756,80 @@
 		text-align: center;
 		padding: var(--spacing-2xl);
 		color: var(--text-secondary);
+	}
+
+	.badge-you {
+		background: rgba(59, 130, 246, 0.2);
+		color: var(--accent-primary);
+		border: 1px solid var(--accent-primary);
+	}
+
+	/* Modal styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: var(--spacing-lg);
+	}
+
+	.modal-content {
+		background: var(--bg-secondary);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: var(--border-radius-lg);
+		max-width: 500px;
+		width: 100%;
+		max-height: 90vh;
+		overflow-y: auto;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--spacing-lg);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+	}
+
+	.modal-close {
+		background: transparent;
+		border: none;
+		color: var(--text-secondary);
+		font-size: 2rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: var(--transition-fast);
+	}
+
+	.modal-close:hover {
+		color: var(--text-primary);
+	}
+
+	.modal-body {
+		padding: var(--spacing-lg);
+	}
+
+	.modal-actions {
+		display: flex;
+		gap: var(--spacing-md);
+		justify-content: flex-end;
+		margin-top: var(--spacing-lg);
 	}
 </style>

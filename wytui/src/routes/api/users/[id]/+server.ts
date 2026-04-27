@@ -15,7 +15,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 		const updates = await request.json();
 
-		// Prevent demoting the last admin
+		// Prevent demoting the last admin (including self-demotion when you're the last admin)
 		if (updates.isAdmin === false) {
 			const adminCount = await prisma.user.count({
 				where: { isAdmin: true },
@@ -24,11 +24,6 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			if (adminCount <= 1) {
 				throw error(400, 'Cannot demote the last admin');
 			}
-		}
-
-		// Prevent users from demoting themselves
-		if (updates.isAdmin === false && params.id === locals.session.user.id) {
-			throw error(400, 'Cannot demote yourself');
 		}
 
 		const user = await prisma.user.update({
