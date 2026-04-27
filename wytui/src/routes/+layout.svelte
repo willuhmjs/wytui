@@ -163,8 +163,6 @@
 	.main {
 		flex: 1 1 auto;
 		padding: var(--spacing-2xl) 0;
-		min-height: 0;
-		overflow: visible;
 	}
 
 	@media (max-width: 768px) {

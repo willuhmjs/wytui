@@ -603,7 +603,6 @@
 		max-width: 1400px;
 		margin: 0 auto;
 		width: 100%;
-		min-height: 0;
 	}
 
 	.page-header {
@@ -683,7 +682,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-2xl);
-		min-height: 0;
 	}
 
 	.tab-header {
@@ -709,6 +707,7 @@
 
 	.section {
 		margin-bottom: var(--spacing-xl);
+		width: 100%;
 	}
 
 	.section h2 {
@@ -776,6 +775,7 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
 		gap: var(--spacing-lg);
+		width: 100%;
 	}
 
 	.content-card {
