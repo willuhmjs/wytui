@@ -1,6 +1,6 @@
 # wytui
 
-> **Pronunciation**: /ˈwaɪti/ (like "whitey" or "Y.T.")
+> **Pronunciation**: /ˈwaɪti/ (like "Y.T.")
 
 Modern web interface for yt-dlp. Download videos with a clean UI, real-time progress, and quality presets.
 
