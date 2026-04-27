@@ -2,11 +2,22 @@
 	import { getModalState } from '$lib/stores/modal.svelte';
 
 	let modalState = getModalState();
+
+	function handleOverlayKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			modalState.cancel();
+		}
+	}
+
+	function handleModalKeydown(e: KeyboardEvent) {
+		e.stopPropagation();
+	}
 </script>
 
 {#if modalState.isOpen}
-	<div class="modal-overlay" onclick={modalState.cancel} role="button" tabindex="0">
-		<div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+	<div class="modal-overlay" onclick={modalState.cancel} onkeydown={handleOverlayKeydown} role="button" tabindex="0">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={handleModalKeydown} role="dialog" aria-modal="true" tabindex="-1">
 			<div class="modal-header">
 				<h3>{modalState.title}</h3>
 			</div>
