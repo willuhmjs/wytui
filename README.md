@@ -41,7 +41,8 @@ services:
       - DATABASE_URL=postgresql://postgres:password@db:5432/wytui
       - AUTH_SECRET=change-this-secret
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:18-alpine
@@ -50,7 +51,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wytui"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
