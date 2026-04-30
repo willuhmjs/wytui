@@ -315,24 +315,26 @@
 	<!-- Downloads Tab -->
 	{#if activeTab === 'downloads'}
 		<div class="tab-content">
-			<div class="form-section">
-				<DownloadForm />
-			</div>
+			<div class="downloads-layout">
+				<div class="form-section">
+					<DownloadForm />
+				</div>
 
-			<div class="section">
-				<h2>Active ({sseState.downloads.length})</h2>
-				{#if sseState.downloads.length === 0}
-					<div class="empty-state">
-						<p>No active downloads</p>
-						<p class="text-muted">Paste a URL above to get started</p>
-					</div>
-				{:else}
-					<div class="downloads-grid">
-						{#each sseState.downloads as download (download.id)}
-							<DownloadCard {download} />
-						{/each}
-					</div>
-				{/if}
+				<div class="active-section">
+					<h2>Active ({sseState.downloads.length})</h2>
+					{#if sseState.downloads.length === 0}
+						<div class="empty-state">
+							<p>No active downloads</p>
+							<p class="text-muted">Paste a URL to get started</p>
+						</div>
+					{:else}
+						<div class="downloads-list">
+							{#each sseState.downloads as download (download.id)}
+								<DownloadCard {download} />
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 
 			<div class="section">
@@ -699,10 +701,29 @@
 		margin-top: var(--spacing-xs);
 	}
 
+	.downloads-layout {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--spacing-xl);
+		align-items: start;
+	}
+
 	.form-section {
-		position: sticky;
-		top: calc(60px + var(--spacing-md));
 		align-self: start;
+	}
+
+	.active-section {
+		min-width: 0;
+	}
+
+	.active-section h2 {
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.downloads-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
 	}
 
 	.section {
@@ -881,6 +902,10 @@
 	}
 
 	@media (max-width: 768px) {
+		.downloads-layout {
+			grid-template-columns: 1fr;
+		}
+
 		.downloads-grid,
 		.content-grid {
 			grid-template-columns: 1fr;
