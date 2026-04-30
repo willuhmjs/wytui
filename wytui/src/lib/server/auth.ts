@@ -5,10 +5,13 @@ import type { Cookies } from '@sveltejs/kit';
 
 const SESSION_COOKIE_NAME = 'wytui.session-token';
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
-if (!process.env.AUTH_SECRET) {
-	throw new Error('AUTH_SECRET environment variable is required');
+function getJwtSecret(): string {
+	const secret = process.env.AUTH_SECRET;
+	if (!secret) {
+		throw new Error('AUTH_SECRET environment variable is required');
+	}
+	return secret;
 }
-const JWT_SECRET: string = process.env.AUTH_SECRET;
 
 export interface SessionUser {
 	id: string;
@@ -34,7 +37,7 @@ export function issueSessionCookie(cookies: Cookies, user: SessionUser): void {
 			email: user.email,
 			isAdmin: user.isAdmin,
 		},
-		JWT_SECRET,
+		getJwtSecret(),
 		{
 			expiresIn: SESSION_MAX_AGE_SECONDS,
 		}
@@ -54,7 +57,7 @@ export function issueSessionCookie(cookies: Cookies, user: SessionUser): void {
  */
 export function verifySessionToken(token: string): SessionPayload | null {
 	try {
-		const payload = jwt.verify(token, JWT_SECRET) as SessionPayload;
+		const payload = jwt.verify(token, getJwtSecret()) as SessionPayload;
 		return payload;
 	} catch (error) {
 		console.error('Invalid session token:', error);

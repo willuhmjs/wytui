@@ -1,17 +1,29 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { issueSessionCookie } from '$lib/server/auth';
+import { isOidcConfigured, getOidcDisplayName } from '$lib/server/oidc';
 import bcrypt from 'bcrypt';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	// If already signed in, redirect to home
 	if (locals.session?.user) {
 		throw redirect(303, '/');
 	}
 
+	const oidcConfigured = isOidcConfigured();
+	let authMode = 'password';
+	if (oidcConfigured) {
+		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+		authMode = settings?.authMode || 'password';
+	}
+
 	return {
 		setupComplete: url.searchParams.get('setup') === 'complete',
+		error: url.searchParams.get('error') || null,
+		oidcConfigured,
+		oidcDisplayName: oidcConfigured ? getOidcDisplayName() : null,
+		authMode,
+		fallback: url.searchParams.get('fallback') === 'password',
 	};
 };
 

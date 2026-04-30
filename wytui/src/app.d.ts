@@ -10,6 +10,7 @@ declare global {
 					email?: string;
 					name?: string;
 					image?: string;
+					isAdmin?: boolean;
 				};
 			} | null;
 		}

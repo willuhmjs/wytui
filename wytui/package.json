@@ -19,13 +19,14 @@
 		"@auth/core": "^0.41.1",
 		"@auth/prisma-adapter": "^2.11.1",
 		"@auth/sveltekit": "^1.11.1",
+		"@prisma/adapter-pg": "^7.4.2",
 		"@prisma/client": "^7.4.2",
 		"archiver": "^7.0.1",
 		"bcrypt": "^5.1.1",
 		"jsonwebtoken": "^9.0.3",
 		"node-cron": "^4.2.1",
+		"openid-client": "^6.8.4",
 		"p-limit": "^6.1.0",
-		"@prisma/adapter-pg": "^7.4.2",
 		"pg": "^8.13.1"
 	},
 	"devDependencies": {

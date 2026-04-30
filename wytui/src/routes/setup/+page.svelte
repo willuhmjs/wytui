@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 
 	let email = $state('');
 	let password = $state('');
@@ -118,6 +121,18 @@
 				{loading ? 'Creating Account...' : 'Create Admin Account'}
 			</button>
 		</form>
+
+		{#if data.oidcConfigured}
+			<div class="divider">
+				<span>or</span>
+			</div>
+
+			<a href="/auth/oidc" class="btn-oidc">
+				Set up with {data.oidcDisplayName}
+			</a>
+
+			<p class="oidc-note">The first user to sign in becomes the admin.</p>
+		{/if}
 
 		<div class="info-box">
 			<strong>Note:</strong> This will be the primary admin account with full access to wytui.
@@ -263,5 +278,50 @@
 
 	.info-box strong {
 		color: var(--accent-primary);
+	}
+
+	.divider {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+		margin: var(--spacing-md) 0;
+		color: var(--text-secondary);
+		font-size: 0.8125rem;
+	}
+
+	.divider::before,
+	.divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.btn-oidc {
+		display: block;
+		width: 100%;
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: var(--border-radius-md);
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-align: center;
+		text-decoration: none;
+		cursor: pointer;
+		transition: var(--transition-fast);
+	}
+
+	.btn-oidc:hover {
+		background: var(--bg-tertiary);
+		border-color: var(--accent-primary);
+	}
+
+	.oidc-note {
+		text-align: center;
+		color: var(--text-tertiary);
+		font-size: 0.75rem;
+		margin-top: var(--spacing-sm);
 	}
 </style>

@@ -10,7 +10,7 @@ datasource db {
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
-  password      String    // Bcrypt hashed password
+  password      String?
   name          String?
   emailVerified DateTime?
   image         String?
@@ -255,6 +255,9 @@ model Settings {
   // Archive
   enableArchive Boolean @default(true)
   archivePath String?   // Path to archive.txt for yt-dlp
+
+  // Authentication
+  authMode    String    @default("password") // "password" | "oidc" | "both"
 
   // Cleanup
   autoDeleteAfter Int?  // days (null = never)
