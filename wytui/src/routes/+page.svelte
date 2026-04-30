@@ -303,6 +303,7 @@
 		<div class="tab-content">
 			<div class="downloads-layout">
 				<div class="form-section">
+					<h2>Download</h2>
 					<DownloadForm />
 				</div>
 

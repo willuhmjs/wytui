@@ -62,8 +62,6 @@
 </script>
 
 <div class="download-form">
-	<h2>Download</h2>
-
 	<form onsubmit={handleSubmit}>
 		<div class="form-group">
 			<label for="url">Video URL</label>
@@ -133,10 +131,6 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		padding: var(--spacing-xl);
-	}
-
-	h2 {
-		margin-bottom: var(--spacing-lg);
 	}
 
 	.form-group {
