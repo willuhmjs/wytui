@@ -595,13 +595,17 @@
 	}
 
 	.tabs {
-		display: inline-flex;
+		display: flex;
+		justify-content: center;
 		gap: 4px;
 		margin-bottom: var(--spacing-2xl);
 		background: var(--bg-secondary);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		padding: 4px;
+		width: fit-content;
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	.tab {
@@ -657,6 +661,10 @@
 
 	.form-section {
 		align-self: start;
+	}
+
+	.form-section h2 {
+		margin-bottom: var(--spacing-lg);
 	}
 
 	.active-section {
