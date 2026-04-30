@@ -5,7 +5,10 @@ import type { Cookies } from '@sveltejs/kit';
 
 const SESSION_COOKIE_NAME = 'wytui.session-token';
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
-const JWT_SECRET = process.env.AUTH_SECRET || 'fallback-secret-change-in-production';
+if (!process.env.AUTH_SECRET) {
+	throw new Error('AUTH_SECRET environment variable is required');
+}
+const JWT_SECRET: string = process.env.AUTH_SECRET;
 
 export interface SessionUser {
 	id: string;
@@ -13,7 +16,10 @@ export interface SessionUser {
 	isAdmin: boolean;
 }
 
-export interface SessionPayload extends SessionUser {
+export interface SessionPayload {
+	userId: string;
+	email: string;
+	isAdmin: boolean;
 	iat: number;
 	exp: number;
 }

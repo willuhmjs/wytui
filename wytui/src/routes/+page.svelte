@@ -37,11 +37,10 @@
 	// Shared state
 	let profiles = $state<any[]>([]);
 
-	onMount(async () => {
-		await loadProfiles();
-		await loadCompletedDownloads();
+	onMount(() => {
+		loadProfiles();
+		loadCompletedDownloads();
 
-		// Listen for download completion events
 		const eventSource = new EventSource('/api/sse');
 		eventSource.addEventListener('download:complete', (e) => {
 			const { download } = JSON.parse(e.data);

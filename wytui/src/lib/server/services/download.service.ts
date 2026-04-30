@@ -23,8 +23,20 @@ class DownloadService {
 	// Track active download processes
 	private activeProcesses = new Map<string, ChildProcess>();
 
+	// Track download ownership for SSE filtering
+	private downloadOwners = new Map<string, string>();
+
 	// Debounce DB updates (max 1 update per second per download)
 	private updateDebounce = new Map<string, NodeJS.Timeout>();
+
+	private emitToOwner(event: string, data: any, downloadId: string): void {
+		const userId = this.downloadOwners.get(downloadId);
+		if (userId) {
+			sseEmitter.broadcastToUser(event, data, userId);
+		} else {
+			sseEmitter.broadcast(event, data);
+		}
+	}
 
 	/**
 	 * Create a new download
@@ -58,10 +70,14 @@ class DownloadService {
 
 		console.log('[DownloadService] Download created in DB:', download.id);
 
+		if (userId) {
+			this.downloadOwners.set(download.id, userId);
+		}
+
 		// Broadcast new download
 		const serialized = serializeDownload(download);
 		console.log('[DownloadService] Broadcasting download:created:', serialized.id);
-		sseEmitter.broadcast('download:created', serialized);
+		this.emitToOwner('download:created', serialized, download.id);
 
 		// Start download process
 		this.processDownload(download.id).catch((error) => {
@@ -118,8 +134,7 @@ class DownloadService {
 				filesize: metadata.filesize,
 			});
 
-			// Broadcast metadata update
-			sseEmitter.broadcast('download:metadata', updated);
+			this.emitToOwner('download:metadata', updated, downloadId);
 		} catch (error) {
 			throw new Error(`Metadata fetch failed: ${error}`);
 		}
@@ -229,15 +244,14 @@ class DownloadService {
 			}, 1000)
 		);
 
-		// Always broadcast progress immediately via SSE
-		sseEmitter.broadcast('download:progress', {
+		this.emitToOwner('download:progress', {
 			id: downloadId,
 			progress,
 			speed,
 			eta,
 			downloadedBytes: downloadedBytes?.toString(),
 			totalBytes: totalBytes?.toString(),
-		});
+		}, downloadId);
 	}
 
 	/**
@@ -256,8 +270,7 @@ class DownloadService {
 			await this.addToArchive(download.url, download.title);
 		}
 
-		// Broadcast completion
-		sseEmitter.broadcast('download:complete', { id: downloadId, download });
+		this.emitToOwner('download:complete', { id: downloadId, download }, downloadId);
 	}
 
 	/**
@@ -289,7 +302,7 @@ class DownloadService {
 				error,
 			});
 
-			sseEmitter.broadcast('download:failed', { id: downloadId, error });
+			this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
 		}
 	}
 
@@ -307,7 +320,7 @@ class DownloadService {
 			status: DownloadStatus.CANCELLED,
 		});
 
-		sseEmitter.broadcast('download:cancelled', { id: downloadId });
+		this.emitToOwner('download:cancelled', { id: downloadId }, downloadId);
 	}
 
 	/**
@@ -324,7 +337,8 @@ class DownloadService {
 
 		// TODO: Delete file from filesystem
 
-		sseEmitter.broadcast('download:deleted', { id: downloadId });
+		this.emitToOwner('download:deleted', { id: downloadId }, downloadId);
+		this.downloadOwners.delete(downloadId);
 	}
 
 	/**
@@ -406,11 +420,11 @@ class DownloadService {
 		// Broadcast status changes to frontend
 		if (data.status) {
 			console.log('[DownloadService] Status change:', downloadId, '→', data.status);
-			sseEmitter.broadcast('download:status', {
+			this.emitToOwner('download:status', {
 				id: downloadId,
 				status: data.status,
 				...serialized,
-			});
+			}, downloadId);
 		}
 
 		return serialized;

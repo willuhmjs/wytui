@@ -1,11 +1,11 @@
-import cron from 'node-cron';
+import cron, { type ScheduledTask } from 'node-cron';
 import { subscriptionService } from '../services/subscription.service';
 import { monitorService } from '../services/monitor.service';
 import { ytdlpService } from '../services/ytdlp.service';
 import { prisma } from '../db';
 
 class JobScheduler {
-	private ytdlpUpdateTask: cron.ScheduledTask | null = null;
+	private ytdlpUpdateTask: ScheduledTask | null = null;
 
 	/**
 	 * Start all background jobs

@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import type { RequestHandler } from './$types';
 
 /**
@@ -8,7 +9,10 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = locals.session?.user?.id;
+		if (!locals.session?.user?.id) {
+			throw error(401, 'Authentication required');
+		}
+		const userId = locals.session.user.id;
 
 		const profiles = await prisma.downloadProfile.findMany({
 			where: {
@@ -36,6 +40,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		const data = await request.json();
+
+		if (Array.isArray(data.customFlags) && data.customFlags.length > 0) {
+			const badFlag = ytdlpService.findDangerousFlag(data.customFlags);
+			if (badFlag) {
+				throw error(400, `Forbidden flag: ${badFlag}`);
+			}
+		}
 
 		const profile = await prisma.downloadProfile.create({
 			data: {

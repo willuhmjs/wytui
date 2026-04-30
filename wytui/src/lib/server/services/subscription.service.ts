@@ -1,12 +1,13 @@
 import { prisma } from '../db';
 import { downloadService } from './download.service';
+import { ytdlpService } from './ytdlp.service';
 import { sseEmitter } from '../sse/emitter';
-import cron from 'node-cron';
+import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
 
 class SubscriptionService {
-	private scheduledTasks = new Map<string, cron.ScheduledTask>();
+	private scheduledTasks = new Map<string, ScheduledTask>();
 	private activeChecks = new Set<string>();
 
 	/**
@@ -127,6 +128,8 @@ class SubscriptionService {
 	 * Get latest videos from a channel/playlist
 	 */
 	private async getLatestVideos(url: string, maxVideos: number): Promise<any[]> {
+		ytdlpService.validateUrl(url);
+
 		return new Promise((resolve, reject) => {
 			const args = [
 				'--flat-playlist',
@@ -137,7 +140,7 @@ class SubscriptionService {
 				url,
 			];
 
-			const proc = spawn('yt-dlp', args);
+			const proc = spawn(ytdlpService.getPath(), args);
 			let output = '';
 			let error = '';
 

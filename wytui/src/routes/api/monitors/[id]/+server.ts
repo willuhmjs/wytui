@@ -23,11 +23,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			throw error(404, 'Monitor not found');
 		}
 
-		// Check ownership or admin
-		if (monitor.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
-			throw error(403, 'Access denied');
-		}
-
 		return json(monitor);
 	} catch (e: any) {
 		console.error('Failed to get monitor:', e);
@@ -56,8 +51,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			throw error(404, 'Monitor not found');
 		}
 
-		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
-			throw error(403, 'Access denied');
+		if (!locals.session.user.isAdmin) {
+			throw error(403, 'Admin access required');
 		}
 
 		const updates = await request.json();
@@ -105,8 +100,8 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 			throw error(404, 'Monitor not found');
 		}
 
-		if (existing.userId !== locals.session.user.id && !locals.session.user.isAdmin) {
-			throw error(403, 'Access denied');
+		if (!locals.session.user.isAdmin) {
+			throw error(403, 'Admin access required');
 		}
 
 		// Stop monitoring first

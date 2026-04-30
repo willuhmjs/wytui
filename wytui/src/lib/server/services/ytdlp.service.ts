@@ -10,6 +10,10 @@ export class YtdlpService {
 		this.ytdlpPath = ytdlpPath;
 	}
 
+	getPath(): string {
+		return this.ytdlpPath;
+	}
+
 	/**
 	 * Check if yt-dlp binary exists and is executable
 	 */
@@ -47,7 +51,7 @@ export class YtdlpService {
 	/**
 	 * Validate URL to prevent command injection
 	 */
-	private validateUrl(url: string): void {
+	validateUrl(url: string): void {
 		if (!url || typeof url !== 'string') {
 			throw new Error('Invalid URL: must be a non-empty string');
 		}
@@ -114,40 +118,51 @@ export class YtdlpService {
 	}
 
 	/**
+	 * Check if any flags are dangerous and return the offending flag, or null if safe
+	 */
+	findDangerousFlag(flags: string[]): string | null {
+		for (const flag of flags) {
+			if (this.dangerousFlags.some((df) => flag.toLowerCase().startsWith(df))) {
+				return flag;
+			}
+			if (this.dangerousPatterns.some((pattern) => pattern.test(flag))) {
+				return flag;
+			}
+		}
+		return null;
+	}
+
+	private dangerousFlags = [
+		'--exec',
+		'--exec-before-download',
+		'--config-location',
+		'--config-locations',
+		'--batch-file',
+		'--load-info-json',
+		'--cookies-from-browser',
+	];
+
+	private dangerousPatterns = [
+		/--exec/i,
+		/--config/i,
+		/--batch/i,
+		/--load-info/i,
+		/[;&|$`]/,
+	];
+
+	/**
 	 * Filter dangerous flags from custom flags
 	 */
 	private filterDangerousFlags(flags: string[]): string[] {
-		const dangerousFlags = [
-			'--exec',
-			'--exec-before-download',
-			'--config-location',
-			'--config-locations',
-			'--batch-file',
-			'--load-info-json',
-			'--cookies-from-browser',
-		];
-
-		const dangerousPatterns = [
-			/--exec/i,
-			/--config/i,
-			/--batch/i,
-			/--load-info/i,
-			/[;&|$`]/,  // Shell metacharacters
-		];
-
 		return flags.filter((flag) => {
-			// Check against dangerous flags list
-			if (dangerousFlags.some((df) => flag.toLowerCase().startsWith(df))) {
+			if (this.dangerousFlags.some((df) => flag.toLowerCase().startsWith(df))) {
 				console.warn(`Filtered dangerous flag: ${flag}`);
 				return false;
 			}
-
-			// Check against patterns
-			if (dangerousPatterns.some((pattern) => pattern.test(flag))) {
+			if (this.dangerousPatterns.some((pattern) => pattern.test(flag))) {
 				console.warn(`Filtered dangerous flag: ${flag}`);
 				return false;
 			}
-
 			return true;
 		});
 	}

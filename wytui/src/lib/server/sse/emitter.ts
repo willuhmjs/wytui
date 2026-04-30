@@ -96,6 +96,23 @@ class SSEEmitter {
 	}
 
 	/**
+	 * Broadcast event only to clients belonging to a specific user
+	 */
+	broadcastToUser(event: string, data: any, userId: string): void {
+		const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+		for (const [clientId, client] of this.clients.entries()) {
+			if (client.userId !== userId) continue;
+			try {
+				client.controller.enqueue(message);
+			} catch (e) {
+				console.error(`Failed to send to client ${clientId}:`, e);
+				this.clients.delete(clientId);
+			}
+		}
+	}
+
+	/**
 	 * Remove a client
 	 */
 	removeClient(clientId: string): void {

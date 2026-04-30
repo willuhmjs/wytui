@@ -308,6 +308,30 @@
 					</div>
 				</div>
 
+				{#if settings.oidcConfigured}
+					<div class="settings-section">
+						<h2>Authentication</h2>
+						<div class="form-group">
+							<label for="authMode">Login Method</label>
+							<select
+								id="authMode"
+								bind:value={settings.authMode}
+							>
+								<option value="password">Password Only</option>
+								<option value="both">Password + {settings.oidcDisplayName || 'SSO'}</option>
+								<option value="oidc">{settings.oidcDisplayName || 'SSO'} Only</option>
+							</select>
+							<p class="help-text">Choose which login methods are shown on the sign-in page</p>
+						</div>
+
+						{#if settings.authMode === 'oidc'}
+							<div class="info-box warning-box">
+								Password login will remain accessible at <code>/auth/signin?fallback=password</code> as a safety fallback in case SSO is unavailable.
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<button type="submit" class="btn-primary btn-lg" disabled={saving}>
 					{#if saving}
 						Saving...
@@ -448,8 +472,8 @@
 
 	<!-- Password Change Modal -->
 	{#if passwordChangeUserId}
-		<div class="modal-overlay" onclick={closePasswordChange}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div class="modal-overlay" role="button" tabindex="-1" onclick={closePasswordChange} onkeydown={(e) => { if (e.key === 'Escape') closePasswordChange(); }}>
+			<div class="modal-content" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 				<div class="modal-header">
 					<h3>Change Password</h3>
 					<button class="modal-close" onclick={closePasswordChange}>&times;</button>
@@ -591,6 +615,17 @@
 		font-size: 1rem;
 	}
 
+	select {
+		width: 100%;
+		padding: var(--spacing-md);
+		background: var(--bg-tertiary);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: var(--border-radius-md);
+		color: var(--text-primary);
+		font-size: 1rem;
+	}
+
+	select:focus,
 	input:focus {
 		outline: none;
 		border-color: var(--accent-primary);
@@ -613,6 +648,19 @@
 		border-radius: var(--border-radius-md);
 		padding: var(--spacing-md);
 		font-size: 0.875rem;
+	}
+
+	.warning-box {
+		background: rgba(245, 158, 11, 0.1);
+		border-color: rgba(245, 158, 11, 0.4);
+		color: var(--text-primary);
+	}
+
+	.warning-box code {
+		background: rgba(255, 255, 255, 0.1);
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 0.8125rem;
 	}
 
 	.create-user-form {

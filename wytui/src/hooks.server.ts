@@ -35,7 +35,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 					user: {
 						id: user.id,
 						email: user.email,
-						name: user.name,
+						name: user.name ?? undefined,
 						isAdmin: user.isAdmin,
 					},
 				};
@@ -81,7 +81,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	return resolve(event);
+	const response = await resolve(event);
+
+	response.headers.set('X-Frame-Options', 'DENY');
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	response.headers.set(
+		'Content-Security-Policy',
+		"default-src 'self'; img-src 'self' https://*.ytimg.com https://*.ggpht.com https://i.ytimg.com data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'"
+	);
+
+	return response;
 };
 
 // Cleanup on server shutdown

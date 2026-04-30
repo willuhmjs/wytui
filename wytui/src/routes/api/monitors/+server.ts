@@ -9,15 +9,12 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		// Require authentication
 		if (!locals.session?.user?.id) {
 			throw error(401, 'Authentication required');
 		}
 
-		const userId = locals.session.user.id;
-
 		const monitors = await prisma.monitor.findMany({
-			where: { userId },
+			where: {},
 			include: { profile: true },
 			orderBy: { createdAt: 'desc' },
 		});
@@ -48,10 +45,28 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Missing required fields: url, name, profileId, type');
 		}
 
+		try {
+			const urlObj = new URL(data.url);
+			if (!['http:', 'https:'].includes(urlObj.protocol)) {
+				throw error(400, 'Invalid URL: only HTTP(S) protocols allowed');
+			}
+		} catch (e: any) {
+			if (e.status) throw e;
+			throw error(400, 'Invalid URL format');
+		}
+
+		const validTypes = ['YOUTUBE_LIVE', 'TWITCH'];
+		if (!validTypes.includes(data.type)) {
+			throw error(400, 'Invalid monitor type');
+		}
+
 		const monitor = await prisma.monitor.create({
 			data: {
-				...data,
-				userId,
+				url: data.url,
+				name: data.name,
+				profileId: data.profileId,
+				type: data.type,
+				autoDownload: data.autoDownload ?? true,
 			},
 			include: { profile: true },
 		});

@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { downloadService } from './download.service';
+import { ytdlpService } from './ytdlp.service';
 import { sseEmitter } from '../sse/emitter';
 import { spawn, type ChildProcess } from 'child_process';
 import type { Monitor } from '@prisma/client';
@@ -51,14 +52,16 @@ class MonitorService {
 	 * Start YouTube livestream monitor
 	 */
 	private async startYouTubeMonitor(monitor: any): Promise<void> {
+		ytdlpService.validateUrl(monitor.url);
+
 		const args = [
-			'--wait-for-video', '30', // Wait 30 seconds between checks
-			'--simulate', // Don't actually download
+			'--wait-for-video', '30',
+			'--simulate',
 			'--no-warnings',
 			monitor.url,
 		];
 
-		const proc = spawn('yt-dlp', args, {
+		const proc = spawn(ytdlpService.getPath(), args, {
 			detached: true,
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
@@ -212,10 +215,10 @@ class MonitorService {
 	 * Check Twitch stream status via simple URL check
 	 */
 	private async checkTwitchStream(monitor: any): Promise<void> {
-		// Simple implementation: spawn yt-dlp to check if stream is live
 		try {
+			ytdlpService.validateUrl(monitor.url);
 			const args = ['--simulate', '--get-title', monitor.url];
-			const proc = spawn('yt-dlp', args);
+			const proc = spawn(ytdlpService.getPath(), args);
 
 			let success = false;
 
