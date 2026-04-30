@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { connectSSE, disconnectSSE } from '$lib/stores/sse.svelte';
+	import { connectSSE, disconnectSSE, getSSEState } from '$lib/stores/sse.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import type { LayoutData } from './$types';
 	import '../app.css';
 
 	let { children, data }: { children: any; data: LayoutData } = $props();
 	let logoHovered = $state(false);
+	let sseState = getSSEState();
 
 	onMount(() => {
 		// Connect to SSE on mount
@@ -45,6 +46,10 @@
 					<h1>{logoHovered ? '/ˈwaɪti/' : 'wytui'}</h1>
 				</a>
 				<div class="nav-links">
+					<div class="connection-status" class:connected={sseState.connected}>
+						<span class="status-dot"></span>
+						<span class="status-label">{sseState.connected ? 'Connected' : 'Connecting...'}</span>
+					</div>
 					<a href="/settings" class="settings-btn" class:active={isActive('/settings')} title="Settings">
 						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
@@ -113,6 +118,40 @@
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-lg);
+	}
+
+	.connection-status {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border-radius: var(--radius-md);
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid var(--border);
+	}
+
+	.status-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--error);
+		flex-shrink: 0;
+	}
+
+	.connection-status.connected .status-dot {
+		background: var(--success);
+		animation: pulse 2s infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
+	}
+
+	.status-label {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
 	}
 
 	.settings-btn {

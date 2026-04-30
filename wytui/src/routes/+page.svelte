@@ -273,19 +273,6 @@
 </svelte:head>
 
 <div class="page">
-	<div class="page-header">
-		<h1>Dashboard</h1>
-		<div class="status">
-			{#if sseState.connected}
-				<span class="status-indicator connected"></span>
-				<span class="status-text">Connected</span>
-			{:else}
-				<span class="status-indicator disconnected"></span>
-				<span class="status-text">Connecting...</span>
-			{/if}
-		</div>
-	</div>
-
 	<!-- Tabs -->
 	<div class="tabs">
 		<button
@@ -604,49 +591,6 @@
 		max-width: 1400px;
 		margin: 0 auto;
 		width: 100%;
-	}
-
-	.page-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.status {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-	}
-
-	.status-indicator {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-	}
-
-	.status-indicator.connected {
-		background: var(--success);
-		animation: pulse 2s infinite;
-	}
-
-	.status-indicator.disconnected {
-		background: var(--error);
-	}
-
-	@keyframes pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.5;
-		}
-	}
-
-	.status-text {
-		font-size: 0.875rem;
-		color: var(--text-secondary);
 	}
 
 	.tabs {
