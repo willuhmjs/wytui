@@ -64,13 +64,19 @@
 		}
 	}
 
+	const SAVEABLE_FIELDS = ['maxConcurrentDownloads', 'downloadPath', 'ytdlpPath', 'autoUpdateYtdlp', 'updateCheckInterval', 'enableArchive', 'archivePath', 'authMode', 'autoDeleteAfter'];
+
 	async function saveSettings() {
 		saving = true;
 		try {
+			const payload: Record<string, any> = {};
+			for (const key of SAVEABLE_FIELDS) {
+				if (key in settings) payload[key] = settings[key];
+			}
 			const res = await fetch('/api/settings', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(settings),
+				body: JSON.stringify(payload),
 			});
 			if (res.ok) {
 				await showAlert('Success', 'Settings saved successfully!');
