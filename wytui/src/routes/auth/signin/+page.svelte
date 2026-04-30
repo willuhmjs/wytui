@@ -98,12 +98,14 @@
 
 <style>
 	.signin-page {
-		min-height: 100vh;
+		position: fixed;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+		background: var(--bg-secondary);
 		padding: var(--spacing-lg);
+		z-index: 200;
 	}
 
 	.signin-card {

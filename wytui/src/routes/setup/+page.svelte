@@ -143,12 +143,15 @@
 
 <style>
 	.setup-container {
-		min-height: 100vh;
+		position: fixed;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: var(--spacing-lg);
-		background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+		background: var(--bg-secondary);
+		z-index: 200;
+		overflow-y: auto;
 	}
 
 	.setup-card {
