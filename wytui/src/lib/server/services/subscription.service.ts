@@ -107,16 +107,15 @@ class SubscriptionService {
 						subscriptionId
 					);
 				}
-
-				// Broadcast event
-				sseEmitter.broadcast('subscription:checked', {
-					id: subscriptionId,
-					name: subscription.name,
-					newVideos: newVideos.length,
-				});
 			} else {
 				console.log(`[Subscriptions] No new videos for ${subscription.name}`);
 			}
+
+			sseEmitter.broadcast('subscription:checked', {
+				id: subscriptionId,
+				name: subscription.name,
+				newVideos: newVideos.length,
+			});
 		} catch (error) {
 			console.error(`[Subscriptions] Check failed for ${subscriptionId}:`, error);
 		} finally {

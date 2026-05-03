@@ -5,6 +5,7 @@ import { sseEmitter } from '../sse/emitter';
 import { DownloadStatus } from '@prisma/client';
 import type { ChildProcess } from 'child_process';
 import type { Download } from '$lib/types';
+import { unlink } from 'fs/promises';
 
 /**
  * Serialize download object for JSON responses
@@ -28,6 +29,12 @@ class DownloadService {
 
 	// Debounce DB updates (max 1 update per second per download)
 	private updateDebounce = new Map<string, NodeJS.Timeout>();
+
+	// Track retry timeouts so we can cancel them
+	private retryTimeouts = new Map<string, NodeJS.Timeout>();
+
+	// Guard against multiple error handler invocations per download
+	private handlingError = new Set<string>();
 
 	private emitToOwner(event: string, data: any, downloadId: string): void {
 		const userId = this.downloadOwners.get(downloadId);
@@ -271,38 +278,46 @@ class DownloadService {
 		}
 
 		this.emitToOwner('download:complete', { id: downloadId, download }, downloadId);
+		this.downloadOwners.delete(downloadId);
 	}
 
 	/**
 	 * Handle download error
 	 */
 	private async handleDownloadError(downloadId: string, error: string): Promise<void> {
-		const download = await prisma.download.findUnique({
-			where: { id: downloadId },
-		});
+		if (this.handlingError.has(downloadId)) return;
+		this.handlingError.add(downloadId);
 
-		if (!download) return;
-
-		// Check if we should retry
-		if (download.retryCount < 3) {
-			await this.updateDownload(downloadId, {
-				retryCount: download.retryCount + 1,
-				error,
+		try {
+			const download = await prisma.download.findUnique({
+				where: { id: downloadId },
 			});
 
-			// Retry after exponential backoff
-			const delay = Math.pow(2, download.retryCount) * 1000;
-			setTimeout(() => {
-				this.processDownload(downloadId);
-			}, delay);
-		} else {
-			// Max retries reached, mark as failed
-			await this.updateDownload(downloadId, {
-				status: DownloadStatus.FAILED,
-				error,
-			});
+			if (!download || download.status === DownloadStatus.CANCELLED) return;
 
-			this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
+			if (download.retryCount < 3) {
+				await this.updateDownload(downloadId, {
+					retryCount: download.retryCount + 1,
+					error,
+				});
+
+				const delay = Math.pow(2, download.retryCount) * 1000;
+				const timeout = setTimeout(() => {
+					this.retryTimeouts.delete(downloadId);
+					this.processDownload(downloadId);
+				}, delay);
+				this.retryTimeouts.set(downloadId, timeout);
+			} else {
+				await this.updateDownload(downloadId, {
+					status: DownloadStatus.FAILED,
+					error,
+				});
+
+				this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
+				this.downloadOwners.delete(downloadId);
+			}
+		} finally {
+			this.handlingError.delete(downloadId);
 		}
 	}
 
@@ -316,6 +331,18 @@ class DownloadService {
 			this.activeProcesses.delete(downloadId);
 		}
 
+		const retryTimeout = this.retryTimeouts.get(downloadId);
+		if (retryTimeout) {
+			clearTimeout(retryTimeout);
+			this.retryTimeouts.delete(downloadId);
+		}
+
+		const debounceTimeout = this.updateDebounce.get(downloadId);
+		if (debounceTimeout) {
+			clearTimeout(debounceTimeout);
+			this.updateDebounce.delete(downloadId);
+		}
+
 		await this.updateDownload(downloadId, {
 			status: DownloadStatus.CANCELLED,
 		});
@@ -327,15 +354,32 @@ class DownloadService {
 	 * Delete download
 	 */
 	async deleteDownload(downloadId: string): Promise<void> {
-		// Cancel if active
 		await this.cancelDownload(downloadId);
 
-		// Delete from DB
-		await prisma.download.delete({
+		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
 		});
 
-		// TODO: Delete file from filesystem
+		if (download) {
+			const videoId = this.extractVideoId(download.url);
+			if (videoId) {
+				await prisma.archive.deleteMany({
+					where: { videoId },
+				});
+			}
+
+			if (download.filepath) {
+				try {
+					await unlink(download.filepath);
+				} catch {
+					// File may already be gone
+				}
+			}
+		}
+
+		await prisma.download.delete({
+			where: { id: downloadId },
+		});
 
 		this.emitToOwner('download:deleted', { id: downloadId }, downloadId);
 		this.downloadOwners.delete(downloadId);

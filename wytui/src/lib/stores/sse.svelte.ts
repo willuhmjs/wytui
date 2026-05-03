@@ -2,6 +2,9 @@ let eventSource = $state<EventSource | null>(null);
 let connected = $state(false);
 let downloads = $state<any[]>([]);
 
+type EventCallback = (data: any) => void;
+const eventCallbacks = new Map<string, Set<EventCallback>>();
+
 export function connectSSE() {
 	if (eventSource) return;
 
@@ -55,7 +58,8 @@ export function connectSSE() {
 	});
 
 	eventSource.addEventListener('download:complete', (e) => {
-		const { id, download } = JSON.parse(e.data);
+		const data = JSON.parse(e.data);
+		const { id, download } = data;
 
 		const index = downloads.findIndex(d => d.id === id);
 		if (index >= 0) {
@@ -66,6 +70,8 @@ export function connectSSE() {
 		setTimeout(() => {
 			downloads = downloads.filter(d => d.id !== id);
 		}, 3000);
+
+		dispatchCallbacks('download:complete', data);
 	});
 
 	eventSource.addEventListener('download:failed', (e) => {
@@ -97,8 +103,14 @@ export function connectSSE() {
 	});
 
 	eventSource.addEventListener('download:deleted', (e) => {
-		const { id } = JSON.parse(e.data);
-		downloads = downloads.filter(d => d.id !== id);
+		const data = JSON.parse(e.data);
+		downloads = downloads.filter(d => d.id !== data.id);
+		dispatchCallbacks('download:deleted', data);
+	});
+
+	eventSource.addEventListener('subscription:checked', (e) => {
+		const data = JSON.parse(e.data);
+		dispatchCallbacks('subscription:checked', data);
 	});
 
 	eventSource.addEventListener('ping', () => {
@@ -113,6 +125,23 @@ export function connectSSE() {
 
 		// Reconnect after 5 seconds
 		setTimeout(connectSSE, 5000);
+	};
+}
+
+function dispatchCallbacks(event: string, data: any): void {
+	const callbacks = eventCallbacks.get(event);
+	if (callbacks) {
+		for (const cb of callbacks) cb(data);
+	}
+}
+
+export function onSSEEvent(event: string, callback: EventCallback): () => void {
+	if (!eventCallbacks.has(event)) {
+		eventCallbacks.set(event, new Set());
+	}
+	eventCallbacks.get(event)!.add(callback);
+	return () => {
+		eventCallbacks.get(event)?.delete(callback);
 	};
 }
 

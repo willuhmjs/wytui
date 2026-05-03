@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import DownloadForm from '$lib/components/download/DownloadForm.svelte';
 	import DownloadCard from '$lib/components/download/DownloadCard.svelte';
-	import { getSSEState } from '$lib/stores/sse.svelte';
+	import { getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 
 	let activeTab = $state<'downloads' | 'subscriptions' | 'monitors'>('downloads');
@@ -16,6 +16,7 @@
 	let subscriptions = $state<any[]>([]);
 	let subsLoading = $state(false);
 	let checkingNow = $state<Set<string>>(new Set());
+	let checkResult = $state<{ id: string; message: string } | null>(null);
 	let showSubsForm = $state(false);
 	let subFormUrl = $state('');
 	let subFormName = $state('');
@@ -35,6 +36,10 @@
 	let monFormType = $state('YOUTUBE_LIVE');
 	let monFormAutoDownload = $state(true);
 
+	// Form error state
+	let subFormError = $state('');
+	let monFormError = $state('');
+
 	// Shared state
 	let profiles = $state<any[]>([]);
 
@@ -42,21 +47,31 @@
 		loadProfiles();
 		loadCompletedDownloads();
 
-		const eventSource = new EventSource('/api/sse');
-		eventSource.addEventListener('download:complete', (e) => {
-			const { download } = JSON.parse(e.data);
+		const unsubComplete = onSSEEvent('download:complete', ({ download }) => {
 			const exists = completedDownloads.find((d) => d.id === download.id);
 			if (!exists) {
 				completedDownloads = [download, ...completedDownloads];
 			}
 		});
-		eventSource.addEventListener('download:deleted', (e) => {
-			const { id } = JSON.parse(e.data);
+		const unsubDeleted = onSSEEvent('download:deleted', ({ id }) => {
 			completedDownloads = completedDownloads.filter((d) => d.id !== id);
+		});
+		const unsubChecked = onSSEEvent('subscription:checked', ({ id, name, newVideos }) => {
+			const message =
+				newVideos > 0
+					? `Found ${newVideos} new video${newVideos > 1 ? 's' : ''} for ${name}`
+					: `No new videos for ${name}`;
+			checkResult = { id, message };
+			setTimeout(() => {
+				if (checkResult?.id === id) checkResult = null;
+			}, 5000);
+			loadSubscriptions();
 		});
 
 		return () => {
-			eventSource.close();
+			unsubComplete();
+			unsubDeleted();
+			unsubChecked();
 		};
 	});
 
@@ -107,6 +122,7 @@
 
 	async function handleSubsSubmit(e: Event) {
 		e.preventDefault();
+		subFormError = '';
 		try {
 			const res = await fetch('/api/subscriptions', {
 				method: 'POST',
@@ -127,9 +143,12 @@
 				subFormName = '';
 				showSubsForm = false;
 				await loadSubscriptions();
+			} else {
+				const data = await res.json().catch(() => null);
+				subFormError = data?.message || `Failed to create subscription (${res.status})`;
 			}
 		} catch (e) {
-			console.error('Failed to create subscription:', e);
+			subFormError = 'Failed to create subscription';
 		}
 	}
 
@@ -198,6 +217,7 @@
 
 	async function handleMonitorsSubmit(e: Event) {
 		e.preventDefault();
+		monFormError = '';
 		try {
 			const res = await fetch('/api/monitors', {
 				method: 'POST',
@@ -216,9 +236,12 @@
 				monFormName = '';
 				showMonitorsForm = false;
 				await loadMonitors();
+			} else {
+				const data = await res.json().catch(() => null);
+				monFormError = data?.message || `Failed to create monitor (${res.status})`;
 			}
 		} catch (e) {
-			console.error('Failed to create monitor:', e);
+			monFormError = 'Failed to create monitor';
 		}
 	}
 
@@ -415,6 +438,9 @@
 						Auto-download new videos
 					</label>
 
+					{#if subFormError}
+						<p class="form-error">{subFormError}</p>
+					{/if}
 					<button type="submit" class="btn btn-primary">Create Subscription</button>
 				</form>
 			{/if}
@@ -449,6 +475,10 @@
 								<p class="text-muted text-sm">
 									Last checked: {new Date(sub.lastChecked).toLocaleString()}
 								</p>
+							{/if}
+
+							{#if checkResult && checkResult.id === sub.id}
+								<p class="check-result">{checkResult.message}</p>
 							{/if}
 
 							<div class="actions">
@@ -525,6 +555,9 @@
 						Auto-download when live
 					</label>
 
+					{#if monFormError}
+						<p class="form-error">{monFormError}</p>
+					{/if}
 					<button type="submit" class="btn btn-primary">Create Monitor</button>
 				</form>
 			{/if}
@@ -857,6 +890,18 @@
 		font-size: 1.125rem;
 		font-weight: 600;
 		color: var(--accent-primary);
+	}
+
+	.check-result {
+		font-size: 0.85rem;
+		color: var(--accent-primary);
+		margin: var(--spacing-xs) 0 0;
+	}
+
+	.form-error {
+		color: var(--error, #ef4444);
+		font-size: 0.85rem;
+		margin: var(--spacing-xs) 0;
 	}
 
 	.actions {

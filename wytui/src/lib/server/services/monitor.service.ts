@@ -121,6 +121,7 @@ class MonitorService {
 			proc.kill('SIGTERM');
 			this.activeMonitors.delete(monitorId);
 		}
+		this.restartCounts.delete(monitorId);
 	}
 
 	/**
@@ -159,13 +160,19 @@ class MonitorService {
 		// Stop monitoring this stream (it's now live)
 		this.stopMonitor(monitor.id);
 
-		// Mark as not live after a delay (assume stream ends)
 		setTimeout(async () => {
-			await prisma.monitor.update({
-				where: { id: monitor.id },
-				data: { isLive: false },
-			});
-		}, 3600000); // 1 hour
+			try {
+				const current = await prisma.monitor.findUnique({ where: { id: monitor.id } });
+				if (current?.isLive) {
+					await prisma.monitor.update({
+						where: { id: monitor.id },
+						data: { isLive: false },
+					});
+				}
+			} catch {
+				// Monitor may have been deleted
+			}
+		}, 3600000);
 	}
 
 	/**
