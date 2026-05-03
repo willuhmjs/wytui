@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
-import { hashPassword } from '$lib/server/auth';
+import { hashPassword, validatePassword } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
@@ -19,9 +19,13 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		const { newPassword } = await request.json();
 		const targetUserId = params.id;
 
-		// Basic validation
-		if (!newPassword || newPassword.length === 0) {
+		if (!newPassword || typeof newPassword !== 'string') {
 			throw error(400, 'Password cannot be empty');
+		}
+
+		const passwordValidation = validatePassword(newPassword);
+		if (!passwordValidation.valid) {
+			throw error(400, passwordValidation.error!);
 		}
 
 		// Get target user

@@ -25,15 +25,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Invalid URL format');
 		}
 
-		// Verify profile exists
+		const userId = locals.session?.user?.id;
+
+		// Verify profile exists and user has access
 		const profile = await prisma.downloadProfile.findUnique({
 			where: { id: profileId },
 		});
 		if (!profile) {
 			throw error(400, 'Invalid profile ID');
 		}
-
-		const userId = locals.session?.user?.id;
+		if (!profile.isSystem && profile.userId !== userId) {
+			throw error(403, 'Cannot use another user\'s profile');
+		}
 		const download = await downloadService.createDownload(url, profileId, userId);
 
 		return json(download, { status: 201 });

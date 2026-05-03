@@ -56,6 +56,23 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Invalid URL format');
 		}
 
+		// Validate subscription type
+		const validTypes = ['CHANNEL', 'PLAYLIST', 'USER'];
+		if (data.type && !validTypes.includes(data.type)) {
+			throw error(400, 'Invalid subscription type');
+		}
+
+		// Validate profile ownership
+		const profile = await prisma.downloadProfile.findUnique({
+			where: { id: data.profileId },
+		});
+		if (!profile) {
+			throw error(400, 'Invalid profile ID');
+		}
+		if (!profile.isSystem && profile.userId !== userId) {
+			throw error(403, 'Cannot use another user\'s profile');
+		}
+
 		// Validate types and ranges
 		const checkInterval = parseInt(data.checkInterval) || 1800;
 		if (checkInterval < 60 || checkInterval > 86400) {

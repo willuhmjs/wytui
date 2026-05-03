@@ -178,16 +178,28 @@ class SubscriptionService {
 
 	/**
 	 * Filter out already downloaded videos
+	 * Checks both the archive and pending/active downloads to prevent duplicates
 	 */
 	private async filterNewVideos(videos: any[]): Promise<any[]> {
 		const newVideos = [];
 
 		for (const video of videos) {
-			const exists = await prisma.archive.findUnique({
+			const archived = await prisma.archive.findUnique({
 				where: { videoId: video.id },
 			});
 
-			if (!exists) {
+			if (archived) continue;
+
+			const existingDownload = await prisma.download.findFirst({
+				where: {
+					url: video.url,
+					status: {
+						in: ['PENDING', 'FETCHING_INFO', 'DOWNLOADING', 'PROCESSING', 'COMPLETED'],
+					},
+				},
+			});
+
+			if (!existingDownload) {
 				newVideos.push(video);
 			}
 		}

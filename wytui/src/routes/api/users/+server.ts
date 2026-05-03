@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
-import { hashPassword, validatePassword } from '$lib/server/auth';
+import { hashPassword, validatePassword, invalidateUsersCache } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
@@ -92,6 +92,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			},
 		});
 
+		invalidateUsersCache();
 		return json(user, { status: 201 });
 	} catch (e: any) {
 		console.error('Failed to create user:', e);

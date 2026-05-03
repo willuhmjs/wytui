@@ -2,6 +2,7 @@ type SSEClient = {
 	id: string;
 	controller: ReadableStreamDefaultController;
 	userId?: string;
+	heartbeat: ReturnType<typeof setInterval>;
 };
 
 type InitialStateCallback = (userId?: string) => Promise<any[]>;
@@ -23,27 +24,6 @@ class SSEEmitter {
 	registerClient(clientId: string, userId?: string): ReadableStream {
 		const stream = new ReadableStream({
 			start: async (controller) => {
-				this.clients.set(clientId, { id: clientId, controller, userId });
-				console.log(`[SSE] Client connected:`, clientId, `(user: ${userId || 'anonymous'})`);
-				console.log(`[SSE] Total clients: ${this.clients.size}`);
-
-				// Send initial connection message
-				this.sendToClient(clientId, 'connected', { clientId, timestamp: new Date() });
-
-				// Send initial state (active downloads)
-				if (this.initialStateCallback) {
-					try {
-						const downloads = await this.initialStateCallback(userId);
-						console.log(`[SSE] Sending ${downloads.length} initial downloads to client ${clientId}`);
-						downloads.forEach((download) => {
-							this.sendToClient(clientId, 'download:created', download);
-						});
-					} catch (error) {
-						console.error('Failed to fetch initial state:', error);
-					}
-				}
-
-				// Heartbeat every 30 seconds
 				const heartbeat = setInterval(() => {
 					try {
 						controller.enqueue('event: ping\ndata: {}\n\n');
@@ -51,9 +31,29 @@ class SSEEmitter {
 						clearInterval(heartbeat);
 					}
 				}, 30000);
+
+				this.clients.set(clientId, { id: clientId, controller, userId, heartbeat });
+				console.log(`[SSE] Client connected: ${clientId} (user: ${userId || 'anonymous'}, total: ${this.clients.size})`);
+
+				this.sendToClient(clientId, 'connected', { clientId, timestamp: new Date() });
+
+				if (this.initialStateCallback) {
+					try {
+						const downloads = await this.initialStateCallback(userId);
+						downloads.forEach((download) => {
+							this.sendToClient(clientId, 'download:created', download);
+						});
+					} catch (error) {
+						console.error('Failed to fetch initial state:', error);
+					}
+				}
 			},
 			cancel: () => {
-				this.clients.delete(clientId);
+				const client = this.clients.get(clientId);
+				if (client) {
+					clearInterval(client.heartbeat);
+					this.clients.delete(clientId);
+				}
 			},
 		});
 
@@ -116,7 +116,11 @@ class SSEEmitter {
 	 * Remove a client
 	 */
 	removeClient(clientId: string): void {
-		this.clients.delete(clientId);
+		const client = this.clients.get(clientId);
+		if (client) {
+			clearInterval(client.heartbeat);
+			this.clients.delete(clientId);
+		}
 	}
 
 	/**
@@ -131,6 +135,7 @@ class SSEEmitter {
 	 */
 	closeAll(): void {
 		for (const [clientId, client] of this.clients.entries()) {
+			clearInterval(client.heartbeat);
 			try {
 				client.controller.close();
 			} catch (e) {

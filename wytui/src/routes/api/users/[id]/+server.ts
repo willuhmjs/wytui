@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { invalidateUsersCache } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
@@ -81,11 +82,11 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 			}
 		}
 
-		// Delete user
 		await prisma.user.delete({
 			where: { id: params.id },
 		});
 
+		invalidateUsersCache();
 		return json({ success: true });
 	} catch (e: any) {
 		console.error('Failed to delete user:', e);

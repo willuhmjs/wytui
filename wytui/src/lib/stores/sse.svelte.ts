@@ -8,14 +8,12 @@ export function connectSSE() {
 	console.log('[SSE Client] Connecting to /api/sse...');
 	eventSource = new EventSource('/api/sse');
 
-	eventSource.addEventListener('connected', (e) => {
-		console.log('[SSE Client] Connected:', JSON.parse(e.data));
+	eventSource.addEventListener('connected', () => {
 		connected = true;
 	});
 
 	eventSource.addEventListener('download:created', (e) => {
 		const download = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:created:', download.id);
 
 		// Check if already exists
 		const index = downloads.findIndex(d => d.id === download.id);
@@ -28,7 +26,6 @@ export function connectSSE() {
 
 	eventSource.addEventListener('download:status', (e) => {
 		const data = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:status:', data.id, '→', data.status);
 
 		const index = downloads.findIndex(d => d.id === data.id);
 		if (index >= 0) {
@@ -39,7 +36,6 @@ export function connectSSE() {
 
 	eventSource.addEventListener('download:metadata', (e) => {
 		const data = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:metadata:', data.id, data.title);
 
 		const index = downloads.findIndex(d => d.id === data.id);
 		if (index >= 0) {
@@ -50,7 +46,6 @@ export function connectSSE() {
 
 	eventSource.addEventListener('download:progress', (e) => {
 		const data = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:progress:', data.id, data.progress + '%');
 
 		const index = downloads.findIndex(d => d.id === data.id);
 		if (index >= 0) {
@@ -61,44 +56,48 @@ export function connectSSE() {
 
 	eventSource.addEventListener('download:complete', (e) => {
 		const { id, download } = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:complete:', id);
 
-		// Update download to completed status (keep it visible on page)
 		const index = downloads.findIndex(d => d.id === id);
 		if (index >= 0) {
 			downloads[index] = download;
 			downloads = [...downloads];
-		} else {
-			// Add if not found (shouldn't happen, but just in case)
-			downloads = [...downloads, download];
 		}
+
+		setTimeout(() => {
+			downloads = downloads.filter(d => d.id !== id);
+		}, 3000);
 	});
 
 	eventSource.addEventListener('download:failed', (e) => {
 		const { id, error } = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:failed:', id, error);
 
 		const index = downloads.findIndex(d => d.id === id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], status: 'FAILED', error };
 			downloads = [...downloads];
 		}
+
+		setTimeout(() => {
+			downloads = downloads.filter(d => d.id !== id);
+		}, 5000);
 	});
 
 	eventSource.addEventListener('download:cancelled', (e) => {
 		const { id } = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:cancelled:', id);
 
 		const index = downloads.findIndex(d => d.id === id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], status: 'CANCELLED' };
 			downloads = [...downloads];
 		}
+
+		setTimeout(() => {
+			downloads = downloads.filter(d => d.id !== id);
+		}, 3000);
 	});
 
 	eventSource.addEventListener('download:deleted', (e) => {
 		const { id } = JSON.parse(e.data);
-		console.log('[SSE Client] Received download:deleted:', id);
 		downloads = downloads.filter(d => d.id !== id);
 	});
 

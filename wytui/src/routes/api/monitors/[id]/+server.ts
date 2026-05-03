@@ -55,7 +55,32 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			throw error(403, 'Admin access required');
 		}
 
-		const updates = await request.json();
+		const body = await request.json();
+
+		const allowedFields = ['name', 'url', 'type', 'enabled', 'autoDownload', 'profileId'];
+		const updates: Record<string, any> = {};
+		for (const key of allowedFields) {
+			if (key in body) updates[key] = body[key];
+		}
+
+		if (updates.type !== undefined) {
+			const validTypes = ['YOUTUBE_LIVE', 'TWITCH'];
+			if (!validTypes.includes(updates.type)) {
+				throw error(400, 'Invalid monitor type');
+			}
+		}
+
+		if (updates.profileId !== undefined) {
+			const profile = await prisma.downloadProfile.findUnique({
+				where: { id: updates.profileId },
+			});
+			if (!profile) {
+				throw error(400, 'Invalid profile ID');
+			}
+			if (!profile.isSystem && profile.userId !== locals.session.user.id) {
+				throw error(403, 'Cannot use another user\'s profile');
+			}
+		}
 
 		const monitor = await prisma.monitor.update({
 			where: { id: params.id },
@@ -63,8 +88,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			include: { profile: true },
 		});
 
-		// Restart monitor if enabled status changed
-		if (updates.enabled !== undefined) {
+		if (body.enabled !== undefined) {
 			if (monitor.enabled) {
 				await monitorService.startMonitor(monitor);
 			} else {

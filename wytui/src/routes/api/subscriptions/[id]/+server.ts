@@ -60,7 +60,40 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			throw error(403, 'Access denied');
 		}
 
-		const updates = await request.json();
+		const body = await request.json();
+
+		const allowedFields = ['name', 'url', 'type', 'enabled', 'checkInterval', 'autoDownload', 'maxVideos', 'profileId'];
+		const updates: Record<string, any> = {};
+		for (const key of allowedFields) {
+			if (key in body) updates[key] = body[key];
+		}
+
+		if (updates.type !== undefined) {
+			const validTypes = ['CHANNEL', 'PLAYLIST', 'USER'];
+			if (!validTypes.includes(updates.type)) {
+				throw error(400, 'Invalid subscription type');
+			}
+		}
+
+		if (updates.checkInterval !== undefined) {
+			const val = parseInt(updates.checkInterval);
+			if (isNaN(val) || val < 60 || val > 86400) {
+				throw error(400, 'Check interval must be between 60 and 86400 seconds');
+			}
+			updates.checkInterval = val;
+		}
+
+		if (updates.profileId !== undefined) {
+			const profile = await prisma.downloadProfile.findUnique({
+				where: { id: updates.profileId },
+			});
+			if (!profile) {
+				throw error(400, 'Invalid profile ID');
+			}
+			if (!profile.isSystem && profile.userId !== locals.session.user.id) {
+				throw error(403, 'Cannot use another user\'s profile');
+			}
+		}
 
 		const subscription = await prisma.subscription.update({
 			where: { id: params.id },
@@ -69,7 +102,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		});
 
 		// Reschedule if enabled or check interval changed
-		if (updates.enabled !== undefined || updates.checkInterval !== undefined) {
+		if (body.enabled !== undefined || body.checkInterval !== undefined) {
 			if (subscription.enabled) {
 				await subscriptionService.scheduleSubscription(subscription);
 			} else {

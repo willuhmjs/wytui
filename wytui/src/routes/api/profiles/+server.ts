@@ -39,10 +39,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(401, 'Unauthorized');
 		}
 
-		const data = await request.json();
+		const body = await request.json();
 
-		if (Array.isArray(data.customFlags) && data.customFlags.length > 0) {
-			const badFlag = ytdlpService.findDangerousFlag(data.customFlags);
+		if (!body.name || typeof body.name !== 'string') {
+			throw error(400, 'Profile name is required');
+		}
+
+		const customFlags = Array.isArray(body.customFlags) ? body.customFlags : [];
+		if (customFlags.length > 0) {
+			const badFlag = ytdlpService.findDangerousFlag(customFlags);
 			if (badFlag) {
 				throw error(400, `Forbidden flag: ${badFlag}`);
 			}
@@ -50,9 +55,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		const profile = await prisma.downloadProfile.create({
 			data: {
-				...data,
+				name: body.name,
+				description: body.description || null,
+				format: body.format || null,
+				quality: body.quality || null,
+				codec: body.codec || null,
+				audioOnly: body.audioOnly === true,
+				audioFormat: body.audioFormat || null,
+				audioBitrate: body.audioBitrate || null,
+				customFlags,
 				userId,
 				isSystem: false,
+				isDefault: false,
 			},
 		});
 

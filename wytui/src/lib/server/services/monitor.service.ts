@@ -8,6 +8,9 @@ import type { Monitor } from '@prisma/client';
 class MonitorService {
 	private activeMonitors = new Map<string, ChildProcess>();
 	private checkInterval: NodeJS.Timeout | null = null;
+	private restartCounts = new Map<string, number>();
+	private static MAX_RESTARTS = 10;
+	private static MAX_BACKOFF_MS = 300000; // 5 minutes
 
 	/**
 	 * Start monitor service
@@ -72,7 +75,8 @@ class MonitorService {
 			const output = data.toString();
 			console.log(`[Monitor ${monitor.name}] ${output}`);
 
-			// Check for live status or wait time
+			this.restartCounts.delete(monitor.id);
+
 			if (output.includes('is live')) {
 				await this.handleStreamLive(monitor);
 			} else if (output.includes('Remaining time until next attempt')) {
@@ -240,7 +244,7 @@ class MonitorService {
 	}
 
 	/**
-	 * Restart monitor if still enabled
+	 * Restart monitor if still enabled, with exponential backoff
 	 */
 	private async restartMonitorIfEnabled(monitorId: string): Promise<void> {
 		const monitor = await prisma.monitor.findUnique({
@@ -248,12 +252,26 @@ class MonitorService {
 			include: { profile: true },
 		});
 
-		if (monitor && monitor.enabled && !monitor.isLive) {
-			console.log(`[Monitor ${monitor.name}] Restarting...`);
-			setTimeout(() => {
-				this.startMonitor(monitor);
-			}, 5000); // Wait 5 seconds before restart
+		if (!monitor || !monitor.enabled || monitor.isLive) return;
+
+		const count = (this.restartCounts.get(monitorId) || 0) + 1;
+		this.restartCounts.set(monitorId, count);
+
+		if (count > MonitorService.MAX_RESTARTS) {
+			console.error(`[Monitor ${monitor.name}] Max restarts (${MonitorService.MAX_RESTARTS}) exceeded, disabling`);
+			await prisma.monitor.update({
+				where: { id: monitorId },
+				data: { enabled: false },
+			});
+			this.restartCounts.delete(monitorId);
+			return;
 		}
+
+		const delay = Math.min(5000 * Math.pow(2, count - 1), MonitorService.MAX_BACKOFF_MS);
+		console.log(`[Monitor ${monitor.name}] Restarting in ${Math.round(delay / 1000)}s (attempt ${count}/${MonitorService.MAX_RESTARTS})`);
+		setTimeout(() => {
+			this.startMonitor(monitor);
+		}, delay);
 	}
 
 	/**

@@ -119,12 +119,20 @@ export async function hashPassword(password: string): Promise<string> {
 	return bcrypt.hash(password, 10);
 }
 
+let usersExistCache: boolean | null = null;
+
 /**
- * Check if any users exist in the database
+ * Check if any users exist in the database (cached after first user creation)
  */
 export async function hasUsers(): Promise<boolean> {
+	if (usersExistCache === true) return true;
 	const count = await prisma.user.count();
-	return count > 0;
+	usersExistCache = count > 0;
+	return usersExistCache;
+}
+
+export function invalidateUsersCache(): void {
+	usersExistCache = null;
 }
 
 /**

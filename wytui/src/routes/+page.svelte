@@ -15,6 +15,7 @@
 	// Subscriptions state
 	let subscriptions = $state<any[]>([]);
 	let subsLoading = $state(false);
+	let checkingNow = $state<Set<string>>(new Set());
 	let showSubsForm = $state(false);
 	let subFormUrl = $state('');
 	let subFormName = $state('');
@@ -162,10 +163,14 @@
 	}
 
 	async function checkNow(id: string) {
+		if (checkingNow.has(id)) return;
+		checkingNow = new Set([...checkingNow, id]);
 		try {
 			await fetch(`/api/subscriptions/${id}/check`, { method: 'POST' });
 		} catch (e) {
 			console.error('Failed to check subscription:', e);
+		} finally {
+			checkingNow = new Set([...checkingNow].filter((x) => x !== id));
 		}
 	}
 
@@ -260,9 +265,9 @@
 
 	// Load data when switching tabs
 	$effect(() => {
-		if (activeTab === 'subscriptions' && subscriptions.length === 0) {
+		if (activeTab === 'subscriptions') {
 			loadSubscriptions();
-		} else if (activeTab === 'monitors' && monitors.length === 0) {
+		} else if (activeTab === 'monitors') {
 			loadMonitors();
 		}
 	});
@@ -447,8 +452,12 @@
 							{/if}
 
 							<div class="actions">
-								<button class="btn btn-sm btn-primary" onclick={() => checkNow(sub.id)}>
-									Check Now
+								<button
+									class="btn btn-sm btn-primary"
+									onclick={() => checkNow(sub.id)}
+									disabled={checkingNow.has(sub.id)}
+								>
+									{checkingNow.has(sub.id) ? 'Checking...' : 'Check Now'}
 								</button>
 								<button
 									class="btn btn-sm btn-secondary"

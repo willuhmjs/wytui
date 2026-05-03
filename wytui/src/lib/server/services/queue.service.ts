@@ -23,43 +23,31 @@ export class QueueService {
 	 */
 	async enqueueMetadata<T>(fn: () => Promise<T>): Promise<T> {
 		this.queuedMetadata++;
-		try {
-			const result = await this.metadataLimit(async () => {
-				this.queuedMetadata--;
-				this.activeMetadata++;
-				try {
-					return await fn();
-				} finally {
-					this.activeMetadata--;
-				}
-			});
-			return result;
-		} catch (error) {
+		return this.metadataLimit(async () => {
 			this.queuedMetadata--;
-			throw error;
-		}
+			this.activeMetadata++;
+			try {
+				return await fn();
+			} finally {
+				this.activeMetadata--;
+			}
+		});
 	}
 
 	/**
 	 * Enqueue download operation (parallel with limit)
 	 */
-	async enqueueDownload<T>(fn: () => Promise<T>, priority = false): Promise<T> {
+	async enqueueDownload<T>(fn: () => Promise<T>): Promise<T> {
 		this.queuedDownloads++;
-		try {
-			const result = await this.downloadLimit(async () => {
-				this.queuedDownloads--;
-				this.activeDownloads++;
-				try {
-					return await fn();
-				} finally {
-					this.activeDownloads--;
-				}
-			});
-			return result;
-		} catch (error) {
+		return this.downloadLimit(async () => {
 			this.queuedDownloads--;
-			throw error;
-		}
+			this.activeDownloads++;
+			try {
+				return await fn();
+			} finally {
+				this.activeDownloads--;
+			}
+		});
 	}
 
 	/**
