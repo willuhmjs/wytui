@@ -64,23 +64,23 @@
 	}
 
 	async function downloadFile() {
+		if (!navigator.canShare?.({ files: [new File([], 'test')] })) {
+			window.open(`/api/files/${download.id}`, '_blank');
+			return;
+		}
+
 		try {
 			const response = await fetch(`/api/files/${download.id}`);
 			if (!response.ok) throw new Error('Download failed');
 
 			const blob = await response.blob();
 			const file = new File([blob], download.filename || 'download', { type: blob.type });
-
-			if (navigator.canShare?.({ files: [file] })) {
-				await navigator.share({ files: [file] });
-				return;
-			}
+			await navigator.share({ files: [file] });
 		} catch (e: any) {
-			if (e.name === 'AbortError') return;
-			console.warn('Share API unavailable, falling back to download:', e);
+			if (e.name !== 'AbortError') {
+				console.error('Share failed:', e);
+			}
 		}
-
-		window.open(`/api/files/${download.id}`, '_blank');
 	}
 </script>
 
