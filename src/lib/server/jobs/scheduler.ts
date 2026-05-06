@@ -26,12 +26,13 @@ class JobScheduler {
 			await this.checkYtdlpUpdate();
 		});
 
-		// Schedule cache quota enforcement (every 5 minutes)
+		// Schedule cache quota enforcement and file reconciliation (every 5 minutes)
 		this.cacheCleanupTask = cron.schedule('*/5 * * * *', async () => {
 			try {
+				await libraryService.reconcileFiles();
 				await libraryService.enforceCacheQuota();
 			} catch (error) {
-				console.error('[Scheduler] Cache cleanup failed:', error);
+				console.error('[Scheduler] Cache cleanup/reconciliation failed:', error);
 			}
 		});
 
