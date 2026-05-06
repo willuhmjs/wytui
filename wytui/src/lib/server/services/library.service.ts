@@ -16,15 +16,20 @@ class LibraryService {
 
 		if (!download) throw new Error('Download not found');
 		if (download.status !== DownloadStatus.COMPLETED) throw new Error('Download not completed');
-		if (download.storagePool === 'library') throw new Error('Already in library');
 		if (!download.filepath) throw new Error('No file path');
 
 		const settings = await this.getSettings();
 		if (!settings.libraryPath) throw new Error('Library path not configured');
 
+		const resolvedLibrary = resolve(settings.libraryPath);
+		const resolvedFile = resolve(download.filepath);
+		if (resolvedFile.startsWith(resolvedLibrary + '/')) {
+			throw new Error('Already in library');
+		}
+
 		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
 		const destDir = resolve(settings.libraryPath, uploaderDir);
-		if (!destDir.startsWith(resolve(settings.libraryPath))) {
+		if (!destDir.startsWith(resolvedLibrary)) {
 			throw new Error('Invalid uploader name');
 		}
 		await mkdir(destDir, { recursive: true });

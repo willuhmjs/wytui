@@ -23,10 +23,6 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 			throw error(400, 'Download must be completed');
 		}
 
-		if (download.storagePool === 'library') {
-			throw error(400, 'Already in library');
-		}
-
 		await libraryService.promoteToLibrary(params.id);
 
 		const updated = await downloadService.getDownload(params.id);
