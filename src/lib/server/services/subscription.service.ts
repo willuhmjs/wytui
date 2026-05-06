@@ -8,6 +8,7 @@ import { spawn } from 'child_process';
 import { access } from 'fs/promises';
 
 class SubscriptionService {
+	private static readonly CHECK_DEPTH = 15;
 	private scheduledTasks = new Map<string, ScheduledTask>();
 	private activeChecks = new Set<string>();
 
@@ -85,7 +86,7 @@ class SubscriptionService {
 			console.log(`[Subscriptions] Checking ${subscription.name}...`);
 
 			// Get latest videos from channel
-			const videos = await this.getLatestVideos(subscription.url, subscription.maxVideos || 5);
+			const videos = await this.getLatestVideos(subscription.url);
 
 			// Filter out already downloaded videos
 			const newVideos = await this.filterNewVideos(videos);
@@ -128,20 +129,39 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Get latest videos from a channel/playlist
+	 * Get latest videos from a channel/playlist (fixed depth)
 	 */
-	private async getLatestVideos(url: string, maxVideos: number): Promise<any[]> {
+	private async getLatestVideos(url: string): Promise<any[]> {
+		return this.fetchPlaylistEntries(url, { limit: SubscriptionService.CHECK_DEPTH });
+	}
+
+	/**
+	 * Fetch playlist entries from yt-dlp with optional limit and date filter
+	 */
+	private async fetchPlaylistEntries(url: string, opts: { limit?: number; dateAfter?: string } = {}): Promise<any[]> {
 		ytdlpService.validateUrl(url);
+
+		const useFullExtraction = !!opts.dateAfter;
 
 		return new Promise((resolve, reject) => {
 			const args = [
-				'--flat-playlist',
 				'--print', 'id',
 				'--print', 'title',
 				'--print', 'webpage_url',
-				'--playlist-end', maxVideos.toString(),
-				url,
 			];
+
+			if (useFullExtraction) {
+				args.unshift('--no-download');
+				args.push('--dateafter', opts.dateAfter!);
+			} else {
+				args.unshift('--flat-playlist');
+			}
+
+			if (opts.limit) {
+				args.push('--playlist-end', opts.limit.toString());
+			}
+
+			args.push(url);
 
 			const proc = spawn(ytdlpService.getPath(), args);
 			let output = '';
@@ -157,7 +177,6 @@ class SubscriptionService {
 
 			proc.on('close', (code) => {
 				if (code === 0) {
-					// Parse output (format: id\ntitle\nurl\nid\ntitle\nurl...)
 					const lines = output.trim().split('\n');
 					const videos = [];
 
@@ -177,6 +196,78 @@ class SubscriptionService {
 				}
 			});
 		});
+	}
+
+	/**
+	 * Seed archive with current videos so new subscriptions are future-only
+	 */
+	async seedArchive(subscriptionId: string): Promise<number> {
+		const subscription = await prisma.subscription.findUnique({
+			where: { id: subscriptionId },
+		});
+
+		if (!subscription) return 0;
+
+		const videos = await this.getLatestVideos(subscription.url);
+		let seeded = 0;
+
+		for (const video of videos) {
+			await prisma.archive.upsert({
+				where: { videoId: video.id },
+				update: {},
+				create: {
+					videoId: video.id,
+					url: video.url,
+					title: video.title,
+				},
+			});
+			seeded++;
+		}
+
+		console.log(`[Subscriptions] Seeded archive with ${seeded} videos for ${subscription.name}`);
+		return seeded;
+	}
+
+	/**
+	 * Backfill a subscription — download all or date-filtered videos
+	 */
+	async backfillSubscription(subscriptionId: string, opts: { dateAfter?: string } = {}): Promise<{ totalVideos: number; newVideos: number }> {
+		const subscription = await prisma.subscription.findUnique({
+			where: { id: subscriptionId },
+			include: { profile: true },
+		});
+
+		if (!subscription) {
+			throw new Error('Subscription not found');
+		}
+
+		const videos = await this.fetchPlaylistEntries(subscription.url, { dateAfter: opts.dateAfter });
+		const newVideos = await this.filterNewVideos(videos);
+
+		for (const video of newVideos) {
+			try {
+				await downloadService.createDownload(
+					video.url,
+					subscription.profileId,
+					subscription.userId || undefined,
+					subscriptionId,
+					subscription.saveToLibrary
+				);
+			} catch (err) {
+				console.error(`[Subscriptions] Backfill: failed to create download for ${video.url}:`, err);
+			}
+		}
+
+		console.log(`[Subscriptions] Backfill for ${subscription.name}: ${newVideos.length} new of ${videos.length} total`);
+
+		sseEmitter.broadcast('subscription:backfill', {
+			id: subscriptionId,
+			name: subscription.name,
+			totalVideos: videos.length,
+			newVideos: newVideos.length,
+		});
+
+		return { totalVideos: videos.length, newVideos: newVideos.length };
 	}
 
 	/**

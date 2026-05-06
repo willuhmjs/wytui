@@ -208,11 +208,6 @@
 			return;
 		}
 
-		if (newUser.password.length < 8) {
-			createUserError = 'Password must be at least 8 characters';
-			return;
-		}
-
 		try {
 			const res = await fetch('/api/users', {
 				method: 'POST',
@@ -555,8 +550,17 @@
 								type="password"
 								id="new-password"
 								bind:value={newUser.password}
-								placeholder="At least 8 characters"
+								placeholder="Enter a password"
 							/>
+							{#if newUser.password.length > 0}
+								<div class="password-suggestions">
+									<span class="suggestion" class:met={newUser.password.length >= 8}>8+ characters</span>
+									<span class="suggestion" class:met={/[a-z]/.test(newUser.password)}>lowercase</span>
+									<span class="suggestion" class:met={/[A-Z]/.test(newUser.password)}>uppercase</span>
+									<span class="suggestion" class:met={/[0-9]/.test(newUser.password)}>number</span>
+									<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(newUser.password)}>special character</span>
+								</div>
+							{/if}
 						</div>
 
 						<div class="form-group">
@@ -664,9 +668,15 @@
 								placeholder="Enter new password"
 								required
 							/>
-							<p class="help-text">
-								Recommended: at least 8 characters with uppercase, lowercase, number, and special character
-							</p>
+							{#if passwordForm.newPassword.length > 0}
+								<div class="password-suggestions">
+									<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}>8+ characters</span>
+									<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}>lowercase</span>
+									<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}>uppercase</span>
+									<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}>number</span>
+									<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}>special character</span>
+								</div>
+							{/if}
 						</div>
 
 						<div class="form-group">
@@ -890,6 +900,33 @@
 	.create-user-form h3 {
 		font-size: 1.125rem;
 		margin-bottom: var(--spacing-lg);
+	}
+
+	.password-suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: var(--spacing-xs);
+	}
+
+	.suggestion {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		opacity: 0.6;
+		transition: all var(--transition-fast);
+	}
+
+	.suggestion.met {
+		color: var(--success, #22c55e);
+		opacity: 1;
+	}
+
+	.suggestion::before {
+		content: '○ ';
+	}
+
+	.suggestion.met::before {
+		content: '● ';
 	}
 
 	.error-message {

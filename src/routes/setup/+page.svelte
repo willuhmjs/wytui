@@ -20,11 +20,6 @@
 			return;
 		}
 
-		if (password.length < 8) {
-			error = 'Password must be at least 8 characters long';
-			return;
-		}
-
 		if (password !== confirmPassword) {
 			error = 'Passwords do not match';
 			return;
@@ -98,11 +93,19 @@
 					id="password"
 					type="password"
 					bind:value={password}
-					placeholder="At least 8 characters"
+					placeholder="Enter a password"
 					disabled={loading}
 					required
 				/>
-				<small>Use a strong password with at least 8 characters</small>
+				{#if password.length > 0}
+					<div class="password-suggestions">
+						<span class="suggestion" class:met={password.length >= 8}>8+ characters</span>
+						<span class="suggestion" class:met={/[a-z]/.test(password)}>lowercase</span>
+						<span class="suggestion" class:met={/[A-Z]/.test(password)}>uppercase</span>
+						<span class="suggestion" class:met={/[0-9]/.test(password)}>number</span>
+						<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(password)}>special character</span>
+					</div>
+				{/if}
 			</div>
 
 			<div class="form-group">
@@ -256,6 +259,33 @@
 	.btn-primary:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.password-suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: var(--spacing-xs);
+	}
+
+	.suggestion {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		opacity: 0.6;
+		transition: all var(--transition-fast);
+	}
+
+	.suggestion.met {
+		color: var(--success, #22c55e);
+		opacity: 1;
+	}
+
+	.suggestion::before {
+		content: '○ ';
+	}
+
+	.suggestion.met::before {
+		content: '● ';
 	}
 
 	.error-message {

@@ -69,44 +69,8 @@ export function verifySessionToken(token: string): SessionPayload | null {
  * Validate password strength
  */
 export function validatePassword(password: string): { valid: boolean; error?: string } {
-	if (password.length < 8) {
-		return { valid: false, error: 'Password must be at least 8 characters long' };
-	}
-
 	if (password.length > 128) {
 		return { valid: false, error: 'Password must not exceed 128 characters' };
-	}
-
-	// Require at least one lowercase letter
-	if (!/[a-z]/.test(password)) {
-		return {
-			valid: false,
-			error: 'Password must contain at least one lowercase letter',
-		};
-	}
-
-	// Require at least one uppercase letter
-	if (!/[A-Z]/.test(password)) {
-		return {
-			valid: false,
-			error: 'Password must contain at least one uppercase letter',
-		};
-	}
-
-	// Require at least one number
-	if (!/[0-9]/.test(password)) {
-		return {
-			valid: false,
-			error: 'Password must contain at least one number',
-		};
-	}
-
-	// Require at least one special character
-	if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-		return {
-			valid: false,
-			error: 'Password must contain at least one special character (!@#$%^&* etc.)',
-		};
 	}
 
 	return { valid: true };

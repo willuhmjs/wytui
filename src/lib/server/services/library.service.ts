@@ -202,6 +202,46 @@ class LibraryService {
 		return candidates.length;
 	}
 
+	async reconcileFiles(): Promise<number> {
+		const downloads = await prisma.download.findMany({
+			where: {
+				status: DownloadStatus.COMPLETED,
+				filepath: { not: null },
+			},
+			select: { id: true, filepath: true, userId: true },
+		});
+
+		let removed = 0;
+		for (const download of downloads) {
+			if (!download.filepath) continue;
+
+			try {
+				await access(download.filepath);
+			} catch {
+				const videoId = await this.getVideoIdForDownload(download.id);
+				if (videoId) {
+					await prisma.archive.deleteMany({ where: { videoId } });
+				}
+
+				await prisma.download.delete({ where: { id: download.id } });
+
+				if (download.userId) {
+					sseEmitter.broadcastToUser('download:deleted', { id: download.id, reason: 'file_missing' }, download.userId);
+				} else {
+					sseEmitter.broadcast('download:deleted', { id: download.id, reason: 'file_missing' });
+				}
+
+				removed++;
+			}
+		}
+
+		if (removed > 0) {
+			console.log(`[LibraryService] Reconciliation removed ${removed} orphaned records`);
+		}
+
+		return removed;
+	}
+
 	async triggerLibraryScan(): Promise<void> {
 		const settings = await this.getSettings();
 		if (!settings.jellyfinUrl || !settings.jellyfinApiKey) return;

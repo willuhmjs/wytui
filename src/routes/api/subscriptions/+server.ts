@@ -79,11 +79,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Check interval must be between 60 and 86400 seconds');
 		}
 
-		const maxVideos = data.maxVideos ? parseInt(data.maxVideos) : null;
-		if (maxVideos !== null && (maxVideos < 1 || maxVideos > 100)) {
-			throw error(400, 'Max videos must be between 1 and 100');
-		}
-
 		// Create subscription with validated data only
 		const subscription = await prisma.subscription.create({
 			data: {
@@ -92,7 +87,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				type: data.type || 'CHANNEL',
 				profileId: data.profileId,
 				checkInterval,
-				maxVideos,
 				autoDownload: data.autoDownload ?? true,
 				saveToLibrary: data.saveToLibrary ?? false,
 				enabled: true,
@@ -103,6 +97,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		// Schedule the subscription
 		await subscriptionService.scheduleSubscription(subscription);
+
+		// Seed archive with existing videos so only future uploads are downloaded
+		subscriptionService.seedArchive(subscription.id).catch((err) =>
+			console.error(`[Subscriptions] Failed to seed archive for ${subscription.name}:`, err)
+		);
 
 		return json(subscription, { status: 201 });
 	} catch (e: any) {

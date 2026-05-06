@@ -21,8 +21,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 			throw error(400, 'Email, password, and name are required');
 		}
 
-		if (typeof password !== 'string' || password.length < 8) {
-			throw error(400, 'Password must be at least 8 characters long');
+		if (typeof password !== 'string' || password.length === 0) {
+			throw error(400, 'Password is required');
 		}
 
 		// Validate email format
