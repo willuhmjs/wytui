@@ -62,7 +62,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 		const body = await request.json();
 
-		const allowedFields = ['name', 'url', 'type', 'enabled', 'checkInterval', 'autoDownload', 'saveToLibrary', 'maxVideos', 'profileId'];
+		const allowedFields = ['name', 'url', 'type', 'enabled', 'checkInterval', 'autoDownload', 'saveToLibrary', 'profileId'];
 		const updates: Record<string, any> = {};
 		for (const key of allowedFields) {
 			if (key in body) updates[key] = body[key];

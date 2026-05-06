@@ -185,7 +185,6 @@ model Subscription {
   profile     DownloadProfile @relation(fields: [profileId], references: [id])
   autoDownload Boolean  @default(true)
   saveToLibrary Boolean @default(false)
-  maxVideos   Int?      // Limit backlog downloads (null = all)
 
   // Metadata
   thumbnail   String?

@@ -3,7 +3,7 @@
 	import DownloadForm from '$lib/components/download/DownloadForm.svelte';
 	import DownloadCard from '$lib/components/download/DownloadCard.svelte';
 	import { getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
-	import { showConfirm } from '$lib/stores/modal.svelte';
+	import { showConfirm, showAlert } from '$lib/stores/modal.svelte';
 
 	let activeTab = $state<'downloads' | 'subscriptions' | 'monitors'>('downloads');
 	let sseState = getSSEState();
@@ -30,8 +30,23 @@
 	let subFormProfileId = $state('');
 	let subFormCheckInterval = $state(1800);
 	let subFormAutoDownload = $state(true);
-	let subFormMaxVideos = $state(5);
 	let subFormType = $state('CHANNEL');
+	let subFormSaveToLibrary = $state(false);
+
+	// Subscription edit state
+	let editingSub = $state<any | null>(null);
+	let editSubName = $state('');
+	let editSubUrl = $state('');
+	let editSubType = $state('CHANNEL');
+	let editSubProfileId = $state('');
+	let editSubCheckInterval = $state(1800);
+	let editSubAutoDownload = $state(true);
+	let editSubSaveToLibrary = $state(false);
+
+	// Subscription backfill state
+	let backfillingSub = $state<string | null>(null);
+	let backfillDate = $state('');
+	let showBackfillMenu = $state<string | null>(null);
 
 	// Monitors state
 	let monitors = $state<any[]>([]);
@@ -43,7 +58,13 @@
 	let monFormType = $state('YOUTUBE_LIVE');
 	let monFormAutoDownload = $state(true);
 
-	let subFormSaveToLibrary = $state(false);
+	// Monitor edit state
+	let editingMonitor = $state<any | null>(null);
+	let editMonName = $state('');
+	let editMonUrl = $state('');
+	let editMonType = $state('YOUTUBE_LIVE');
+	let editMonProfileId = $state('');
+	let editMonAutoDownload = $state(true);
 
 	// Form error state
 	let subFormError = $state('');
@@ -189,7 +210,6 @@
 					checkInterval: subFormCheckInterval,
 					autoDownload: subFormAutoDownload,
 					saveToLibrary: subFormSaveToLibrary,
-					maxVideos: subFormMaxVideos,
 				}),
 			});
 
@@ -246,6 +266,94 @@
 			console.error('Failed to check subscription:', e);
 		} finally {
 			checkingNow = new Set([...checkingNow].filter((x) => x !== id));
+		}
+	}
+
+	function startEditSub(sub: any) {
+		editingSub = sub;
+		editSubName = sub.name;
+		editSubUrl = sub.url;
+		editSubType = sub.type;
+		editSubProfileId = sub.profileId;
+		editSubCheckInterval = sub.checkInterval;
+		editSubAutoDownload = sub.autoDownload;
+		editSubSaveToLibrary = sub.saveToLibrary;
+	}
+
+	function cancelEditSub() {
+		editingSub = null;
+	}
+
+	async function saveEditSub() {
+		if (!editingSub) return;
+		try {
+			const res = await fetch(`/api/subscriptions/${editingSub.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: editSubName,
+					url: editSubUrl,
+					type: editSubType,
+					profileId: editSubProfileId,
+					checkInterval: editSubCheckInterval,
+					autoDownload: editSubAutoDownload,
+					saveToLibrary: editSubSaveToLibrary,
+				}),
+			});
+			if (res.ok) {
+				editingSub = null;
+				await loadSubscriptions();
+			}
+		} catch (e) {
+			console.error('Failed to update subscription:', e);
+		}
+	}
+
+	async function backfillFromDate(id: string) {
+		if (!backfillDate) return;
+		backfillingSub = id;
+		try {
+			const res = await fetch(`/api/subscriptions/${id}/backfill`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ dateAfter: backfillDate }),
+			});
+			if (res.ok) {
+				const data = await res.json();
+				await showAlert('Backfill Started', `Queued ${data.newVideos} new videos for download (${data.totalVideos} total found).`);
+			}
+		} catch (e) {
+			console.error('Failed to backfill:', e);
+		} finally {
+			backfillingSub = null;
+			showBackfillMenu = null;
+			backfillDate = '';
+		}
+	}
+
+	async function backfillAll(id: string) {
+		const confirmed = await showConfirm(
+			'Download All Videos',
+			'This will download every video from this channel that hasn\'t been downloaded before. This could queue a large number of downloads.',
+			'Download All'
+		);
+		if (!confirmed) return;
+		backfillingSub = id;
+		try {
+			const res = await fetch(`/api/subscriptions/${id}/backfill`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({}),
+			});
+			if (res.ok) {
+				const data = await res.json();
+				await showAlert('Backfill Started', `Queued ${data.newVideos} new videos for download (${data.totalVideos} total found).`);
+			}
+		} catch (e) {
+			console.error('Failed to backfill:', e);
+		} finally {
+			backfillingSub = null;
+			showBackfillMenu = null;
 		}
 	}
 
@@ -327,6 +435,42 @@
 			await loadMonitors();
 		} catch (e) {
 			console.error('Failed to delete monitor:', e);
+		}
+	}
+
+	function startEditMonitor(monitor: any) {
+		editingMonitor = monitor;
+		editMonName = monitor.name;
+		editMonUrl = monitor.url;
+		editMonType = monitor.type;
+		editMonProfileId = monitor.profileId;
+		editMonAutoDownload = monitor.autoDownload;
+	}
+
+	function cancelEditMonitor() {
+		editingMonitor = null;
+	}
+
+	async function saveEditMonitor() {
+		if (!editingMonitor) return;
+		try {
+			const res = await fetch(`/api/monitors/${editingMonitor.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: editMonName,
+					url: editMonUrl,
+					type: editMonType,
+					profileId: editMonProfileId,
+					autoDownload: editMonAutoDownload,
+				}),
+			});
+			if (res.ok) {
+				editingMonitor = null;
+				await loadMonitors();
+			}
+		} catch (e) {
+			console.error('Failed to update monitor:', e);
 		}
 	}
 
@@ -527,21 +671,9 @@
 						</div>
 					</div>
 
-					<div class="form-row">
-						<div class="form-group">
-							<label for="sub-interval">Check Interval (seconds)</label>
-							<input type="number" id="sub-interval" bind:value={subFormCheckInterval} min="60" />
-						</div>
-						<div class="form-group">
-							<label for="sub-maxVideos">Max Videos to Check</label>
-							<input
-								type="number"
-								id="sub-maxVideos"
-								bind:value={subFormMaxVideos}
-								min="1"
-								max="50"
-							/>
-						</div>
+					<div class="form-group">
+						<label for="sub-interval">Check Interval (seconds)</label>
+						<input type="number" id="sub-interval" bind:value={subFormCheckInterval} min="60" />
 					</div>
 
 					<div class="checkbox-row">
@@ -575,52 +707,139 @@
 				<div class="content-grid">
 					{#each subscriptions as sub}
 						<div class="content-card">
-							<div class="card-header">
-								<h3>{sub.name}</h3>
-								<span class="status" class:enabled={sub.enabled}>
-									{sub.enabled ? 'Active' : 'Paused'}
-								</span>
-							</div>
+							{#if editingSub?.id === sub.id}
+								<div class="edit-form">
+									<div class="form-row">
+										<div class="form-group">
+											<label>Name</label>
+											<input type="text" bind:value={editSubName} />
+										</div>
+										<div class="form-group">
+											<label>URL</label>
+											<input type="url" bind:value={editSubUrl} />
+										</div>
+									</div>
+									<div class="form-row">
+										<div class="form-group">
+											<label>Type</label>
+											<select bind:value={editSubType}>
+												<option value="CHANNEL">Channel</option>
+												<option value="PLAYLIST">Playlist</option>
+												<option value="USER">User</option>
+											</select>
+										</div>
+										<div class="form-group">
+											<label>Profile</label>
+											<select bind:value={editSubProfileId}>
+												{#each profiles as profile}
+													<option value={profile.id}>{profile.name}</option>
+												{/each}
+											</select>
+										</div>
+									</div>
+									<div class="form-group">
+										<label>Check Interval (seconds)</label>
+										<input type="number" bind:value={editSubCheckInterval} min="60" />
+									</div>
+									<div class="checkbox-row">
+										<label class="checkbox-label">
+											<input type="checkbox" bind:checked={editSubAutoDownload} />
+											Auto-download
+										</label>
+										{#if libraryConfigured}
+											<label class="checkbox-label">
+												<input type="checkbox" bind:checked={editSubSaveToLibrary} />
+												Save to Library
+											</label>
+										{/if}
+									</div>
+									<div class="actions">
+										<button class="btn btn-sm btn-primary" onclick={saveEditSub}>Save</button>
+										<button class="btn btn-sm btn-secondary" onclick={cancelEditSub}>Cancel</button>
+									</div>
+								</div>
+							{:else}
+								<div class="card-header">
+									<h3>{sub.name}</h3>
+									<span class="status" class:enabled={sub.enabled}>
+										{sub.enabled ? 'Active' : 'Paused'}
+									</span>
+								</div>
 
-							<p class="url">{sub.url}</p>
+								<p class="url">{sub.url}</p>
 
-							<div class="meta">
-								<span>Profile: {sub.profile.name}</span>
-								<span>Check: {formatInterval(sub.checkInterval)}</span>
-								<span>Type: {sub.type}</span>
-								{#if sub.saveToLibrary}
-									<span class="library-tag">Library</span>
+								<div class="meta">
+									<span>Profile: {sub.profile.name}</span>
+									<span>Check: {formatInterval(sub.checkInterval)}</span>
+									<span>Type: {sub.type}</span>
+									{#if sub.saveToLibrary}
+										<span class="library-tag">Library</span>
+									{/if}
+								</div>
+
+								{#if sub.lastChecked}
+									<p class="text-muted text-sm">
+										Last checked: {new Date(sub.lastChecked).toLocaleString()}
+									</p>
 								{/if}
-							</div>
 
-							{#if sub.lastChecked}
-								<p class="text-muted text-sm">
-									Last checked: {new Date(sub.lastChecked).toLocaleString()}
-								</p>
+								{#if checkResult && checkResult.id === sub.id}
+									<p class="check-result">{checkResult.message}</p>
+								{/if}
+
+								<div class="actions">
+									<button
+										class="btn btn-sm btn-primary"
+										onclick={() => checkNow(sub.id)}
+										disabled={checkingNow.has(sub.id)}
+									>
+										{checkingNow.has(sub.id) ? 'Checking...' : 'Check Now'}
+									</button>
+									<button class="btn btn-sm btn-secondary" onclick={() => startEditSub(sub)}>
+										Edit
+									</button>
+									<button
+										class="btn btn-sm btn-secondary"
+										onclick={() => (showBackfillMenu = showBackfillMenu === sub.id ? null : sub.id)}
+									>
+										Backfill
+									</button>
+									<button
+										class="btn btn-sm btn-secondary"
+										onclick={() => toggleSubscription(sub.id, sub.enabled)}
+									>
+										{sub.enabled ? 'Pause' : 'Resume'}
+									</button>
+									<button class="btn btn-sm btn-danger" onclick={() => deleteSubscription(sub.id)}>
+										Delete
+									</button>
+								</div>
+
+								{#if showBackfillMenu === sub.id}
+									<div class="backfill-menu">
+										<div class="backfill-option">
+											<label for="backfill-date-{sub.id}">Download videos from:</label>
+											<div class="backfill-date-row">
+												<input type="date" id="backfill-date-{sub.id}" bind:value={backfillDate} />
+												<button
+													class="btn btn-sm btn-primary"
+													disabled={!backfillDate || backfillingSub === sub.id}
+													onclick={() => backfillFromDate(sub.id)}
+												>
+													{backfillingSub === sub.id ? 'Working...' : 'Go'}
+												</button>
+											</div>
+										</div>
+										<button
+											class="btn btn-sm btn-secondary"
+											disabled={backfillingSub === sub.id}
+											onclick={() => backfillAll(sub.id)}
+										>
+											Download All Videos
+										</button>
+									</div>
+								{/if}
 							{/if}
-
-							{#if checkResult && checkResult.id === sub.id}
-								<p class="check-result">{checkResult.message}</p>
-							{/if}
-
-							<div class="actions">
-								<button
-									class="btn btn-sm btn-primary"
-									onclick={() => checkNow(sub.id)}
-									disabled={checkingNow.has(sub.id)}
-								>
-									{checkingNow.has(sub.id) ? 'Checking...' : 'Check Now'}
-								</button>
-								<button
-									class="btn btn-sm btn-secondary"
-									onclick={() => toggleSubscription(sub.id, sub.enabled)}
-								>
-									{sub.enabled ? 'Pause' : 'Resume'}
-								</button>
-								<button class="btn btn-sm btn-danger" onclick={() => deleteSubscription(sub.id)}>
-									Delete
-								</button>
-							</div>
 						</div>
 					{/each}
 				</div>
@@ -695,54 +914,97 @@
 				<div class="content-grid">
 					{#each monitors as monitor}
 						<div class="content-card" class:live={monitor.isLive}>
-							<div class="card-header">
-								<h3>{monitor.name}</h3>
-								{#if monitor.isLive}
-									<span class="live-badge">LIVE</span>
-								{:else if monitor.enabled}
-									<span class="status enabled">Monitoring</span>
-								{:else}
-									<span class="status">Paused</span>
+							{#if editingMonitor?.id === monitor.id}
+								<div class="edit-form">
+									<div class="form-row">
+										<div class="form-group">
+											<label>Name</label>
+											<input type="text" bind:value={editMonName} />
+										</div>
+										<div class="form-group">
+											<label>URL</label>
+											<input type="url" bind:value={editMonUrl} />
+										</div>
+									</div>
+									<div class="form-row">
+										<div class="form-group">
+											<label>Type</label>
+											<select bind:value={editMonType}>
+												<option value="YOUTUBE_LIVE">YouTube Live</option>
+												<option value="TWITCH">Twitch</option>
+											</select>
+										</div>
+										<div class="form-group">
+											<label>Profile</label>
+											<select bind:value={editMonProfileId}>
+												{#each profiles as profile}
+													<option value={profile.id}>{profile.name}</option>
+												{/each}
+											</select>
+										</div>
+									</div>
+									<label class="checkbox-label">
+										<input type="checkbox" bind:checked={editMonAutoDownload} />
+										Auto-download when live
+									</label>
+									<div class="actions">
+										<button class="btn btn-sm btn-primary" onclick={saveEditMonitor}>Save</button>
+										<button class="btn btn-sm btn-secondary" onclick={cancelEditMonitor}>Cancel</button>
+									</div>
+								</div>
+							{:else}
+								<div class="card-header">
+									<h3>{monitor.name}</h3>
+									{#if monitor.isLive}
+										<span class="live-badge">LIVE</span>
+									{:else if monitor.enabled}
+										<span class="status enabled">Monitoring</span>
+									{:else}
+										<span class="status">Paused</span>
+									{/if}
+								</div>
+
+								<p class="url">{monitor.url}</p>
+
+								<div class="meta">
+									<span>Type: {monitor.type.replace('_', ' ')}</span>
+									<span>Profile: {monitor.profile.name}</span>
+								</div>
+
+								{#if monitor.waitTime && !monitor.isLive}
+									<div class="wait-info">
+										<span class="label">Goes live in:</span>
+										<span class="time">{formatWaitTime(monitor.waitTime)}</span>
+									</div>
 								{/if}
-							</div>
 
-							<p class="url">{monitor.url}</p>
+								{#if monitor.liveDate && !monitor.isLive}
+									<p class="text-muted text-sm">
+										Expected: {new Date(monitor.liveDate).toLocaleString()}
+									</p>
+								{/if}
 
-							<div class="meta">
-								<span>Type: {monitor.type.replace('_', ' ')}</span>
-								<span>Profile: {monitor.profile.name}</span>
-							</div>
+								{#if monitor.lastChecked}
+									<p class="text-muted text-sm">
+										Last checked: {new Date(monitor.lastChecked).toLocaleString()}
+									</p>
+								{/if}
 
-							{#if monitor.waitTime && !monitor.isLive}
-								<div class="wait-info">
-									<span class="label">Goes live in:</span>
-									<span class="time">{formatWaitTime(monitor.waitTime)}</span>
+								<div class="actions">
+									<button class="btn btn-sm btn-secondary" onclick={() => startEditMonitor(monitor)}>
+										Edit
+									</button>
+									<button
+										class="btn btn-sm btn-secondary"
+										onclick={() => toggleMonitor(monitor.id, monitor.enabled)}
+									>
+										{monitor.enabled ? 'Pause' : 'Resume'}
+									</button>
+									<button class="btn btn-sm btn-danger" onclick={() => deleteMonitor(monitor.id)}>
+										Delete
+									</button>
 								</div>
 							{/if}
-
-							{#if monitor.liveDate && !monitor.isLive}
-								<p class="text-muted text-sm">
-									Expected: {new Date(monitor.liveDate).toLocaleString()}
-								</p>
-							{/if}
-
-							{#if monitor.lastChecked}
-								<p class="text-muted text-sm">
-									Last checked: {new Date(monitor.lastChecked).toLocaleString()}
-								</p>
-							{/if}
-
-							<div class="actions">
-								<button
-									class="btn btn-sm btn-secondary"
-									onclick={() => toggleMonitor(monitor.id, monitor.enabled)}
-								>
-									{monitor.enabled ? 'Pause' : 'Resume'}
-								</button>
-								<button class="btn btn-sm btn-danger" onclick={() => deleteMonitor(monitor.id)}>
-									Delete
-								</button>
-							</div>
 						</div>
 					{/each}
 				</div>
@@ -957,6 +1219,46 @@
 	.content-card.live {
 		border-color: var(--error);
 		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.edit-form .form-row {
+		margin-bottom: 0;
+	}
+
+	.edit-form .form-group {
+		margin-bottom: 0;
+	}
+
+	.backfill-menu {
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-md);
+		background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.backfill-option label {
+		display: block;
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.backfill-date-row {
+		display: flex;
+		gap: var(--spacing-sm);
+		align-items: center;
+	}
+
+	.backfill-date-row input[type='date'] {
+		flex: 1;
 	}
 
 	.card-header {
