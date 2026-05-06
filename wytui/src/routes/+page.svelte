@@ -426,7 +426,7 @@
 						</div>
 					</div>
 					<div class="cache-usage-bar">
-						<div class="cache-usage-fill" class:warning={cacheUsage.percentage > 80} class:critical={cacheUsage.percentage > 95} style="width: {cacheUsage.percentage}%"></div>
+						<div class="cache-usage-fill" class:warning={cacheUsage.percentage > 80} class:critical={cacheUsage.percentage > 95} style="width: max({cacheUsage.percentage}%, {cacheUsage.percentage > 0 ? '4px' : '0px'})"></div>
 					</div>
 				</div>
 			{/if}

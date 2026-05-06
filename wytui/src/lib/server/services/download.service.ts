@@ -293,6 +293,7 @@ class DownloadService {
 			status: DownloadStatus.COMPLETED,
 			progress: 100,
 			completedAt: new Date(),
+			error: null,
 			...(filesize !== undefined && { filesize }),
 		});
 
