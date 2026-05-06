@@ -15,35 +15,29 @@ services:
       timeout: 5s
       retries: 5
 
-  migrate:
-    build: .
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/wytui?schema=public
-    depends_on:
-      db:
-        condition: service_healthy
-    command: sh -c "npx prisma migrate deploy"
-
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - downloads:/downloads
+      - library:/media
     ports:
-      - "3000:3000"
+      - "5173:5173"
+      - "5555:5555"
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/wytui?schema=public
       - AUTH_SECRET=${AUTH_SECRET:-your-auth-secret-change-in-production}
       - AUTH_TRUST_HOST=true
-      - ORIGIN=${ORIGIN:-http://localhost:3000}
-      - NODE_ENV=production
+      - NODE_ENV=development
       - ADMIN_USERNAME=${ADMIN_USERNAME:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-    volumes:
-      - downloads:/downloads
-      - library:/media
     depends_on:
       db:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && npm run dev -- --host 0.0.0.0"
 
 volumes:
   pgdata:

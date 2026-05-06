@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { prisma } from './db';
+import { hashPassword, invalidateUsersCache } from './auth';
 
 const DEFAULT_PROFILES = [
 	// Video Quality Presets (using H.264 for compatibility)
@@ -152,6 +153,27 @@ export async function ensureDefaults(): Promise<void> {
 			enableArchive: true,
 		},
 	});
+
+	// Auto-create admin from env vars to skip the setup wizard
+	const adminUsername = process.env.ADMIN_USERNAME;
+	const adminPassword = process.env.ADMIN_PASSWORD;
+	if (adminUsername && adminPassword) {
+		const userCount = await prisma.user.count();
+		if (userCount === 0) {
+			const hashedPassword = await hashPassword(adminPassword);
+			await prisma.user.create({
+				data: {
+					email: adminUsername,
+					password: hashedPassword,
+					name: 'Admin',
+					isAdmin: true,
+					emailVerified: new Date(),
+				},
+			});
+			invalidateUsersCache();
+			console.log(`[Init] Admin user created from environment variables`);
+		}
+	}
 
 	// Ensure every default system profile exists
 	for (const profile of DEFAULT_PROFILES) {

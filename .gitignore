@@ -18,6 +18,7 @@ pnpm-debug.log*
 build/
 dist/
 .output/
+.svelte-kit/
 
 # OS
 .DS_Store

@@ -5,19 +5,15 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 
 // Initialise database defaults and start background jobs on server startup
-let initialised = false;
-if (!initialised) {
-	ensureDefaults().catch((error) => {
-		console.error('Failed to initialize database defaults:', error);
+const initPromise = ensureDefaults()
+	.then(() => jobScheduler.start())
+	.catch((error) => {
+		console.error('Failed to initialize:', error);
 	});
-	jobScheduler.start().catch((error) => {
-		console.error('Failed to start background jobs:', error);
-	});
-	initialised = true;
-}
 
 // Session and protection middleware
 export const handle: Handle = async ({ event, resolve }) => {
+	await initPromise;
 	// Parse session from cookie
 	const sessionToken = event.cookies.get('wytui.session-token');
 
