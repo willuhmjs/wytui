@@ -5,7 +5,7 @@ import { sseEmitter } from '../sse/emitter';
 import { DownloadStatus } from '@prisma/client';
 import type { ChildProcess } from 'child_process';
 import type { Download } from '$lib/types';
-import { unlink } from 'fs/promises';
+import { unlink, stat } from 'fs/promises';
 import { libraryService } from './library.service';
 
 /**
@@ -280,10 +280,20 @@ class DownloadService {
 	 * Complete download
 	 */
 	private async completeDownload(downloadId: string): Promise<void> {
+		const current = await prisma.download.findUnique({ where: { id: downloadId } });
+		let filesize: bigint | undefined;
+		if (current?.filepath) {
+			try {
+				const st = await stat(current.filepath);
+				filesize = BigInt(st.size);
+			} catch {}
+		}
+
 		const download = await this.updateDownload(downloadId, {
 			status: DownloadStatus.COMPLETED,
 			progress: 100,
 			completedAt: new Date(),
+			...(filesize !== undefined && { filesize }),
 		});
 
 		// Add to archive if enabled
