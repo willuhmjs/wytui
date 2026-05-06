@@ -800,15 +800,15 @@
 									</button>
 									<button
 										class="btn btn-sm btn-secondary"
-										onclick={() => (showBackfillMenu = showBackfillMenu === sub.id ? null : sub.id)}
-									>
-										Backfill
-									</button>
-									<button
-										class="btn btn-sm btn-secondary"
 										onclick={() => toggleSubscription(sub.id, sub.enabled)}
 									>
 										{sub.enabled ? 'Pause' : 'Resume'}
+									</button>
+									<button
+										class="btn btn-sm btn-secondary"
+										onclick={() => (showBackfillMenu = showBackfillMenu === sub.id ? null : sub.id)}
+									>
+										{showBackfillMenu === sub.id ? 'Close' : 'Backfill'}
 									</button>
 									<button class="btn btn-sm btn-danger" onclick={() => deleteSubscription(sub.id)}>
 										Delete
@@ -818,7 +818,7 @@
 								{#if showBackfillMenu === sub.id}
 									<div class="backfill-menu">
 										<div class="backfill-option">
-											<label for="backfill-date-{sub.id}">Download videos from:</label>
+											<label for="backfill-date-{sub.id}">Download videos uploaded after:</label>
 											<div class="backfill-date-row">
 												<input type="date" id="backfill-date-{sub.id}" bind:value={backfillDate} />
 												<button
@@ -830,12 +830,14 @@
 												</button>
 											</div>
 										</div>
+										<div class="backfill-divider"></div>
 										<button
 											class="btn btn-sm btn-secondary"
+											style="width: 100%;"
 											disabled={backfillingSub === sub.id}
 											onclick={() => backfillAll(sub.id)}
 										>
-											Download All Videos
+											{backfillingSub === sub.id ? 'Working...' : 'Download Entire Channel'}
 										</button>
 									</div>
 								{/if}
@@ -1224,7 +1226,7 @@
 	.edit-form {
 		display: flex;
 		flex-direction: column;
-		gap: var(--spacing-md);
+		gap: var(--spacing-lg);
 	}
 
 	.edit-form .form-row {
@@ -1235,10 +1237,22 @@
 		margin-bottom: 0;
 	}
 
+	.edit-form .checkbox-row {
+		margin-bottom: 0;
+	}
+
+	.edit-form .checkbox-label {
+		margin-bottom: 0;
+	}
+
+	.edit-form .actions {
+		margin-top: 0;
+	}
+
 	.backfill-menu {
 		margin-top: var(--spacing-md);
-		padding: var(--spacing-md);
-		background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+		padding: var(--spacing-lg);
+		background: var(--bg-tertiary);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		display: flex;
@@ -1248,7 +1262,8 @@
 
 	.backfill-option label {
 		display: block;
-		margin-bottom: var(--spacing-xs);
+		margin-bottom: var(--spacing-sm);
+		font-size: 0.8125rem;
 	}
 
 	.backfill-date-row {
@@ -1259,6 +1274,11 @@
 
 	.backfill-date-row input[type='date'] {
 		flex: 1;
+	}
+
+	.backfill-divider {
+		height: 1px;
+		background: var(--border);
 	}
 
 	.card-header {
@@ -1476,6 +1496,7 @@
 
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--spacing-sm);
 		margin-top: var(--spacing-md);
 	}
@@ -1544,9 +1565,8 @@
 			flex-wrap: wrap;
 		}
 
-		.actions .btn {
-			flex: 1;
-			min-width: 0;
+		.backfill-menu {
+			padding: var(--spacing-md);
 		}
 
 		.section h2,
