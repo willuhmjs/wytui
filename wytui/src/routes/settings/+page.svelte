@@ -70,10 +70,32 @@
 	const SAVEABLE_FIELDS = ['maxConcurrentDownloads', 'downloadPath', 'ytdlpPath', 'autoUpdateYtdlp', 'updateCheckInterval', 'enableArchive', 'archivePath', 'authMode', 'libraryPath', 'cacheQuotaBytes', 'jellyfinUrl', 'jellyfinApiKey'];
 
 	let cacheQuotaGB = $derived(settings ? Number(BigInt(settings.cacheQuotaBytes || '10737418240')) / (1024 * 1024 * 1024) : 10);
+	let libraryEnabled = $derived(settings ? !!settings.libraryPath : false);
+	let jellyfinEnabled = $derived(settings ? !!(settings.jellyfinUrl || settings.jellyfinApiKey) : false);
 
 	function updateCacheQuota(gb: number) {
 		if (settings) {
 			settings.cacheQuotaBytes = String(Math.round(gb * 1024 * 1024 * 1024));
+		}
+	}
+
+	function toggleLibrary(enabled: boolean) {
+		if (!settings) return;
+		if (enabled) {
+			settings.libraryPath = settings.libraryPath || '/media';
+		} else {
+			settings.libraryPath = null;
+		}
+	}
+
+	function toggleJellyfin(enabled: boolean) {
+		if (!settings) return;
+		if (enabled) {
+			settings.jellyfinUrl = settings.jellyfinUrl || 'http://jellyfin:8096';
+			settings.jellyfinApiKey = settings.jellyfinApiKey || '';
+		} else {
+			settings.jellyfinUrl = null;
+			settings.jellyfinApiKey = null;
 		}
 	}
 
@@ -279,7 +301,58 @@
 		{#if activeTab === 'general' && settings}
 			<form onsubmit={(e) => { e.preventDefault(); saveSettings(); }}>
 				<div class="settings-section">
-					<h2>Downloads</h2>
+					<h2>Storage</h2>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="downloadPath">Cache Path</label>
+							<input
+								type="text"
+								id="downloadPath"
+								bind:value={settings.downloadPath}
+								readonly
+							/>
+							<p class="help-text">Temporary storage for downloads</p>
+						</div>
+
+						<div class="form-group">
+							<label for="cacheQuota">Cache Quota (GB)</label>
+							<input
+								type="number"
+								id="cacheQuota"
+								value={cacheQuotaGB}
+								oninput={(e) => updateCacheQuota(parseFloat(e.currentTarget.value) || 0)}
+								min="1"
+								step="1"
+							/>
+							<p class="help-text">Oldest downloads are auto-removed when exceeded</p>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label class="toggle-label">
+							<input
+								type="checkbox"
+								checked={libraryEnabled}
+								onchange={(e) => toggleLibrary(e.currentTarget.checked)}
+							/>
+							Enable Library
+						</label>
+						<p class="help-text">Save downloads permanently, organized by uploader</p>
+					</div>
+
+					{#if libraryEnabled}
+						<div class="form-group nested-field">
+							<label for="libraryPath">Library Path</label>
+							<input
+								type="text"
+								id="libraryPath"
+								bind:value={settings.libraryPath}
+								placeholder="/media"
+							/>
+						</div>
+					{/if}
+
 					<div class="form-group">
 						<label for="maxConcurrent">Max Concurrent Downloads</label>
 						<input
@@ -289,19 +362,59 @@
 							min="1"
 							max="10"
 						/>
-						<p class="help-text">Number of simultaneous downloads (1-10)</p>
 					</div>
 
 					<div class="form-group">
-						<label for="downloadPath">Download Path</label>
-						<input
-							type="text"
-							id="downloadPath"
-							bind:value={settings.downloadPath}
-							readonly
-						/>
-						<p class="help-text">Location where files are saved</p>
+						<label>
+							<input
+								type="checkbox"
+								bind:checked={settings.enableArchive}
+							/>
+							Deduplicate downloads
+						</label>
+						<p class="help-text">Track downloaded videos to prevent re-downloading the same content</p>
 					</div>
+				</div>
+
+				<div class="settings-section">
+					<h2>Jellyfin</h2>
+
+					<div class="form-group">
+						<label class="toggle-label">
+							<input
+								type="checkbox"
+								checked={jellyfinEnabled}
+								onchange={(e) => toggleJellyfin(e.currentTarget.checked)}
+							/>
+							Enable Jellyfin Integration
+						</label>
+						<p class="help-text">Triggers a library scan when downloads are saved to library</p>
+					</div>
+
+					{#if jellyfinEnabled}
+						<div class="form-row nested-field">
+							<div class="form-group">
+								<label for="jellyfinUrl">Server URL</label>
+								<input
+									type="text"
+									id="jellyfinUrl"
+									bind:value={settings.jellyfinUrl}
+									placeholder="http://jellyfin:8096"
+								/>
+							</div>
+
+							<div class="form-group">
+								<label for="jellyfinApiKey">API Key</label>
+								<input
+									type="password"
+									id="jellyfinApiKey"
+									bind:value={settings.jellyfinApiKey}
+									placeholder="Enter API key"
+								/>
+								<p class="help-text">Dashboard > API Keys in Jellyfin</p>
+							</div>
+						</div>
+					{/if}
 				</div>
 
 				<div class="settings-section">
@@ -312,9 +425,8 @@
 								type="checkbox"
 								bind:checked={settings.autoUpdateYtdlp}
 							/>
-							Auto-update yt-dlp binary
+							Auto-update yt-dlp
 						</label>
-						<p class="help-text">Automatically update yt-dlp when new versions are available</p>
 					</div>
 
 					{#if settings.ytdlpVersion}
@@ -322,72 +434,6 @@
 							<strong>Current version:</strong> {settings.ytdlpVersion}
 						</div>
 					{/if}
-				</div>
-
-				<div class="settings-section">
-					<h2>Archive</h2>
-					<div class="form-group">
-						<label>
-							<input
-								type="checkbox"
-								bind:checked={settings.enableArchive}
-							/>
-							Enable download archive
-						</label>
-						<p class="help-text">Track downloaded videos to prevent re-downloading</p>
-					</div>
-				</div>
-
-				<div class="settings-section">
-					<h2>Library & Cache</h2>
-					<div class="form-group">
-						<label for="libraryPath">Library Path</label>
-						<input
-							type="text"
-							id="libraryPath"
-							bind:value={settings.libraryPath}
-							placeholder="/media/youtube"
-						/>
-						<p class="help-text">Path to your media library (e.g., Jellyfin library folder). Leave empty to disable library feature.</p>
-					</div>
-
-					<div class="form-group">
-						<label for="cacheQuota">Cache Quota (GB)</label>
-						<input
-							type="number"
-							id="cacheQuota"
-							value={cacheQuotaGB}
-							oninput={(e) => updateCacheQuota(parseFloat(e.currentTarget.value) || 0)}
-							min="1"
-							step="1"
-						/>
-						<p class="help-text">Maximum storage for cached downloads. Oldest downloads are removed when quota is exceeded.</p>
-					</div>
-				</div>
-
-				<div class="settings-section">
-					<h2>Jellyfin Integration</h2>
-					<div class="form-group">
-						<label for="jellyfinUrl">Jellyfin URL</label>
-						<input
-							type="text"
-							id="jellyfinUrl"
-							bind:value={settings.jellyfinUrl}
-							placeholder="http://jellyfin:8096"
-						/>
-						<p class="help-text">Optional. Triggers a library scan when files are saved to library.</p>
-					</div>
-
-					<div class="form-group">
-						<label for="jellyfinApiKey">Jellyfin API Key</label>
-						<input
-							type="password"
-							id="jellyfinApiKey"
-							bind:value={settings.jellyfinApiKey}
-							placeholder="Enter API key"
-						/>
-						<p class="help-text">Generate an API key in Jellyfin under Dashboard > API Keys.</p>
-					</div>
 				</div>
 
 				{#if settings.oidcConfigured}
@@ -662,6 +708,32 @@
 	.settings-section h2 {
 		font-size: 1.25rem;
 		margin-bottom: var(--spacing-lg);
+	}
+
+	.form-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--spacing-lg);
+	}
+
+	@media (max-width: 600px) {
+		.form-row {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.toggle-label {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	.nested-field {
+		margin-left: var(--spacing-xl);
+		padding-left: var(--spacing-lg);
+		border-left: 2px solid rgba(255, 255, 255, 0.1);
 	}
 
 	.form-group {
