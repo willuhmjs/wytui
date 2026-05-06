@@ -5,6 +5,7 @@ import { sseEmitter } from '../sse/emitter';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
+import { access } from 'fs/promises';
 
 class SubscriptionService {
 	private scheduledTasks = new Map<string, ScheduledTask>();
@@ -188,7 +189,24 @@ class SubscriptionService {
 				where: { videoId: video.id },
 			});
 
-			if (archived) continue;
+			if (archived) {
+				const download = await prisma.download.findFirst({
+					where: { url: video.url, status: 'COMPLETED' },
+					select: { id: true, filepath: true },
+				});
+
+				if (download?.filepath) {
+					try {
+						await access(download.filepath);
+						continue;
+					} catch {
+						await prisma.archive.delete({ where: { videoId: video.id } });
+						await prisma.download.delete({ where: { id: download.id } });
+					}
+				} else {
+					continue;
+				}
+			}
 
 			const existingDownload = await prisma.download.findFirst({
 				where: {
