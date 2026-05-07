@@ -64,6 +64,22 @@
 		}
 	}
 
+	async function retryDownload() {
+		try {
+			const body: any = { url: download.url, profileId: download.profileId };
+			if (download.storagePool === 'library') body.saveToLibrary = true;
+			if (download.customFlags?.length) body.customFlags = download.customFlags;
+			await fetch('/api/downloads', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			await fetch(`/api/downloads/${download.id}`, { method: 'DELETE' });
+		} catch (e) {
+			console.error('Failed to retry:', e);
+		}
+	}
+
 	let promoting = $state(false);
 
 	async function promoteToLibrary() {
@@ -211,6 +227,12 @@
 						Open in Jellyfin
 					</a>
 				{/if}
+			{/if}
+
+			{#if download.status === 'FAILED' || download.status === 'CANCELLED'}
+				<button class="btn btn-sm btn-primary" onclick={retryDownload}>
+					Retry
+				</button>
 			{/if}
 
 			{#if download.status === 'COMPLETED' || download.status === 'FAILED' || download.status === 'CANCELLED'}

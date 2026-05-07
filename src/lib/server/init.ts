@@ -175,6 +175,22 @@ export async function ensureDefaults(): Promise<void> {
 		}
 	}
 
+	// Reset orphaned downloads that were active when the server last shut down
+	const orphaned = await prisma.download.updateMany({
+		where: {
+			status: {
+				in: ['DOWNLOADING', 'PROCESSING', 'FETCHING_INFO'],
+			},
+		},
+		data: {
+			status: 'FAILED',
+			error: 'Interrupted by server restart',
+		},
+	});
+	if (orphaned.count > 0) {
+		console.log(`[Init] Reset ${orphaned.count} orphaned download(s) to FAILED`);
+	}
+
 	// Ensure every default system profile exists
 	for (const profile of DEFAULT_PROFILES) {
 		const existing = await prisma.downloadProfile.findFirst({
