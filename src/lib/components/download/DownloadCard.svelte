@@ -6,6 +6,7 @@
 
 	let progressPercent = $derived(download.progress?.toFixed(1) || 0);
 	let statusColor = $derived(getStatusColor(download.status));
+	let mediaType = $derived(download.filename?.split('.').pop()?.toUpperCase() || null);
 
 	function getStatusColor(status: string) {
 		const colors: Record<string, string> = {
@@ -123,6 +124,9 @@
 		<div class="header">
 			<h3>{download.title || download.url}</h3>
 			<div class="header-badges">
+				{#if mediaType}
+					<span class="media-badge">{mediaType}</span>
+				{/if}
 				{#if download.status === 'COMPLETED'}
 					<span class="pool-badge" class:library={download.storagePool === 'library'}>
 						{download.storagePool === 'library' ? 'Library' : 'Cache'}
@@ -261,6 +265,17 @@
 		align-items: center;
 		gap: var(--spacing-xs);
 		flex-shrink: 0;
+	}
+
+	.media-badge {
+		font-size: 0.625rem;
+		font-weight: 600;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		letter-spacing: 0.05em;
+		background: rgba(99, 102, 241, 0.15);
+		color: var(--accent-primary);
+		font-family: monospace;
 	}
 
 	.pool-badge {

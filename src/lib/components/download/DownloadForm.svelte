@@ -13,6 +13,10 @@
   let showSaveDialog = $state(false);
   let newProfileName = $state("");
 
+  // Basic mode stackable options
+  let basicOptions = $state({ sponsorblock: false, subtitles: false, metadata: false });
+  let audioQuality = $state("0");
+
   // Advanced flag state
   let flags = $state<Record<string, { enabled: boolean; value: string }>>({});
 
@@ -716,6 +720,27 @@
     expandedCategories = next;
   }
 
+  function buildBasicFlags(): string[] {
+    const result: string[] = [];
+    if (basicOptions.sponsorblock) {
+      result.push("--sponsorblock-remove", "sponsor,selfpromo");
+    }
+    if (basicOptions.subtitles) {
+      result.push("--write-subs", "--embed-subs", "--sub-langs", "en");
+    }
+    if (basicOptions.metadata) {
+      result.push("--embed-metadata", "--embed-chapters");
+    }
+    if (saveToLibrary) {
+      result.push("--write-thumbnail");
+    }
+    const profile = profiles.find((p: any) => p.id === selectedProfileId);
+    if (profile && !profile.audioOnly && audioQuality !== "0") {
+      result.push("--audio-quality", audioQuality);
+    }
+    return result;
+  }
+
   function buildCustomFlags(): string[] {
     const result: string[] = [];
     for (const cat of FLAG_DEFINITIONS) {
@@ -819,6 +844,9 @@
       if (advancedMode) {
         const cf = buildCustomFlags();
         if (cf.length > 0) body.customFlags = cf;
+      } else {
+        const bf = buildBasicFlags();
+        if (bf.length > 0) body.customFlags = bf;
       }
 
       const res = await fetch("/api/downloads", {
@@ -912,6 +940,10 @@
     profiles.filter((p: any) => p.isSystem && p.audioOnly).slice(0, 3),
   );
   let customProfiles = $derived(profiles.filter((p: any) => !p.isSystem));
+  let selectedIsVideoProfile = $derived(() => {
+    const profile = profiles.find((p: any) => p.id === selectedProfileId);
+    return profile && !profile.audioOnly;
+  });
 </script>
 
 <div class="download-form">
@@ -985,6 +1017,52 @@
             {/each}
           </div>
         </div>
+
+        <div class="profile-group">
+          <span class="profile-group-label">Options</span>
+          <div class="profile-buttons">
+            <button
+              type="button"
+              class="profile-btn option-chip"
+              class:active={basicOptions.sponsorblock}
+              onclick={() => basicOptions.sponsorblock = !basicOptions.sponsorblock}
+              disabled={loading}
+            >
+              SponsorBlock
+            </button>
+            <button
+              type="button"
+              class="profile-btn option-chip"
+              class:active={basicOptions.subtitles}
+              onclick={() => basicOptions.subtitles = !basicOptions.subtitles}
+              disabled={loading}
+            >
+              Subtitles
+            </button>
+            <button
+              type="button"
+              class="profile-btn option-chip"
+              class:active={basicOptions.metadata}
+              onclick={() => basicOptions.metadata = !basicOptions.metadata}
+              disabled={loading}
+            >
+              Metadata
+            </button>
+          </div>
+        </div>
+
+        {#if selectedIsVideoProfile()}
+          <div class="profile-group">
+            <span class="profile-group-label">Audio Quality</span>
+            <div class="audio-quality-select">
+              <select bind:value={audioQuality} disabled={loading}>
+                <option value="0">High</option>
+                <option value="5">Medium</option>
+                <option value="9">Low</option>
+              </select>
+            </div>
+          </div>
+        {/if}
       </div>
     {:else if customProfiles.length > 0}
       <div class="profile-quick-select">
@@ -1399,6 +1477,41 @@
         0 0,
         300% 0;
     }
+  }
+
+  .option-chip {
+    font-size: 0.8125rem;
+  }
+
+  .option-chip.active {
+    background: transparent;
+    border: 2px solid transparent;
+    background-image:
+      linear-gradient(var(--bg-tertiary), var(--bg-tertiary)),
+      linear-gradient(90deg, #7c3aed, #ec4899, #3b82f6, #7c3aed);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-size:
+      100%,
+      300% 100%;
+    animation: rgb-border 8s linear infinite;
+    color: var(--text-primary);
+  }
+
+  .audio-quality-select select {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .audio-quality-select select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
   }
 
   .profile-btn.custom {

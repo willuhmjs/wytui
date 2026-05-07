@@ -251,6 +251,13 @@ export class YtdlpService {
 								onProgress({ type: 'destination', filepath: match[1].trim() });
 							}
 						}
+						// Post-processing destination (e.g. ExtractAudio, FFmpegVideoConvertor)
+						else if (line.match(/\[[\w]+\] Destination:/)) {
+							const match = line.match(/\[[\w]+\] Destination: (.+)/);
+							if (match && onProgress) {
+								onProgress({ type: 'destination', filepath: match[1].trim() });
+							}
+						}
 					}
 				}
 			});
