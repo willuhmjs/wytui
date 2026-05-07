@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { statfs } from 'fs/promises';
 import { prisma } from './db';
 import { hashPassword, invalidateUsersCache } from './auth';
+import { downloadService } from './services/download.service';
 
 const DEFAULT_PROFILES = [
 	// Video Quality Presets (using H.264 for compatibility)
@@ -200,6 +201,18 @@ export async function ensureDefaults(): Promise<void> {
 	});
 	if (orphaned.count > 0) {
 		console.log(`[Init] Reset ${orphaned.count} orphaned download(s) to FAILED`);
+	}
+
+	// Resume downloads that were PENDING when the server shut down
+	const pending = await prisma.download.findMany({
+		where: { status: 'PENDING' },
+		orderBy: { createdAt: 'asc' },
+	});
+	if (pending.length > 0) {
+		console.log(`[Init] Resuming ${pending.length} pending download(s)`);
+		for (const dl of pending) {
+			downloadService.resumeDownload(dl.id, dl.userId ?? undefined);
+		}
 	}
 
 	// Ensure every default system profile exists

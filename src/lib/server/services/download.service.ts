@@ -467,6 +467,19 @@ class DownloadService {
 	}
 
 	/**
+	 * Resume a PENDING download (e.g. after server restart)
+	 */
+	resumeDownload(downloadId: string, userId?: string): void {
+		if (userId) {
+			this.downloadOwners.set(downloadId, userId);
+		}
+		this.processDownload(downloadId).catch((error) => {
+			console.error(`Failed to resume download ${downloadId}:`, error);
+			this.handleDownloadError(downloadId, error.message);
+		});
+	}
+
+	/**
 	 * Get download by ID
 	 */
 	async getDownload(downloadId: string): Promise<Download | null> {
