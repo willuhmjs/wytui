@@ -12,6 +12,7 @@ class LibraryService {
 	async promoteToLibrary(downloadId: string): Promise<void> {
 		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
+			include: { profile: true },
 		});
 
 		if (!download) throw new Error('Download not found');
@@ -19,16 +20,19 @@ class LibraryService {
 		if (!download.filepath) throw new Error('No file path');
 
 		const settings = await this.getSettings();
-		if (!settings.libraryPath) throw new Error('Library path not configured');
 
-		const resolvedLibrary = resolve(settings.libraryPath);
+		const isAudio = download.profile?.audioOnly ?? false;
+		const targetLibrary = (isAudio && settings.musicLibraryPath) || settings.libraryPath;
+		if (!targetLibrary) throw new Error('Library path not configured');
+
+		const resolvedLibrary = resolve(targetLibrary);
 		const resolvedFile = resolve(download.filepath);
 		if (resolvedFile.startsWith(resolvedLibrary + '/')) {
 			throw new Error('Already in library');
 		}
 
 		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
-		const destDir = resolve(settings.libraryPath, uploaderDir);
+		const destDir = resolve(targetLibrary, uploaderDir);
 		if (!destDir.startsWith(resolvedLibrary)) {
 			throw new Error('Invalid uploader name');
 		}
@@ -58,7 +62,7 @@ class LibraryService {
 			// Original may already be gone
 		}
 
-		if (download.thumbnail) {
+		if (download.thumbnail && !isAudio) {
 			try {
 				const thumbRes = await fetch(download.thumbnail);
 				if (thumbRes.ok) {

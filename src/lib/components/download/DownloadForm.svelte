@@ -731,10 +731,10 @@
     if (basicOptions.metadata) {
       result.push("--embed-metadata", "--embed-chapters");
     }
-    if (saveToLibrary) {
+    const profile = profiles.find((p: any) => p.id === selectedProfileId);
+    if (saveToLibrary && !(profile?.audioOnly)) {
       result.push("--write-thumbnail");
     }
-    const profile = profiles.find((p: any) => p.id === selectedProfileId);
     if (profile && !profile.audioOnly && audioQuality !== "0") {
       result.push("--audio-quality", audioQuality);
     }
@@ -824,7 +824,7 @@
     }
     if (settingsRes.ok) {
       const settings = await settingsRes.json();
-      libraryConfigured = !!settings.libraryPath;
+      libraryConfigured = !!(settings.libraryPath || settings.musicLibraryPath);
     }
   });
 

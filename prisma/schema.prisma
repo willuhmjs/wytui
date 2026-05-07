@@ -270,6 +270,7 @@ model Settings {
 
   // Library & cache
   libraryPath     String?
+  musicLibraryPath String?
   cacheQuotaBytes BigInt    @default(10737418240) // 10 GB
 
   // Jellyfin integration

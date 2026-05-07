@@ -15,6 +15,7 @@ const ALLOWED_SETTINGS_FIELDS = new Set([
 	'archivePath',
 	'authMode',
 	'libraryPath',
+	'musicLibraryPath',
 	'cacheQuotaBytes',
 	'jellyfinUrl',
 	'jellyfinApiKey',
@@ -39,6 +40,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		if (!locals.session.user.isAdmin) {
 			return json({
 				libraryPath: settings.libraryPath,
+				musicLibraryPath: settings.musicLibraryPath,
 				cacheQuotaBytes: settings.cacheQuotaBytes.toString(),
 			});
 		}
@@ -100,6 +102,14 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 				throw error(400, 'Invalid library path');
 			}
 			updates.libraryPath = normalized;
+		}
+
+		if (updates.musicLibraryPath !== undefined && updates.musicLibraryPath !== null) {
+			const normalized = normalize(resolve(updates.musicLibraryPath));
+			if (normalized.includes('..')) {
+				throw error(400, 'Invalid music library path');
+			}
+			updates.musicLibraryPath = normalized;
 		}
 
 		if (updates.cacheQuotaBytes !== undefined) {

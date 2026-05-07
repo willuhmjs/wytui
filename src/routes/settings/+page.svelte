@@ -67,7 +67,7 @@
 		}
 	}
 
-	const SAVEABLE_FIELDS = ['maxConcurrentDownloads', 'downloadPath', 'ytdlpPath', 'autoUpdateYtdlp', 'updateCheckInterval', 'enableArchive', 'archivePath', 'authMode', 'libraryPath', 'cacheQuotaBytes', 'jellyfinUrl', 'jellyfinApiKey'];
+	const SAVEABLE_FIELDS = ['maxConcurrentDownloads', 'downloadPath', 'ytdlpPath', 'autoUpdateYtdlp', 'updateCheckInterval', 'enableArchive', 'archivePath', 'authMode', 'libraryPath', 'musicLibraryPath', 'cacheQuotaBytes', 'jellyfinUrl', 'jellyfinApiKey'];
 
 	let cacheQuotaGB = $derived(settings ? Number(BigInt(settings.cacheQuotaBytes || '10737418240')) / (1024 * 1024 * 1024) : 10);
 	let libraryEnabled = $derived(settings ? !!settings.libraryPath : false);
@@ -85,6 +85,7 @@
 			settings.libraryPath = settings.libraryPath || '/media';
 		} else {
 			settings.libraryPath = null;
+			settings.musicLibraryPath = null;
 		}
 	}
 
@@ -365,13 +366,24 @@
 
 					{#if libraryEnabled}
 						<div class="form-group nested-field">
-							<label for="libraryPath">Library Path</label>
+							<label for="libraryPath">Video Library Path</label>
 							<input
 								type="text"
 								id="libraryPath"
 								bind:value={settings.libraryPath}
 								placeholder="/media"
 							/>
+						</div>
+
+						<div class="form-group nested-field">
+							<label for="musicLibraryPath">Music Library Path</label>
+							<input
+								type="text"
+								id="musicLibraryPath"
+								bind:value={settings.musicLibraryPath}
+								placeholder="/media/music"
+							/>
+							<p class="help-text">Audio-only downloads go here instead. Leave empty to use the video library path for everything.</p>
 						</div>
 					{/if}
 
