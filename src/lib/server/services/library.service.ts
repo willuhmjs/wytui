@@ -67,7 +67,7 @@ class LibraryService {
 				const thumbRes = await fetch(download.thumbnail);
 				if (thumbRes.ok) {
 					const thumbBase = basename(destPath, extname(destPath));
-					const thumbPath = join(destDir, thumbBase + '.jpg');
+					const thumbPath = join(destDir, thumbBase + '-thumb.jpg');
 					const buffer = Buffer.from(await thumbRes.arrayBuffer());
 					await writeFile(thumbPath, buffer);
 				}
