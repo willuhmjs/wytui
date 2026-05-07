@@ -165,6 +165,9 @@
 				const settings = await settingsRes.json();
 				libraryConfigured = !!settings.libraryPath;
 				jellyfinUrl = settings.jellyfinUrl || '';
+				if (libraryConfigured) {
+					subFormSaveToLibrary = true;
+				}
 			}
 		} catch (e) {
 			console.error('Failed to load profiles:', e);
