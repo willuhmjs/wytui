@@ -84,7 +84,7 @@
 	function buildOptionsFlags(opts: { sponsorblock: boolean; subtitles: boolean; metadata: boolean }, saveToLibrary = false): string[] {
 		const flags: string[] = [];
 		if (opts.sponsorblock) flags.push('--sponsorblock-remove', 'sponsor,selfpromo');
-		if (opts.subtitles) flags.push('--write-subs', '--embed-subs', '--sub-langs', 'en');
+		if (opts.subtitles) flags.push('--write-subs', '--write-auto-subs', '--embed-subs', '--sub-langs', 'en');
 		if (opts.metadata) flags.push('--embed-metadata', '--embed-chapters');
 		if (saveToLibrary) flags.push('--write-thumbnail');
 		return flags;
@@ -93,7 +93,7 @@
 	function parseOptionsFromFlags(flags: string[]): { sponsorblock: boolean; subtitles: boolean; metadata: boolean } {
 		return {
 			sponsorblock: flags.includes('--sponsorblock-remove'),
-			subtitles: flags.includes('--write-subs'),
+			subtitles: flags.includes('--write-subs') || flags.includes('--write-auto-subs'),
 			metadata: flags.includes('--embed-metadata'),
 		};
 	}

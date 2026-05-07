@@ -726,7 +726,7 @@
       result.push("--sponsorblock-remove", "sponsor,selfpromo");
     }
     if (basicOptions.subtitles) {
-      result.push("--write-subs", "--embed-subs", "--sub-langs", "en");
+      result.push("--write-subs", "--write-auto-subs", "--embed-subs", "--sub-langs", "en");
     }
     if (basicOptions.metadata) {
       result.push("--embed-metadata", "--embed-chapters");
