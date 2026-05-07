@@ -258,6 +258,28 @@ export class YtdlpService {
 								onProgress({ type: 'destination', filepath: match[1].trim() });
 							}
 						}
+
+						// Detect post-processing steps
+						const ppMatch = line.match(/^\[(\w+)\]\s+(.+)/);
+						if (ppMatch && onProgress) {
+							const module = ppMatch[1];
+							const detail = ppMatch[2];
+							const stepMap: Record<string, string> = {
+								'SponsorBlock': 'SponsorBlock',
+								'ModifyChapters': 'Removing chapters',
+								'Merger': 'Merging formats',
+								'Metadata': 'Embedding metadata',
+								'EmbedSubtitle': 'Embedding subtitles',
+								'EmbedThumbnail': 'Embedding thumbnail',
+								'ExtractAudio': 'Extracting audio',
+								'FFmpegVideoConvertor': 'Converting video',
+								'FFmpegMetadata': 'Embedding metadata',
+								'ThumbnailsConvertor': 'Converting thumbnail',
+							};
+							if (stepMap[module]) {
+								onProgress({ type: 'postprocess', step: stepMap[module] });
+							}
+						}
 					}
 				}
 			});

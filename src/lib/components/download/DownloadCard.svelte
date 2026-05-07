@@ -151,7 +151,7 @@
 			</div>
 		{/if}
 
-		{#if download.status === 'DOWNLOADING' || download.status === 'PROCESSING'}
+		{#if download.status === 'DOWNLOADING'}
 			<div class="progress">
 				<div class="progress-bar" style="width: {progressPercent}%"></div>
 			</div>
@@ -163,6 +163,15 @@
 				{#if download.eta}
 					<span>ETA: {download.eta}</span>
 				{/if}
+			</div>
+		{/if}
+
+		{#if download.status === 'PROCESSING'}
+			<div class="progress">
+				<div class="progress-bar indeterminate processing"></div>
+			</div>
+			<div class="progress-info">
+				<span>{download.processingStep || 'Processing...'}</span>
 			</div>
 		{/if}
 
@@ -362,6 +371,18 @@
 
 	.progress-bar.indeterminate::after {
 		display: none;
+	}
+
+	.progress-bar.indeterminate.processing {
+		background: linear-gradient(
+			90deg,
+			var(--bg-tertiary) 0%,
+			var(--warning) 25%,
+			var(--warning) 75%,
+			var(--bg-tertiary) 100%
+		);
+		background-size: 200% 100%;
+		animation: indeterminate 1.5s ease-in-out infinite;
 	}
 
 	@keyframes indeterminate {

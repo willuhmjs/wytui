@@ -235,6 +235,8 @@ class DownloadService {
 	/**
 	 * Handle progress updates from yt-dlp
 	 */
+	private processingStatus = new Set<string>();
+
 	private handleProgress(downloadId: string, data: any): void {
 		// Handle file destination info
 		if (data.type === 'destination' && data.filepath) {
@@ -247,6 +249,24 @@ class DownloadService {
 				filename,
 				filepath,
 			});
+			return;
+		}
+
+		// Handle post-processing step
+		if (data.type === 'postprocess' && data.step) {
+			if (!this.processingStatus.has(downloadId)) {
+				this.processingStatus.add(downloadId);
+				this.updateDownload(downloadId, {
+					status: DownloadStatus.PROCESSING,
+					speed: null,
+					eta: null,
+				});
+			}
+			this.emitToOwner('download:progress', {
+				id: downloadId,
+				status: 'PROCESSING',
+				processingStep: data.step,
+			}, downloadId);
 			return;
 		}
 
@@ -323,6 +343,7 @@ class DownloadService {
 			}
 		}
 
+		this.processingStatus.delete(downloadId);
 		this.emitToOwner('download:complete', { id: downloadId, download }, downloadId);
 		this.downloadOwners.delete(downloadId);
 
@@ -370,6 +391,7 @@ class DownloadService {
 					error,
 				});
 
+				this.processingStatus.delete(downloadId);
 				this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
 				this.downloadOwners.delete(downloadId);
 			}
@@ -404,6 +426,7 @@ class DownloadService {
 			status: DownloadStatus.CANCELLED,
 		});
 
+		this.processingStatus.delete(downloadId);
 		this.emitToOwner('download:cancelled', { id: downloadId }, downloadId);
 		this.downloadOwners.delete(downloadId);
 	}
