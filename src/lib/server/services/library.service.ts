@@ -32,28 +32,31 @@ class LibraryService {
 		}
 
 		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
-		const destDir = resolve(targetLibrary, uploaderDir);
-		if (!destDir.startsWith(resolvedLibrary)) {
-			throw new Error('Invalid uploader name');
-		}
-		await mkdir(destDir, { recursive: true });
-
 		const ext = extname(download.filepath);
 		const baseFilename = download.title
 			? sanitizeFilename(download.title)
 			: basename(download.filepath, ext);
-		let destPath = join(destDir, baseFilename + ext);
+
+		let videoDir = resolve(targetLibrary, uploaderDir, baseFilename);
+		if (!videoDir.startsWith(resolvedLibrary)) {
+			throw new Error('Invalid uploader name');
+		}
 
 		let suffix = 1;
 		while (true) {
 			try {
-				await access(destPath);
-				destPath = join(destDir, `${baseFilename} (${suffix})${ext}`);
+				await access(videoDir);
+				videoDir = resolve(targetLibrary, uploaderDir, `${baseFilename} (${suffix})`);
 				suffix++;
 			} catch {
 				break;
 			}
 		}
+
+		await mkdir(videoDir, { recursive: true });
+
+		const destFilename = basename(videoDir);
+		let destPath = join(videoDir, destFilename + ext);
 
 		await copyFile(download.filepath, destPath);
 		try {
@@ -66,8 +69,7 @@ class LibraryService {
 			try {
 				const thumbRes = await fetch(download.thumbnail);
 				if (thumbRes.ok) {
-					const thumbBase = basename(destPath, extname(destPath));
-					const thumbPath = join(destDir, thumbBase + '-thumb.jpg');
+					const thumbPath = join(videoDir, 'cover.jpg');
 					const buffer = Buffer.from(await thumbRes.arrayBuffer());
 					await writeFile(thumbPath, buffer);
 				}
