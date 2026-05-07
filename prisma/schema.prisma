@@ -126,6 +126,9 @@ model Download {
   filename    String?
   filepath    String?   // Absolute path on server
 
+  // Per-download flag overrides (from advanced mode)
+  customFlags String[]
+
   // Error handling
   error       String?
   retryCount  Int       @default(0)

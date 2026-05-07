@@ -9,7 +9,7 @@ import type { RequestHandler } from './$types';
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
-		const { url, profileId, saveToLibrary } = await request.json();
+		const { url, profileId, saveToLibrary, customFlags } = await request.json();
 
 		if (!url || !profileId) {
 			throw error(400, 'Missing required fields: url, profileId');
@@ -25,6 +25,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			throw error(400, 'Invalid URL format');
 		}
 
+		const flags: string[] = Array.isArray(customFlags) ? customFlags : [];
+
 		const userId = locals.session?.user?.id;
 
 		// Verify profile exists and user has access
@@ -37,7 +39,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!profile.isSystem && profile.userId !== userId) {
 			throw error(403, 'Cannot use another user\'s profile');
 		}
-		const download = await downloadService.createDownload(url, profileId, userId, undefined, !!saveToLibrary);
+		const download = await downloadService.createDownload(url, profileId, userId, undefined, !!saveToLibrary, flags);
 
 		return json(download, { status: 201 });
 	} catch (e: any) {

@@ -54,13 +54,22 @@ class DownloadService {
 		profileId: string,
 		userId?: string,
 		subscriptionId?: string,
-		saveToLibrary?: boolean
+		saveToLibrary?: boolean,
+		customFlags?: string[]
 	): Promise<Download> {
 		console.log('[DownloadService] Creating download:', { url, profileId, userId });
 
 		// Validate URL
 		if (!url || !url.startsWith('http')) {
 			throw new Error('Invalid URL');
+		}
+
+		// Validate custom flags
+		if (customFlags?.length) {
+			const badFlag = ytdlpService.findDangerousFlag(customFlags);
+			if (badFlag) {
+				throw new Error(`Forbidden flag: ${badFlag}`);
+			}
 		}
 
 		const existing = await prisma.download.findFirst({
@@ -84,6 +93,7 @@ class DownloadService {
 				userId,
 				subscriptionId,
 				storagePool: saveToLibrary ? 'library' : 'cache',
+				customFlags: customFlags ?? [],
 			},
 			include: {
 				profile: true,
@@ -184,11 +194,12 @@ class DownloadService {
 		const settings = await this.getSettings();
 		const outputPath = settings.downloadPath;
 
-		// Build yt-dlp arguments
+		// Build yt-dlp arguments (merge profile flags with per-download overrides)
+		const mergedFlags = [...download.profile.customFlags, ...download.customFlags];
 		const args = ytdlpService.buildArgs(
 			download.url,
 			outputPath,
-			download.profile.customFlags
+			mergedFlags
 		);
 
 		// Spawn download process

@@ -30,7 +30,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 /**
  * POST /api/profiles
- * Create custom profile
+ * Create or update custom profile (upserts by name per user)
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
@@ -53,26 +53,40 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		}
 
-		const profile = await prisma.downloadProfile.create({
-			data: {
-				name: body.name,
-				description: body.description || null,
-				format: body.format || null,
-				quality: body.quality || null,
-				codec: body.codec || null,
-				audioOnly: body.audioOnly === true,
-				audioFormat: body.audioFormat || null,
-				audioBitrate: body.audioBitrate || null,
-				customFlags,
-				userId,
-				isSystem: false,
-				isDefault: false,
-			},
+		const existing = await prisma.downloadProfile.findFirst({
+			where: { userId, name: body.name },
 		});
 
-		return json(profile, { status: 201 });
+		if (existing && existing.userId !== userId) {
+			throw error(403, 'Cannot modify another user\'s profile');
+		}
+
+		const data = {
+			name: body.name,
+			description: body.description || null,
+			format: body.format || null,
+			quality: body.quality || null,
+			codec: body.codec || null,
+			audioOnly: body.audioOnly === true,
+			audioFormat: body.audioFormat || null,
+			audioBitrate: body.audioBitrate || null,
+			customFlags,
+			userId,
+			isSystem: false,
+			isDefault: false,
+		};
+
+		const profile = existing
+			? await prisma.downloadProfile.update({
+					where: { id: existing.id },
+					data,
+				})
+			: await prisma.downloadProfile.create({ data });
+
+		return json(profile, { status: existing ? 200 : 201 });
 	} catch (e: any) {
 		console.error('Failed to create profile:', e);
+		if (e.status) throw e;
 		throw error(500, e.message || 'Failed to create profile');
 	}
 };
