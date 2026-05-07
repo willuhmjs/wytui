@@ -2,7 +2,7 @@
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import type { Download } from '$lib/types';
 
-	let { download, jellyfinUrl = '' }: { download: Download; jellyfinUrl?: string } = $props();
+	let { download, jellyfinUrl = '' }: { download: Download & { processingStep?: string }; jellyfinUrl?: string } = $props();
 
 	let progressPercent = $derived(download.progress?.toFixed(1) || 0);
 	let statusColor = $derived(getStatusColor(download.status));
