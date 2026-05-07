@@ -981,6 +981,24 @@
       ></textarea>
     </div>
 
+    {#if libraryConfigured}
+      <label class="checkbox-label library-toggle">
+        <input
+          type="checkbox"
+          bind:checked={saveToLibrary}
+          onchange={() => {
+            if (saveToLibrary) {
+              basicOptions.sponsorblock = true;
+              basicOptions.subtitles = true;
+              basicOptions.metadata = true;
+            }
+          }}
+          disabled={loading}
+        />
+        Save to Library
+      </label>
+    {/if}
+
     {#if !advancedMode}
       <div class="profile-quick-select">
         <div class="profile-group">
@@ -1288,17 +1306,6 @@
           </div>
         {/each}
       </div>
-    {/if}
-
-    {#if libraryConfigured}
-      <label class="checkbox-label library-toggle">
-        <input
-          type="checkbox"
-          bind:checked={saveToLibrary}
-          disabled={loading}
-        />
-        Save to Library
-      </label>
     {/if}
 
     {#if error}
