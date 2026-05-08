@@ -35,8 +35,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			dateAfter = `${y}${m}${d}`;
 		}
 
-		const result = await subscriptionService.backfillSubscription(params.id, { dateAfter });
-		return json(result);
+		subscriptionService.backfillSubscription(params.id, { dateAfter }).catch((err) => {
+			console.error(`[Subscriptions] Backfill failed for ${params.id}:`, err);
+		});
+		return json({ started: true });
 	} catch (e: any) {
 		console.error('Failed to backfill subscription:', e);
 		if (e.status) throw e;

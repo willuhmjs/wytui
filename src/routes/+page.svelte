@@ -26,11 +26,9 @@
 	let checkResult = $state<{ id: string; message: string } | null>(null);
 	let showSubsForm = $state(false);
 	let subFormUrl = $state('');
-	let subFormName = $state('');
 	let subFormProfileId = $state('');
 	let subFormCheckInterval = $state(1800);
 	let subFormAutoDownload = $state(true);
-	let subFormType = $state('CHANNEL');
 	let subFormSaveToLibrary = $state(false);
 	let subFormOptions = $state({ sponsorblock: false, subtitles: false, metadata: false });
 
@@ -38,7 +36,6 @@
 	let editingSub = $state<any | null>(null);
 	let editSubName = $state('');
 	let editSubUrl = $state('');
-	let editSubType = $state('CHANNEL');
 	let editSubProfileId = $state('');
 	let editSubCheckInterval = $state(1800);
 	let editSubAutoDownload = $state(true);
@@ -46,7 +43,6 @@
 	let editSubOptions = $state({ sponsorblock: false, subtitles: false, metadata: false });
 
 	// Subscription backfill state
-	let backfillingSub = $state<string | null>(null);
 	let backfillDate = $state('');
 	let showBackfillMenu = $state<string | null>(null);
 
@@ -55,7 +51,6 @@
 	let monitorsLoading = $state(false);
 	let showMonitorsForm = $state(false);
 	let monFormUrl = $state('');
-	let monFormName = $state('');
 	let monFormProfileId = $state('');
 	let monFormType = $state('YOUTUBE_LIVE');
 	let monFormAutoDownload = $state(true);
@@ -125,11 +120,15 @@
 			}, 5000);
 			loadSubscriptions();
 		});
+		const unsubBackfill = onSSEEvent('subscription:backfill', ({ name, totalVideos, newVideos }) => {
+			showAlert('Backfill Complete', `Queued ${newVideos} new video${newVideos !== 1 ? 's' : ''} for download from ${name} (${totalVideos} total found).`);
+		});
 
 		return () => {
 			unsubComplete();
 			unsubDeleted();
 			unsubChecked();
+			unsubBackfill();
 		};
 	});
 
@@ -228,8 +227,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					url: subFormUrl,
-					name: subFormName,
-					type: subFormType,
+					name: subFormUrl,
+					type: 'CHANNEL',
 					profileId: subFormProfileId,
 					checkInterval: subFormCheckInterval,
 					autoDownload: subFormAutoDownload,
@@ -240,7 +239,6 @@
 
 			if (res.ok) {
 				subFormUrl = '';
-				subFormName = '';
 				subFormSaveToLibrary = false;
 				subFormOptions = { sponsorblock: false, subtitles: false, metadata: false };
 				showSubsForm = false;
@@ -299,7 +297,6 @@
 		editingSub = sub;
 		editSubName = sub.name;
 		editSubUrl = sub.url;
-		editSubType = sub.type;
 		editSubProfileId = sub.profileId;
 		editSubCheckInterval = sub.checkInterval;
 		editSubAutoDownload = sub.autoDownload;
@@ -320,7 +317,6 @@
 				body: JSON.stringify({
 					name: editSubName,
 					url: editSubUrl,
-					type: editSubType,
 					profileId: editSubProfileId,
 					checkInterval: editSubCheckInterval,
 					autoDownload: editSubAutoDownload,
@@ -339,23 +335,17 @@
 
 	async function backfillFromDate(id: string) {
 		if (!backfillDate) return;
-		backfillingSub = id;
 		try {
-			const res = await fetch(`/api/subscriptions/${id}/backfill`, {
+			await fetch(`/api/subscriptions/${id}/backfill`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ dateAfter: backfillDate }),
 			});
-			if (res.ok) {
-				const data = await res.json();
-				await showAlert('Backfill Started', `Queued ${data.newVideos} new videos for download (${data.totalVideos} total found).`);
-			}
+			backfillDate = '';
+			showBackfillMenu = null;
+			activeTab = 'downloads';
 		} catch (e) {
 			console.error('Failed to backfill:', e);
-		} finally {
-			backfillingSub = null;
-			showBackfillMenu = null;
-			backfillDate = '';
 		}
 	}
 
@@ -366,22 +356,16 @@
 			'Download All'
 		);
 		if (!confirmed) return;
-		backfillingSub = id;
 		try {
-			const res = await fetch(`/api/subscriptions/${id}/backfill`, {
+			await fetch(`/api/subscriptions/${id}/backfill`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({}),
 			});
-			if (res.ok) {
-				const data = await res.json();
-				await showAlert('Backfill Started', `Queued ${data.newVideos} new videos for download (${data.totalVideos} total found).`);
-			}
+			showBackfillMenu = null;
+			activeTab = 'downloads';
 		} catch (e) {
 			console.error('Failed to backfill:', e);
-		} finally {
-			backfillingSub = null;
-			showBackfillMenu = null;
 		}
 	}
 
@@ -416,7 +400,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					url: monFormUrl,
-					name: monFormName,
+					name: monFormUrl,
 					type: monFormType,
 					profileId: monFormProfileId,
 					autoDownload: monFormAutoDownload,
@@ -426,7 +410,6 @@
 
 			if (res.ok) {
 				monFormUrl = '';
-				monFormName = '';
 				monFormOptions = { sponsorblock: false, subtitles: false, metadata: false };
 				showMonitorsForm = false;
 				await loadMonitors();
@@ -681,22 +664,7 @@
 					<div class="form-row">
 						<div class="form-group">
 							<label for="sub-url">Channel/Playlist URL</label>
-							<input type="url" id="sub-url" bind:value={subFormUrl} required />
-						</div>
-						<div class="form-group">
-							<label for="sub-name">Name</label>
-							<input type="text" id="sub-name" bind:value={subFormName} required />
-						</div>
-					</div>
-
-					<div class="form-row">
-						<div class="form-group">
-							<label for="sub-type">Type</label>
-							<select id="sub-type" bind:value={subFormType}>
-								<option value="CHANNEL">Channel</option>
-								<option value="PLAYLIST">Playlist</option>
-								<option value="USER">User</option>
-							</select>
+							<input type="url" id="sub-url" bind:value={subFormUrl} required placeholder="https://www.youtube.com/@channel" />
 						</div>
 						<div class="form-group">
 							<label for="sub-profile">Download Profile</label>
@@ -709,8 +677,15 @@
 					</div>
 
 					<div class="form-group">
-						<label for="sub-interval">Check Interval (seconds)</label>
-						<input type="number" id="sub-interval" bind:value={subFormCheckInterval} min="60" />
+						<label for="sub-interval">Check Interval</label>
+						<select id="sub-interval" bind:value={subFormCheckInterval}>
+							<option value={900}>Every 15 minutes</option>
+							<option value={1800}>Every 30 minutes</option>
+							<option value={3600}>Every hour</option>
+							<option value={21600}>Every 6 hours</option>
+							<option value={43200}>Every 12 hours</option>
+							<option value={86400}>Every 24 hours</option>
+						</select>
 					</div>
 
 					<div class="checkbox-row">
@@ -775,14 +750,6 @@
 									</div>
 									<div class="form-row">
 										<div class="form-group">
-											<label>Type</label>
-											<select bind:value={editSubType}>
-												<option value="CHANNEL">Channel</option>
-												<option value="PLAYLIST">Playlist</option>
-												<option value="USER">User</option>
-											</select>
-										</div>
-										<div class="form-group">
 											<label>Profile</label>
 											<select bind:value={editSubProfileId}>
 												{#each profiles as profile}
@@ -790,10 +757,17 @@
 												{/each}
 											</select>
 										</div>
-									</div>
-									<div class="form-group">
-										<label>Check Interval (seconds)</label>
-										<input type="number" bind:value={editSubCheckInterval} min="60" />
+										<div class="form-group">
+											<label>Check Interval</label>
+											<select bind:value={editSubCheckInterval}>
+												<option value={900}>Every 15 minutes</option>
+												<option value={1800}>Every 30 minutes</option>
+												<option value={3600}>Every hour</option>
+												<option value={21600}>Every 6 hours</option>
+												<option value={43200}>Every 12 hours</option>
+												<option value={86400}>Every 24 hours</option>
+											</select>
+										</div>
 									</div>
 									<div class="checkbox-row">
 										<label class="checkbox-label">
@@ -841,7 +815,6 @@
 								<div class="meta">
 									<span>Profile: {sub.profile.name}</span>
 									<span>Check: {formatInterval(sub.checkInterval)}</span>
-									<span>Type: {sub.type}</span>
 									{#if sub.saveToLibrary}
 										<span class="library-tag">Library</span>
 									{/if}
@@ -902,21 +875,20 @@
 												<input type="date" id="backfill-date-{sub.id}" bind:value={backfillDate} />
 												<button
 													class="btn btn-sm btn-primary"
-													disabled={!backfillDate || backfillingSub === sub.id}
+													disabled={!backfillDate}
 													onclick={() => backfillFromDate(sub.id)}
 												>
-													{backfillingSub === sub.id ? 'Working...' : 'Go'}
+													Go
 												</button>
 											</div>
 										</div>
 										<div class="backfill-divider"></div>
 										<button
-											class="btn btn-sm btn-secondary"
+											class="btn btn-sm btn-primary"
 											style="width: 100%;"
-											disabled={backfillingSub === sub.id}
 											onclick={() => backfillAll(sub.id)}
 										>
-											{backfillingSub === sub.id ? 'Working...' : 'Download Entire Channel'}
+											Download Entire Channel
 										</button>
 									</div>
 								{/if}
@@ -946,30 +918,24 @@
 					<div class="form-row">
 						<div class="form-group">
 							<label for="mon-url">Stream URL</label>
-							<input type="url" id="mon-url" bind:value={monFormUrl} required />
+							<input type="url" id="mon-url" bind:value={monFormUrl} required placeholder="https://www.youtube.com/@channel/live" />
 						</div>
 						<div class="form-group">
-							<label for="mon-name">Name</label>
-							<input type="text" id="mon-name" bind:value={monFormName} required />
-						</div>
-					</div>
-
-					<div class="form-row">
-						<div class="form-group">
-							<label for="mon-type">Type</label>
+							<label for="mon-type">Platform</label>
 							<select id="mon-type" bind:value={monFormType}>
 								<option value="YOUTUBE_LIVE">YouTube Live</option>
 								<option value="TWITCH">Twitch</option>
 							</select>
 						</div>
-						<div class="form-group">
-							<label for="mon-profile">Download Profile</label>
-							<select id="mon-profile" bind:value={monFormProfileId} required>
-								{#each profiles as profile}
-									<option value={profile.id}>{profile.name}</option>
-								{/each}
-							</select>
-						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="mon-profile">Download Profile</label>
+						<select id="mon-profile" bind:value={monFormProfileId} required>
+							{#each profiles as profile}
+								<option value={profile.id}>{profile.name}</option>
+							{/each}
+						</select>
 					</div>
 
 					<label class="checkbox-label">
@@ -1008,30 +974,24 @@
 								<div class="edit-form">
 									<div class="form-row">
 										<div class="form-group">
-											<label>Name</label>
-											<input type="text" bind:value={editMonName} />
-										</div>
-										<div class="form-group">
 											<label>URL</label>
 											<input type="url" bind:value={editMonUrl} />
 										</div>
-									</div>
-									<div class="form-row">
 										<div class="form-group">
-											<label>Type</label>
+											<label>Platform</label>
 											<select bind:value={editMonType}>
 												<option value="YOUTUBE_LIVE">YouTube Live</option>
 												<option value="TWITCH">Twitch</option>
 											</select>
 										</div>
-										<div class="form-group">
-											<label>Profile</label>
-											<select bind:value={editMonProfileId}>
-												{#each profiles as profile}
-													<option value={profile.id}>{profile.name}</option>
-												{/each}
-											</select>
-										</div>
+									</div>
+									<div class="form-group">
+										<label>Profile</label>
+										<select bind:value={editMonProfileId}>
+											{#each profiles as profile}
+												<option value={profile.id}>{profile.name}</option>
+											{/each}
+										</select>
 									</div>
 									<label class="checkbox-label">
 										<input type="checkbox" bind:checked={editMonAutoDownload} />
@@ -1065,7 +1025,7 @@
 								<p class="url">{monitor.url}</p>
 
 								<div class="meta">
-									<span>Type: {monitor.type.replace('_', ' ')}</span>
+									<span>{monitor.type === 'TWITCH' ? 'Twitch' : 'YouTube Live'}</span>
 									<span>Profile: {monitor.profile.name}</span>
 								</div>
 
