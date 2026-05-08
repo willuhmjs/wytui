@@ -737,31 +737,47 @@
 	{/if}
 
 <style>
+	.page {
+		max-width: 1400px;
+		margin: 0 auto;
+		width: 100%;
+	}
+
 	.tabs {
 		display: flex;
-		gap: var(--spacing-sm);
-		margin-bottom: var(--spacing-xl);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		justify-content: center;
+		gap: 4px;
+		margin-bottom: var(--spacing-2xl);
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		padding: 4px;
+		width: fit-content;
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	.tab {
+		padding: var(--spacing-sm) var(--spacing-xl);
 		background: transparent;
 		border: none;
-		padding: var(--spacing-md) var(--spacing-lg);
+		border-radius: var(--radius-md);
 		color: var(--text-secondary);
 		font-weight: 500;
+		font-size: 0.875rem;
 		cursor: pointer;
-		border-bottom: 2px solid transparent;
-		transition: var(--transition-fast);
+		transition: all var(--transition-fast);
 	}
 
-	.tab:hover {
+	.tab:hover:not(.active) {
 		color: var(--text-primary);
+		background: rgba(255, 255, 255, 0.05);
 	}
 
 	.tab.active {
-		color: var(--accent-primary);
-		border-bottom-color: var(--accent-primary);
+		background: var(--accent-primary);
+		color: #fff;
+		font-weight: 600;
 	}
 
 	.loading {
@@ -1168,5 +1184,89 @@
 		gap: var(--spacing-md);
 		justify-content: flex-end;
 		margin-top: var(--spacing-lg);
+	}
+
+	@media (max-width: 768px) {
+		.page {
+			padding: 0 var(--spacing-sm);
+		}
+
+		.tabs {
+			width: 100%;
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			scrollbar-width: none;
+			margin-bottom: var(--spacing-lg);
+		}
+
+		.tabs::-webkit-scrollbar {
+			display: none;
+		}
+
+		.tab {
+			padding: var(--spacing-sm) var(--spacing-md);
+			font-size: 0.8125rem;
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+
+		.settings-section {
+			padding: var(--spacing-md);
+		}
+
+		.settings-section h2 {
+			font-size: 1.25rem;
+		}
+
+		.form-group input[type='text'],
+		.form-group input[type='number'],
+		.form-group input[type='email'],
+		.form-group input[type='password'],
+		.form-group select {
+			font-size: 1rem;
+		}
+
+		.section-header {
+			flex-direction: column;
+			gap: var(--spacing-md);
+		}
+
+		.section-header .btn-secondary {
+			width: 100%;
+		}
+
+		.create-user-form {
+			padding: var(--spacing-md);
+		}
+
+		.user-card {
+			flex-direction: column;
+			align-items: flex-start;
+			padding: var(--spacing-md);
+		}
+
+		.user-actions {
+			width: 100%;
+			flex-wrap: wrap;
+		}
+
+		.user-actions button {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.btn-lg {
+			width: 100%;
+		}
+
+		.modal-content {
+			margin: var(--spacing-sm);
+		}
+
+		.modal-header,
+		.modal-body {
+			padding: var(--spacing-md);
+		}
 	}
 </style>
