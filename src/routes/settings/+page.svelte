@@ -72,7 +72,7 @@
 
 	let diskInfo = $state<{ totalBytes: string; availableBytes: string } | null>(null);
 	let diskTotalGB = $derived(diskInfo ? Number(BigInt(diskInfo.totalBytes)) / (1024 * 1024 * 1024) : null);
-	let cacheQuotaGB = $derived(settings ? Number(BigInt(settings.cacheQuotaBytes || '10737418240')) / (1024 * 1024 * 1024) : 10);
+	let cacheQuotaGB = $derived(settings ? Math.floor(Number(BigInt(settings.cacheQuotaBytes || '10737418240')) / (1024 * 1024 * 1024)) : 10);
 	let cacheQuotaExceedsDisk = $derived(diskTotalGB !== null && cacheQuotaGB > diskTotalGB);
 	let libraryEnabled = $derived(settings ? !!settings.libraryPath : false);
 	let jellyfinEnabled = $derived(settings ? !!(settings.jellyfinUrl || settings.jellyfinApiKey) : false);
