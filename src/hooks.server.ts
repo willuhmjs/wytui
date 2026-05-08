@@ -49,8 +49,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const isPublicPath = publicPaths.some((path) => event.url.pathname.startsWith(path));
 	const isApiPath = event.url.pathname.startsWith('/api/');
 
-	// If no users exist yet, redirect to setup (except if already on setup page)
-	if (!isPublicPath) {
+	// If no users exist yet, redirect to setup (except setup pages and OIDC callback for first-user signup)
+	const isSetupPath = event.url.pathname.startsWith('/setup') || event.url.pathname.startsWith('/api/setup');
+	const isOidcFlow = event.url.pathname.startsWith('/auth/oidc');
+	if (!isSetupPath && !isOidcFlow) {
 		const usersExist = await hasUsers();
 		if (!usersExist) {
 			if (!isApiPath) {
