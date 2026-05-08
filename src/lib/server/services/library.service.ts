@@ -3,6 +3,7 @@ import { sseEmitter } from '../sse/emitter';
 import { DownloadStatus } from '@prisma/client';
 import { copyFile, unlink, mkdir, access, writeFile } from 'fs/promises';
 import { join, basename, resolve, extname } from 'path';
+import { musicMetadataService } from './music-metadata.service';
 
 function sanitizeFilename(name: string): string {
 	return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'Unknown';
@@ -31,8 +32,92 @@ class LibraryService {
 			throw new Error('Already in library');
 		}
 
-		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
+		if (isAudio) {
+			await this.promoteAudioToLibrary(download, resolvedLibrary, targetLibrary);
+		} else {
+			await this.promoteVideoToLibrary(download, resolvedLibrary, targetLibrary);
+		}
+
+		const userId = download.userId;
+		if (userId) {
+			sseEmitter.broadcastToUser('download:promoted', { id: download.id, storagePool: 'library' }, userId);
+		} else {
+			sseEmitter.broadcast('download:promoted', { id: download.id, storagePool: 'library' });
+		}
+
+		await this.triggerLibraryScan();
+	}
+
+	private async promoteAudioToLibrary(
+		download: any,
+		resolvedLibrary: string,
+		targetLibrary: string
+	): Promise<void> {
 		const ext = extname(download.filepath);
+		const info = await musicMetadataService.resolveAndTag(download);
+
+		const artistDir = sanitizeFilename(info.artist);
+		const albumDir = sanitizeFilename(info.album);
+		let filename: string;
+
+		if (info.trackNumber) {
+			filename = `${String(info.trackNumber).padStart(2, '0')} - ${sanitizeFilename(info.title)}${ext}`;
+		} else {
+			filename = `${sanitizeFilename(info.title)}${ext}`;
+		}
+
+		const albumPath = resolve(targetLibrary, artistDir, albumDir);
+		if (!albumPath.startsWith(resolvedLibrary)) {
+			throw new Error('Invalid path');
+		}
+
+		await mkdir(albumPath, { recursive: true });
+
+		let destPath = join(albumPath, filename);
+		let suffix = 1;
+		while (true) {
+			try {
+				await access(destPath);
+				const base = sanitizeFilename(info.title);
+				destPath = join(albumPath, `${base} (${suffix})${ext}`);
+				suffix++;
+			} catch {
+				break;
+			}
+		}
+
+		await copyFile(download.filepath, destPath);
+		try { await unlink(download.filepath); } catch {}
+
+		if (info.coverArtBuffer) {
+			const coverPath = join(albumPath, 'cover.jpg');
+			try {
+				await access(coverPath);
+			} catch {
+				await writeFile(coverPath, info.coverArtBuffer);
+			}
+		}
+
+		await prisma.download.update({
+			where: { id: download.id },
+			data: {
+				storagePool: 'library',
+				filepath: destPath,
+				artist: info.artist,
+				album: info.album,
+				trackNumber: info.trackNumber,
+				releaseYear: info.year,
+			},
+		});
+	}
+
+	private async promoteVideoToLibrary(
+		download: any,
+		resolvedLibrary: string,
+		targetLibrary: string
+	): Promise<void> {
+		const ext = extname(download.filepath);
+		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
 		const baseFilename = download.title
 			? sanitizeFilename(download.title)
 			: basename(download.filepath, ext);
@@ -56,16 +141,12 @@ class LibraryService {
 		await mkdir(videoDir, { recursive: true });
 
 		const destFilename = basename(videoDir);
-		let destPath = join(videoDir, destFilename + ext);
+		const destPath = join(videoDir, destFilename + ext);
 
 		await copyFile(download.filepath, destPath);
-		try {
-			await unlink(download.filepath);
-		} catch {
-			// Original may already be gone
-		}
+		try { await unlink(download.filepath); } catch {}
 
-		if (download.thumbnail && !isAudio) {
+		if (download.thumbnail) {
 			try {
 				const thumbRes = await fetch(download.thumbnail);
 				if (thumbRes.ok) {
@@ -73,27 +154,16 @@ class LibraryService {
 					const buffer = Buffer.from(await thumbRes.arrayBuffer());
 					await writeFile(thumbPath, buffer);
 				}
-			} catch {
-				// Thumbnail is nice-to-have, don't fail the promote
-			}
+			} catch {}
 		}
 
 		await prisma.download.update({
-			where: { id: downloadId },
+			where: { id: download.id },
 			data: {
 				storagePool: 'library',
 				filepath: destPath,
 			},
 		});
-
-		const userId = download.userId;
-		if (userId) {
-			sseEmitter.broadcastToUser('download:promoted', { id: downloadId, storagePool: 'library' }, userId);
-		} else {
-			sseEmitter.broadcast('download:promoted', { id: downloadId, storagePool: 'library' });
-		}
-
-		await this.triggerLibraryScan();
 	}
 
 	async enforceCacheQuota(): Promise<void> {

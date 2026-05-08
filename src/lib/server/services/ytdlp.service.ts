@@ -106,6 +106,10 @@ export class YtdlpService {
 							uploadDate: info.upload_date ? this.parseUploadDate(info.upload_date) : undefined,
 							format: info.format,
 							filesize: info.filesize ? BigInt(info.filesize) : undefined,
+							artist: info.artist || info.creator || undefined,
+							track: info.track || undefined,
+							album: info.album || undefined,
+							releaseYear: info.release_year || undefined,
 						});
 					} catch (e) {
 						reject(new Error(`Failed to parse metadata: ${e}`));

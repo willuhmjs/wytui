@@ -115,6 +115,13 @@ model Download {
   format      String?   // resolved format string
   filesize    BigInt?   // bytes (estimated)
 
+  // Music metadata (resolved via yt-dlp or MusicBrainz)
+  artist        String?
+  album         String?
+  trackNumber   Int?
+  releaseYear   Int?
+  musicBrainzId String?
+
   // Progress tracking
   progress    Float     @default(0) // 0-100
   speed       String?   // e.g., "1.2MiB/s"

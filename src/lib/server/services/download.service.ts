@@ -164,6 +164,9 @@ class DownloadService {
 				uploadDate: metadata.uploadDate,
 				format: metadata.format,
 				filesize: metadata.filesize,
+				artist: metadata.artist,
+				album: metadata.album,
+				releaseYear: metadata.releaseYear,
 			});
 
 			this.emitToOwner('download:metadata', updated, downloadId);

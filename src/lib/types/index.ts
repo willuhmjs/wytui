@@ -19,6 +19,10 @@ export interface DownloadMetadata {
 	uploadDate?: Date;
 	format?: string;
 	filesize?: bigint;
+	artist?: string;
+	track?: string;
+	album?: string;
+	releaseYear?: number;
 }
 
 export interface SSEEvent {
