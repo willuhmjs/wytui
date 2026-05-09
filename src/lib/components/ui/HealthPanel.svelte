@@ -55,7 +55,7 @@
 						<i class="bi bi-arrow-clockwise" class:spinning={loading}></i>
 					</button>
 					<button class="close-btn" onclick={onClose} aria-label="Close">
-						<i class="bi bi-x-lg"></i>
+						×
 					</button>
 				</div>
 			</div>
@@ -293,7 +293,9 @@
 	}
 
 	.close-btn {
-		font-size: 1.25rem;
+		font-size: 1.75rem;
+		line-height: 1;
+		font-weight: 300;
 	}
 
 	.close-btn:hover,
