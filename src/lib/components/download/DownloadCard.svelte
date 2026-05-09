@@ -217,16 +217,13 @@
 			<p class="uploader">{download.uploader}</p>
 		{/if}
 
-		{#if download.status === 'COMPLETED' && (formattedDuration || formattedSize || download.format)}
+		{#if download.status === 'COMPLETED' && (formattedDuration || formattedSize)}
 			<div class="meta-badges">
 				{#if formattedDuration}
 					<span class="meta-badge">{formattedDuration}</span>
 				{/if}
 				{#if formattedSize}
 					<span class="meta-badge">{formattedSize}</span>
-				{/if}
-				{#if download.format}
-					<span class="meta-badge">{download.format}</span>
 				{/if}
 			</div>
 		{/if}
