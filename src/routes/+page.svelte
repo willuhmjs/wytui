@@ -5,6 +5,7 @@
 	import { getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { addToast } from '$lib/stores/toast.svelte';
+	import { formatBytes } from '$lib/utils/format';
 
 	let activeTab = $state<'downloads' | 'subscriptions' | 'monitors'>('downloads');
 	let sseState = getSSEState();
@@ -643,14 +644,6 @@
 		} catch (e) {
 			console.error('Failed to update monitor:', e);
 		}
-	}
-
-	function formatBytes(bytes: string): string {
-		const b = Number(bytes);
-		if (b === 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-		const i = Math.floor(Math.log(b) / Math.log(1024));
-		return `${(b / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 	}
 
 	function formatWaitTime(seconds: number | null): string {
@@ -1527,7 +1520,7 @@
 		justify-content: space-between;
 		align-items: center;
 		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-lg);
+		margin-bottom: var(--spacing-sm);
 		flex-wrap: wrap;
 	}
 
@@ -1593,12 +1586,12 @@
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
-		padding: var(--spacing-xs) var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
 		background: var(--bg-tertiary);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-md);
 		color: var(--text-primary);
-		font-size: 0.85rem;
+		font-size: 0.8rem;
 		cursor: pointer;
 		white-space: nowrap;
 		transition: border-color 0.15s;

@@ -4,11 +4,13 @@
 	import { connectSSE, disconnectSSE, getSSEState } from '$lib/stores/sse.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
+	import HealthPanel from '$lib/components/ui/HealthPanel.svelte';
 	import type { LayoutData } from './$types';
 	import '../app.css';
 
 	let { children, data }: { children: any; data: LayoutData } = $props();
 	let logoHovered = $state(false);
+	let healthPanelOpen = $state(false);
 	let sseState = getSSEState();
 
 	onMount(() => {
@@ -47,7 +49,15 @@
 					<h1>{logoHovered ? '/ˈwaɪti/' : 'wytui'}</h1>
 				</a>
 				<div class="nav-links">
-					<div class="connection-status" class:connected={sseState.connected}>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="connection-status"
+						class:connected={sseState.connected}
+						onclick={() => healthPanelOpen = true}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') healthPanelOpen = true; }}
+					>
 						<span class="status-dot"></span>
 						<span class="status-label">{sseState.connected ? 'Connected' : 'Connecting...'}</span>
 					</div>
@@ -72,10 +82,20 @@
 			{@render children()}
 		</div>
 	</main>
+
+	<footer class="footer">
+		<div class="container">
+			<a href="https://github.com/willuhmjs/wytui" target="_blank" rel="noopener noreferrer" class="footer-link">
+				<i class="bi bi-github"></i>
+				<span>GitHub</span>
+			</a>
+		</div>
+	</footer>
 </div>
 
 <Modal />
 <Toast />
+<HealthPanel open={healthPanelOpen} onClose={() => healthPanelOpen = false} />
 
 <style>
 	.app {
@@ -130,6 +150,13 @@
 		border-radius: var(--radius-md);
 		background: rgba(255, 255, 255, 0.03);
 		border: 1px solid var(--border);
+		cursor: pointer;
+		transition: all var(--transition-fast);
+	}
+
+	.connection-status:hover {
+		border-color: var(--accent-primary);
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	.status-dot {
@@ -204,6 +231,34 @@
 	.main {
 		flex: 1 1 auto;
 		padding: var(--spacing-2xl) 0;
+	}
+
+	.footer {
+		border-top: 1px solid var(--border);
+		padding: var(--spacing-md) 0;
+	}
+
+	.footer .container {
+		display: flex;
+		justify-content: center;
+	}
+
+	.footer-link {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		text-decoration: none;
+		transition: color var(--transition-fast);
+	}
+
+	.footer-link:hover {
+		color: var(--text-primary);
+	}
+
+	.footer-link .bi {
+		font-size: 1.1rem;
 	}
 
 	@media (max-width: 768px) {
