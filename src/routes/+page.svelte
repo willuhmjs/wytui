@@ -791,94 +791,96 @@
 
 			<div class="section">
 				<div class="section-header">
-					<h2>Completed ({filteredCompletedDownloads.length})</h2>
-					<button
-						class="btn btn-sm"
-						class:btn-primary={selectionMode}
-						class:btn-secondary={!selectionMode}
-						onclick={() => { if (selectionMode) exitSelectionMode(); else selectionMode = true; }}
-					>
-						{selectionMode ? 'Cancel' : 'Select'}
-					</button>
-					<div class="tabs completed-filter">
+					<div class="section-header-left">
+						<h2>Completed ({filteredCompletedDownloads.length})</h2>
 						<button
-							class="tab"
-							class:active={completedFilter === 'all'}
-							onclick={() => (completedFilter = 'all')}
+							class="channel-dropdown-trigger"
+							class:active={selectionMode}
+							onclick={() => { if (selectionMode) exitSelectionMode(); else selectionMode = true; }}
 						>
-							All
-						</button>
-						<button
-							class="tab"
-							class:active={completedFilter === 'cache'}
-							onclick={() => (completedFilter = 'cache')}
-						>
-							Cache
-						</button>
-						<button
-							class="tab"
-							class:active={completedFilter === 'library'}
-							onclick={() => (completedFilter = 'library')}
-						>
-							Library
+							{selectionMode ? 'Cancel' : 'Select'}
 						</button>
 					</div>
-					{#if availableChannels.length > 1}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="channel-dropdown"
-							onkeydown={(e) => { if (e.key === 'Escape') channelDropdownOpen = false; }}
-						>
+					<div class="section-header-right">
+						<div class="tabs completed-filter">
 							<button
-								class="channel-dropdown-trigger"
-								onclick={() => { channelDropdownOpen = !channelDropdownOpen; channelSearch = ''; }}
+								class="tab"
+								class:active={completedFilter === 'all'}
+								onclick={() => (completedFilter = 'all')}
 							>
-								<span class="channel-dropdown-label">{channelFilter === 'all' ? 'All channels' : channelFilter}</span>
-								<svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="channel-dropdown-chevron" class:open={channelDropdownOpen}>
-									<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-								</svg>
+								All
 							</button>
-							{#if channelDropdownOpen}
-								<div class="channel-dropdown-menu">
-									<input
-										type="text"
-										class="channel-dropdown-search"
-										placeholder="Search channels..."
-										bind:value={channelSearch}
-										autofocus
-									/>
-									<div class="channel-dropdown-options">
-										<button
-											class="channel-dropdown-option"
-											class:selected={channelFilter === 'all'}
-											onclick={() => { channelFilter = 'all'; channelDropdownOpen = false; }}
-										>
-											All channels
-										</button>
-										{#each filteredChannelOptions as channel}
+							<button
+								class="tab"
+								class:active={completedFilter === 'cache'}
+								onclick={() => (completedFilter = 'cache')}
+							>
+								Cache
+							</button>
+							<button
+								class="tab"
+								class:active={completedFilter === 'library'}
+								onclick={() => (completedFilter = 'library')}
+							>
+								Library
+							</button>
+						</div>
+						{#if availableChannels.length > 1}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="channel-dropdown"
+								onkeydown={(e) => { if (e.key === 'Escape') channelDropdownOpen = false; }}
+							>
+								<button
+									class="channel-dropdown-trigger"
+									onclick={() => { channelDropdownOpen = !channelDropdownOpen; channelSearch = ''; }}
+								>
+									<span class="channel-dropdown-label">{channelFilter === 'all' ? 'All channels' : channelFilter}</span>
+									<svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="channel-dropdown-chevron" class:open={channelDropdownOpen}>
+										<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+									</svg>
+								</button>
+								{#if channelDropdownOpen}
+									<div class="channel-dropdown-menu">
+										<input
+											type="text"
+											class="channel-dropdown-search"
+											placeholder="Search channels..."
+											bind:value={channelSearch}
+											autofocus
+										/>
+										<div class="channel-dropdown-options">
 											<button
 												class="channel-dropdown-option"
-												class:selected={channelFilter === channel}
-												onclick={() => { channelFilter = channel; channelDropdownOpen = false; }}
+												class:selected={channelFilter === 'all'}
+												onclick={() => { channelFilter = 'all'; channelDropdownOpen = false; }}
 											>
-												{channel}
+												All channels
 											</button>
-										{/each}
-										{#if filteredChannelOptions.length === 0}
-											<div class="channel-dropdown-empty">No channels found</div>
-										{/if}
+											{#each filteredChannelOptions as channel}
+												<button
+													class="channel-dropdown-option"
+													class:selected={channelFilter === channel}
+													onclick={() => { channelFilter = channel; channelDropdownOpen = false; }}
+												>
+													{channel}
+												</button>
+											{/each}
+											{#if filteredChannelOptions.length === 0}
+												<div class="channel-dropdown-empty">No channels found</div>
+											{/if}
+										</div>
 									</div>
-								</div>
-								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div class="channel-dropdown-backdrop" onclick={() => (channelDropdownOpen = false)}></div>
-							{/if}
-						</div>
-					{/if}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						class="sort-dropdown"
-						onkeydown={(e) => { if (e.key === 'Escape') sortDropdownOpen = false; }}
-					>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div class="channel-dropdown-backdrop" onclick={() => (channelDropdownOpen = false)}></div>
+								{/if}
+							</div>
+						{/if}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="sort-dropdown"
+							onkeydown={(e) => { if (e.key === 'Escape') sortDropdownOpen = false; }}
+						>
 						<button
 							class="channel-dropdown-trigger"
 							onclick={() => (sortDropdownOpen = !sortDropdownOpen)}
@@ -910,6 +912,7 @@
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="channel-dropdown-backdrop" onclick={() => (sortDropdownOpen = false)}></div>
 						{/if}
+					</div>
 					</div>
 				</div>
 				<div class="completed-search">
@@ -1525,6 +1528,19 @@
 		align-items: center;
 		gap: var(--spacing-md);
 		margin-bottom: var(--spacing-lg);
+		flex-wrap: wrap;
+	}
+
+	.section-header-left {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.section-header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
 	}
 
 	.section-header h2 {
@@ -1563,6 +1579,12 @@
 
 	.channel-dropdown-trigger:hover {
 		border-color: rgba(255, 255, 255, 0.2);
+	}
+
+	.channel-dropdown-trigger.active {
+		background: var(--accent-primary);
+		border-color: var(--accent-primary);
+		color: #fff;
 	}
 
 	.channel-dropdown-chevron {

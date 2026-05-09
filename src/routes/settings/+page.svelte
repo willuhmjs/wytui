@@ -898,6 +898,7 @@
 	select {
 		width: 100%;
 		padding: var(--spacing-md);
+		padding-right: calc(var(--spacing-md) + 20px);
 		background: var(--bg-tertiary);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--border-radius-md);
