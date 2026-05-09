@@ -1533,7 +1533,7 @@
 
 	.section-header-left {
 		display: flex;
-		align-items: center;
+		align-items: baseline;
 		gap: var(--spacing-sm);
 	}
 
