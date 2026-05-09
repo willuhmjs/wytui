@@ -162,6 +162,8 @@
 		loadProfiles();
 		loadCompletedDownloads();
 		loadCacheUsage();
+		loadSubscriptions();
+		loadMonitors();
 
 		const unsubComplete = onSSEEvent('download:complete', ({ download }) => {
 			const exists = completedDownloads.find((d) => d.id === download.id);
