@@ -1002,7 +1002,8 @@
     {#if !advancedMode}
       <div class="profile-quick-select">
         <div class="profile-group">
-          <span class="profile-group-label">Video</span>
+          <span class="profile-group-label">Video + Audio</span>
+          <p class="profile-help-text">Complete video with AAC audio</p>
           <div class="profile-buttons">
             {#each videoProfiles as profile}
               <button
@@ -1020,7 +1021,8 @@
         </div>
 
         <div class="profile-group">
-          <span class="profile-group-label">Audio</span>
+          <span class="profile-group-label">Audio Only</span>
+          <p class="profile-help-text">Extract audio in MP3, FLAC, or AAC</p>
           <div class="profile-buttons">
             {#each audioProfiles as profile}
               <button
@@ -1434,6 +1436,14 @@
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.05em;
+  }
+
+  .profile-help-text {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    margin-bottom: var(--spacing-xs);
+    line-height: 1.3;
   }
 
   .profile-buttons {
