@@ -794,7 +794,7 @@
 					<div class="section-header-left">
 						<h2>Completed ({filteredCompletedDownloads.length})</h2>
 						<button
-							class="channel-dropdown-trigger"
+							class="select-btn"
 							class:active={selectionMode}
 							onclick={() => { if (selectionMode) exitSelectionMode(); else selectionMode = true; }}
 						>
@@ -1547,10 +1547,35 @@
 		margin-bottom: 0;
 	}
 
+	.select-btn {
+		padding: var(--spacing-xs) var(--spacing-md);
+		background: transparent;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: var(--border-radius-md);
+		color: var(--text-secondary);
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.select-btn:hover {
+		color: var(--text-primary);
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.select-btn.active {
+		background: var(--accent-primary);
+		border-color: var(--accent-primary);
+		color: #fff;
+	}
+
 	.completed-filter {
 		margin-bottom: 0;
 		margin-left: 0;
 		margin-right: 0;
+		background: var(--bg-tertiary);
+		border-color: rgba(255, 255, 255, 0.1);
 	}
 
 	.completed-filter .tab {
