@@ -15,7 +15,7 @@
   let newProfileName = $state("");
 
   // Basic mode stackable options
-  let audioQuality = $state("5");
+  let audioQuality = $state("0");
   let basicOptions = $state({ sponsorblock: false, subtitles: false, metadata: false });
 
   // Advanced flag state
@@ -118,7 +118,7 @@
           label: "Audio quality",
           type: "text",
           placeholder: "0 (best) to 10 (worst) or 128K",
-          defaultValue: "5",
+          defaultValue: "0",
         },
       ],
     },
