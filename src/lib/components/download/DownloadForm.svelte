@@ -1883,5 +1883,31 @@
     .btn-clear-flags {
       flex: 1;
     }
+
+    .save-dialog {
+      flex-wrap: wrap;
+    }
+
+    .save-dialog input {
+      width: 100%;
+    }
+
+    .save-dialog .btn-sm {
+      flex: 1;
+    }
+
+    .flag-toggle {
+      flex-wrap: wrap;
+    }
+
+    .flag-code {
+      order: 3;
+      width: 100%;
+      margin-top: 2px;
+    }
+
+    .category-docs {
+      opacity: 1;
+    }
   }
 </style>

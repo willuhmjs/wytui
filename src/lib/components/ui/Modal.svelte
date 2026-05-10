@@ -141,4 +141,24 @@
 	.btn-secondary:hover {
 		background: var(--bg-hover);
 	}
+
+	@media (max-width: 768px) {
+		.modal {
+			width: 95%;
+		}
+
+		.modal-header,
+		.modal-body,
+		.modal-footer {
+			padding: var(--spacing-md);
+		}
+
+		.modal-footer {
+			flex-direction: column-reverse;
+		}
+
+		.modal-footer button {
+			width: 100%;
+		}
+	}
 </style>

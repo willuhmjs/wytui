@@ -1226,6 +1226,10 @@
 			font-size: 1.25rem;
 		}
 
+		.form-row {
+			grid-template-columns: 1fr;
+		}
+
 		.form-group input[type='text'],
 		.form-group input[type='number'],
 		.form-group input[type='email'],
@@ -1241,6 +1245,15 @@
 
 		.section-header .btn-secondary {
 			width: 100%;
+		}
+
+		.nested-field {
+			margin-left: var(--spacing-sm);
+			padding-left: var(--spacing-md);
+		}
+
+		.jellyfin-test {
+			flex-wrap: wrap;
 		}
 
 		.create-user-form {
@@ -1274,6 +1287,14 @@
 		.modal-header,
 		.modal-body {
 			padding: var(--spacing-md);
+		}
+
+		.modal-actions {
+			flex-direction: column;
+		}
+
+		.modal-actions button {
+			width: 100%;
 		}
 	}
 </style>

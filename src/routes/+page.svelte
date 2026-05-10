@@ -2268,6 +2268,11 @@
 			flex-wrap: wrap;
 		}
 
+		.actions .btn {
+			flex: 1;
+			min-width: 0;
+		}
+
 		.backfill-menu {
 			padding: var(--spacing-md);
 		}
@@ -2284,6 +2289,80 @@
 
 		.download-card .content {
 			padding: var(--spacing-md);
+		}
+
+		.section-header {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.section-header-left {
+			justify-content: space-between;
+		}
+
+		.section-header-right {
+			flex-wrap: wrap;
+		}
+
+		.completed-filter {
+			width: 100%;
+		}
+
+		.completed-filter .tab {
+			flex: 1;
+			text-align: center;
+		}
+
+		.channel-dropdown,
+		.sort-dropdown {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.channel-dropdown-trigger {
+			width: 100%;
+			justify-content: center;
+		}
+
+		.channel-dropdown-label {
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.channel-dropdown-menu {
+			left: 0;
+			right: 0;
+			min-width: unset;
+		}
+
+		.bulk-bar {
+			flex-direction: column;
+			gap: var(--spacing-sm);
+			padding: var(--spacing-md);
+		}
+
+		.bulk-actions {
+			width: 100%;
+			flex-wrap: wrap;
+		}
+
+		.bulk-actions .btn {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.checkbox-row {
+			flex-direction: column;
+			gap: var(--spacing-sm);
+		}
+
+		.options-row {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.meta {
+			gap: var(--spacing-sm);
 		}
 	}
 </style>
