@@ -22,56 +22,8 @@ A self-hosted web UI for [yt-dlp](https://github.com/yt-dlp/yt-dlp), built with 
 
 Copy `.env.example` to `.env` and fill in your values, then:
 
-```yaml
-services:
-  db:
-    image: postgres:18.3-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: wytui
-    volumes:
-      - pgdata:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  migrate:
-    build: .
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/wytui?schema=public
-    depends_on:
-      db:
-        condition: service_healthy
-    command: sh -c "npx prisma migrate deploy"
-
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/wytui?schema=public
-      - AUTH_SECRET=${AUTH_SECRET}
-      - AUTH_TRUST_HOST=true
-      - ORIGIN=${ORIGIN:-http://localhost:3000}
-      - NODE_ENV=production
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-    volumes:
-      - downloads:/downloads
-      - library:/media
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-
-volumes:
-  pgdata:
-  downloads:
-  library:
+```bash
+docker compose up -d
 ```
 
 ### Helm
@@ -109,6 +61,18 @@ postgresql:
 | `OIDC_CLIENT_ID` | OIDC client ID (optional) |
 | `OIDC_CLIENT_SECRET` | OIDC client secret (optional) |
 | `OIDC_DISPLAY_NAME` | OIDC provider display name (optional, defaults to "SSO") |
+
+## OIDC Authentication
+
+wytui supports OpenID Connect for single sign-on. Set the `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` environment variables to enable it.
+
+When configuring your OIDC provider, use the following redirect URL:
+
+```
+https://<your-wytui-domain>/auth/oidc/callback
+```
+
+Users who sign in via OIDC are created with a default `user` role. An admin can promote them from the admin panel.
 
 ## Tech Stack
 
