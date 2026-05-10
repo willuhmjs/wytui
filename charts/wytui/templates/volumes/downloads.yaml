@@ -1,3 +1,4 @@
+{{- if not .Values.downloads.persistent.existingClaim }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -12,3 +13,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.downloads.persistent.size }}
+{{- end }}

@@ -48,6 +48,8 @@ postgresql:
     password: ""
     passwordKey: POSTGRES_PASSWORD
   persistent:
+    existingClaim: ""
+    subPath: ""
     size: 5Gi
     storageClass: ""
     accessModes:
@@ -55,6 +57,8 @@ postgresql:
 
 downloads:
   persistent:
+    existingClaim: ""
+    subPath: ""
     size: 5Gi
     storageClass: ""
     accessModes:
@@ -62,6 +66,8 @@ downloads:
 
 library:
   persistent:
+    existingClaim: ""
+    subPath: ""
     size: 10Gi
     storageClass: ""
     accessModes:

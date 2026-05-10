@@ -38,12 +38,18 @@ spec:
         volumeMounts:
         - name: downloads
           mountPath: /downloads
+          {{- if .Values.downloads.persistent.subPath }}
+          subPath: {{ .Values.downloads.persistent.subPath }}
+          {{- end }}
         - name: library
           mountPath: /media
+          {{- if .Values.library.persistent.subPath }}
+          subPath: {{ .Values.library.persistent.subPath }}
+          {{- end }}
       volumes:
       - name: downloads
         persistentVolumeClaim:
-          claimName: wytui-downloads
+          claimName: {{ .Values.downloads.persistent.existingClaim | default "wytui-downloads" }}
       - name: library
         persistentVolumeClaim:
-          claimName: wytui-library
+          claimName: {{ .Values.library.persistent.existingClaim | default "wytui-library" }}

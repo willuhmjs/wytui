@@ -63,8 +63,11 @@ spec:
         volumeMounts:
         - name: postgresql-data
           mountPath: /var/lib/postgresql/data
+          {{- if .Values.postgresql.persistent.subPath }}
+          subPath: {{ .Values.postgresql.persistent.subPath }}
+          {{- end }}
       volumes:
       - name: postgresql-data
         persistentVolumeClaim:
-          claimName: wytui-postgresql
+          claimName: {{ .Values.postgresql.persistent.existingClaim | default "wytui-postgresql" }}
 {{- end }}
