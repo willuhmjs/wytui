@@ -1023,7 +1023,7 @@
       <textarea
         id="url"
         bind:value={url}
-        placeholder="Paste YouTube, TikTok, Twitter, or any supported URL...&#10;&#10;Tip: Paste multiple URLs (one per line) for batch download"
+        placeholder="Paste YouTube, TikTok, Twitter, or any supported URL (batch input supported)"
         rows="3"
         disabled={loading}
       ></textarea>

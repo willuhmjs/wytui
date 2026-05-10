@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker build *)",
+      "Bash(docker image *)",
+      "Bash(awk '{print $1/1024/1024 \" MB\"}')",
+      "Bash(npm ls *)",
+      "Bash(docker run *)"
+    ]
+  }
+}
