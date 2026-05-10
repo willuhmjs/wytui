@@ -32,7 +32,7 @@ oidc:
     clientSecret: ""
     clientSecretKey: OIDC_CLIENT_SECRET
     issuer: ""
-    issuerKey: OIDC_ISSUER
+    issuerKey: OIDC_ISSUER_URL
 
 postgresql:
   enabled: true

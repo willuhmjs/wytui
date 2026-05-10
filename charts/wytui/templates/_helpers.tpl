@@ -18,7 +18,11 @@ Usage: {{- include "wytui.appEnv" . | nindent 8 }}
 - name: DATABASE_URL
   valueFrom:
     secretKeyRef:
+      {{- if .Values.postgresql.secret.existing }}
+      name: {{ .Values.postgresql.secret.name }}
+      {{- else }}
       name: {{ .Values.secret.name }}
+      {{- end }}
       key: {{ .Values.postgresql.secret.urlKey }}
 - name: AUTH_SECRET
   valueFrom:
@@ -30,7 +34,7 @@ Usage: {{- include "wytui.appEnv" . | nindent 8 }}
 - name: NODE_ENV
   value: "production"
 {{- if .Values.oidc.enabled }}
-- name: OIDC_NAME
+- name: OIDC_DISPLAY_NAME
   value: {{ .Values.oidc.name | quote }}
 - name: OIDC_CLIENT_ID
   valueFrom:
@@ -42,7 +46,7 @@ Usage: {{- include "wytui.appEnv" . | nindent 8 }}
     secretKeyRef:
       name: {{ .Values.oidc.secret.name }}
       key: {{ .Values.oidc.secret.clientSecretKey }}
-- name: OIDC_ISSUER
+- name: OIDC_ISSUER_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.oidc.secret.name }}
