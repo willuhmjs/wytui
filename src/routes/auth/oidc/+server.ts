@@ -4,7 +4,7 @@ import { getOidcConfig, isOidcConfigured } from '$lib/server/oidc';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
-	if (!isOidcConfigured()) {
+	if (!(await isOidcConfigured())) {
 		throw redirect(303, '/auth/signin');
 	}
 

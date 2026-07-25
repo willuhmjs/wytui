@@ -7,6 +7,7 @@ import { cleanupService } from '../services/cleanup.service';
 import { prisma } from '../db';
 import { autoDeleteService } from '../services/auto-delete.service';
 import { backupService } from '../services/backup.service';
+import { youtubeSyncService } from '../services/youtube-sync.service';
 
 export interface JobInfo {
 	name: string;
@@ -21,6 +22,7 @@ class JobScheduler {
 	private watchedCleanupTask: ScheduledTask | null = null;
 	private autoDeleteTask: ScheduledTask | null = null;
 	private backupTask: ScheduledTask | null = null;
+	private youtubeSyncTask: ScheduledTask | null = null;
 
 	private jobRegistry = new Map<string, JobInfo>();
 
@@ -134,6 +136,20 @@ class JobScheduler {
 			description: 'Reconcile files and enforce cache quota',
 		});
 
+		// Schedule YouTube sync (every 30 minutes)
+		this.youtubeSyncTask = cron.schedule('*/30 * * * *', async () => {
+			await this.logJobRun('youtube-sync', async () => {
+				await youtubeSyncService.runOnce();
+			});
+		});
+
+		this.jobRegistry.set('youtube-sync', {
+			name: 'youtube-sync',
+			cron: '*/30 * * * *',
+			enabled: true,
+			description: 'Sync YouTube watch history and watched status',
+		});
+
 		// Schedule automated backups if enabled
 		await this.startBackupTask();
 
@@ -191,6 +207,10 @@ class JobScheduler {
 					console.log(`[Scheduler] Manual backup created: ${backup.filename}`);
 					break;
 				}
+
+				case 'youtube-sync':
+					await youtubeSyncService.runOnce();
+					break;
 
 				default:
 					throw new Error(`Unknown job: ${jobName}`);
@@ -344,6 +364,11 @@ class JobScheduler {
 		if (this.backupTask) {
 			this.backupTask.stop();
 			this.backupTask = null;
+		}
+
+		if (this.youtubeSyncTask) {
+			this.youtubeSyncTask.stop();
+			this.youtubeSyncTask = null;
 		}
 
 		console.log('[Scheduler] All background jobs stopped');

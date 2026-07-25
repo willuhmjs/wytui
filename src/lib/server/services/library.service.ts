@@ -8,6 +8,8 @@ import { ytdlpService } from './ytdlp.service';
 import { plexService } from './plex.service';
 import { effectiveCacheQuota } from '../permissions';
 import { internalFetch } from '../utils/fetch';
+import { resolveBestThumbnailUrl } from './thumbnail';
+import { writeJellyfinArtwork } from './artwork';
 
 function sanitizeFilename(name: string): string {
 	return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'Unknown';
@@ -44,7 +46,11 @@ class LibraryService {
 
 		const userId = download.userId;
 		if (userId) {
-			sseEmitter.broadcastToUser('download:promoted', { id: download.id, storagePool: 'library' }, userId);
+			sseEmitter.broadcastToUser(
+				'download:promoted',
+				{ id: download.id, storagePool: 'library' },
+				userId,
+			);
 		} else {
 			sseEmitter.broadcast('download:promoted', { id: download.id, storagePool: 'library' });
 		}
@@ -55,7 +61,7 @@ class LibraryService {
 	private async promoteAudioToLibrary(
 		download: any,
 		resolvedLibrary: string,
-		targetLibrary: string
+		targetLibrary: string,
 	): Promise<void> {
 		const ext = extname(download.filepath);
 		const info = await musicMetadataService.resolveAndTag(download);
@@ -91,7 +97,9 @@ class LibraryService {
 		}
 
 		await copyFile(download.filepath, destPath);
-		try { await unlink(download.filepath); } catch {}
+		try {
+			await unlink(download.filepath);
+		} catch {}
 
 		if (info.coverArtBuffer) {
 			const coverPath = join(albumPath, 'cover.jpg');
@@ -120,7 +128,7 @@ class LibraryService {
 	private async promoteVideoToLibrary(
 		download: any,
 		resolvedLibrary: string,
-		targetLibrary: string
+		targetLibrary: string,
 	): Promise<void> {
 		const ext = extname(download.filepath);
 		const uploaderDir = sanitizeFilename(download.uploader || 'Unknown');
@@ -150,17 +158,26 @@ class LibraryService {
 		const destPath = join(videoDir, destFilename + ext);
 
 		await copyFile(download.filepath, destPath);
-		try { await unlink(download.filepath); } catch {}
+		try {
+			await unlink(download.filepath);
+		} catch {}
 
-		if (download.thumbnail) {
-			try {
-				const thumbRes = await fetch(download.thumbnail);
-				if (thumbRes.ok) {
-					const thumbPath = join(videoDir, 'cover.jpg');
-					const buffer = Buffer.from(await thumbRes.arrayBuffer());
-					await writeFile(thumbPath, buffer);
-				}
-			} catch {}
+		try {
+			const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+			const sourceUrl = await resolveBestThumbnailUrl({
+				videoId: download.videoId,
+				thumbnail: download.thumbnail,
+				// download.thumbnails is not persisted; videoId + thumbnail cover current cases.
+			});
+			if (sourceUrl) {
+				await writeJellyfinArtwork({
+					sourceUrl,
+					videoDir,
+					generatePoster: settings?.generateJellyfinPosters ?? true,
+				});
+			}
+		} catch {
+			/* artwork is best-effort; never block the library move */
 		}
 
 		const uploaderPath = resolve(targetLibrary, uploaderDir);
@@ -201,7 +218,10 @@ class LibraryService {
 		const settings = await this.getSettings();
 		let quotaBytes = settings.cacheQuotaBytes;
 		if (userId) {
-			const user = await prisma.user.findUnique({ where: { id: userId }, select: { cacheQuotaBytes: true } });
+			const user = await prisma.user.findUnique({
+				where: { id: userId },
+				select: { cacheQuotaBytes: true },
+			});
 			quotaBytes = effectiveCacheQuota(user, settings);
 		}
 		const scope = userId ? { userId } : {};
@@ -248,7 +268,11 @@ class LibraryService {
 			await prisma.download.delete({ where: { id: candidate.id } });
 
 			if (candidate.userId) {
-				sseEmitter.broadcastToUser('download:deleted', { id: candidate.id, reason: 'cache_quota' }, candidate.userId);
+				sseEmitter.broadcastToUser(
+					'download:deleted',
+					{ id: candidate.id, reason: 'cache_quota' },
+					candidate.userId,
+				);
 			} else {
 				sseEmitter.broadcast('download:deleted', { id: candidate.id, reason: 'cache_quota' });
 			}
@@ -257,11 +281,16 @@ class LibraryService {
 		}
 	}
 
-	async getCacheUsage(userId?: string): Promise<{ usedBytes: string; quotaBytes: string; percentage: number }> {
+	async getCacheUsage(
+		userId?: string,
+	): Promise<{ usedBytes: string; quotaBytes: string; percentage: number }> {
 		const settings = await this.getSettings();
 		let quotaBytes = settings.cacheQuotaBytes;
 		if (userId) {
-			const user = await prisma.user.findUnique({ where: { id: userId }, select: { cacheQuotaBytes: true } });
+			const user = await prisma.user.findUnique({
+				where: { id: userId },
+				select: { cacheQuotaBytes: true },
+			});
 			quotaBytes = effectiveCacheQuota(user, settings);
 		}
 		const scope = userId ? { userId } : {};
@@ -276,9 +305,8 @@ class LibraryService {
 		});
 
 		const usedBytes = result._sum.filesize ?? BigInt(0);
-		const percentage = quotaBytes > BigInt(0)
-			? Number((usedBytes * BigInt(10000)) / quotaBytes) / 100
-			: 0;
+		const percentage =
+			quotaBytes > BigInt(0) ? Number((usedBytes * BigInt(10000)) / quotaBytes) / 100 : 0;
 
 		return {
 			usedBytes: usedBytes.toString(),
@@ -319,7 +347,10 @@ class LibraryService {
 	 * enough space is free or there's nothing left to evict. Returns `sufficient: true`
 	 * if the disk can't be read at all — we don't want to block downloads on a bad stat.
 	 */
-	async ensureFreeDiskSpace(downloadPath: string, requiredBytes: bigint): Promise<{ freedBytes: bigint; sufficient: boolean }> {
+	async ensureFreeDiskSpace(
+		downloadPath: string,
+		requiredBytes: bigint,
+	): Promise<{ freedBytes: bigint; sufficient: boolean }> {
 		let free = await this.getDiskFreeBytes(downloadPath);
 		if (free == null) return { freedBytes: BigInt(0), sufficient: true };
 		if (free >= requiredBytes) return { freedBytes: BigInt(0), sufficient: true };
@@ -352,7 +383,11 @@ class LibraryService {
 			freedBytes += candidate.filesize ?? BigInt(0);
 
 			if (candidate.userId) {
-				sseEmitter.broadcastToUser('download:deleted', { id: candidate.id, reason: 'disk_space' }, candidate.userId);
+				sseEmitter.broadcastToUser(
+					'download:deleted',
+					{ id: candidate.id, reason: 'disk_space' },
+					candidate.userId,
+				);
 			} else {
 				sseEmitter.broadcast('download:deleted', { id: candidate.id, reason: 'disk_space' });
 			}
@@ -368,9 +403,10 @@ class LibraryService {
 	 * Returns null when no explicit cap is set and the disk can't be read — callers
 	 * treat null as "no global enforcement" (fail-safe, never mass-evict on bad data).
 	 */
-	async getEffectiveTotalCacheQuota(
-		settings?: { totalCacheQuotaBytes: bigint | null; downloadPath: string | null }
-	): Promise<bigint | null> {
+	async getEffectiveTotalCacheQuota(settings?: {
+		totalCacheQuotaBytes: bigint | null;
+		downloadPath: string | null;
+	}): Promise<bigint | null> {
 		const s = settings ?? (await this.getSettings());
 		if (s.totalCacheQuotaBytes != null) return s.totalCacheQuotaBytes;
 
@@ -382,7 +418,11 @@ class LibraryService {
 	}
 
 	/** Global cache usage across all users vs the effective global cap. */
-	async getTotalCacheUsage(): Promise<{ usedBytes: string; quotaBytes: string | null; percentage: number }> {
+	async getTotalCacheUsage(): Promise<{
+		usedBytes: string;
+		quotaBytes: string | null;
+		percentage: number;
+	}> {
 		const quotaBytes = await this.getEffectiveTotalCacheQuota();
 
 		const result = await prisma.download.aggregate({
@@ -391,9 +431,10 @@ class LibraryService {
 		});
 		const usedBytes = result._sum.filesize ?? BigInt(0);
 
-		const percentage = quotaBytes && quotaBytes > BigInt(0)
-			? Math.min(Number((usedBytes * BigInt(10000)) / quotaBytes) / 100, 100)
-			: 0;
+		const percentage =
+			quotaBytes && quotaBytes > BigInt(0)
+				? Math.min(Number((usedBytes * BigInt(10000)) / quotaBytes) / 100, 100)
+				: 0;
 
 		return {
 			usedBytes: usedBytes.toString(),
@@ -445,7 +486,11 @@ class LibraryService {
 			await prisma.download.delete({ where: { id: candidate.id } });
 
 			if (candidate.userId) {
-				sseEmitter.broadcastToUser('download:deleted', { id: candidate.id, reason: 'cache_quota' }, candidate.userId);
+				sseEmitter.broadcastToUser(
+					'download:deleted',
+					{ id: candidate.id, reason: 'cache_quota' },
+					candidate.userId,
+				);
 			} else {
 				sseEmitter.broadcast('download:deleted', { id: candidate.id, reason: 'cache_quota' });
 			}
@@ -454,38 +499,49 @@ class LibraryService {
 		}
 	}
 
-	async getLibraryUsage(): Promise<{ video: { usedBytes: string; count: number } | null; music: { usedBytes: string; count: number } | null }> {
+	async getLibraryUsage(): Promise<{
+		video: { usedBytes: string; count: number } | null;
+		music: { usedBytes: string; count: number } | null;
+	}> {
 		const settings = await this.getSettings();
 
-		const videoResult = settings.libraryPath ? await prisma.download.aggregate({
-			where: {
-				storagePool: 'library',
-				status: DownloadStatus.COMPLETED,
-				profile: { audioOnly: false },
-			},
-			_sum: { filesize: true },
-			_count: true,
-		}) : null;
+		const videoResult = settings.libraryPath
+			? await prisma.download.aggregate({
+					where: {
+						storagePool: 'library',
+						status: DownloadStatus.COMPLETED,
+						profile: { audioOnly: false },
+					},
+					_sum: { filesize: true },
+					_count: true,
+				})
+			: null;
 
-		const musicResult = settings.musicLibraryPath ? await prisma.download.aggregate({
-			where: {
-				storagePool: 'library',
-				status: DownloadStatus.COMPLETED,
-				profile: { audioOnly: true },
-			},
-			_sum: { filesize: true },
-			_count: true,
-		}) : null;
+		const musicResult = settings.musicLibraryPath
+			? await prisma.download.aggregate({
+					where: {
+						storagePool: 'library',
+						status: DownloadStatus.COMPLETED,
+						profile: { audioOnly: true },
+					},
+					_sum: { filesize: true },
+					_count: true,
+				})
+			: null;
 
 		return {
-			video: videoResult ? {
-				usedBytes: (videoResult._sum.filesize ?? BigInt(0)).toString(),
-				count: videoResult._count,
-			} : null,
-			music: musicResult ? {
-				usedBytes: (musicResult._sum.filesize ?? BigInt(0)).toString(),
-				count: musicResult._count,
-			} : null,
+			video: videoResult
+				? {
+						usedBytes: (videoResult._sum.filesize ?? BigInt(0)).toString(),
+						count: videoResult._count,
+					}
+				: null,
+			music: musicResult
+				? {
+						usedBytes: (musicResult._sum.filesize ?? BigInt(0)).toString(),
+						count: musicResult._count,
+					}
+				: null,
 		};
 	}
 
@@ -517,7 +573,11 @@ class LibraryService {
 			await prisma.download.delete({ where: { id: candidate.id } });
 
 			if (candidate.userId) {
-				sseEmitter.broadcastToUser('download:deleted', { id: candidate.id, reason: 'cache_clear' }, candidate.userId);
+				sseEmitter.broadcastToUser(
+					'download:deleted',
+					{ id: candidate.id, reason: 'cache_clear' },
+					candidate.userId,
+				);
 			} else {
 				sseEmitter.broadcast('download:deleted', { id: candidate.id, reason: 'cache_clear' });
 			}
@@ -555,7 +615,7 @@ class LibraryService {
 		}
 		if (unavailableRoots.length > 0) {
 			console.warn(
-				`[LibraryService] Reconciliation: storage root(s) unreachable, skipping files under them: ${unavailableRoots.join(', ')}`
+				`[LibraryService] Reconciliation: storage root(s) unreachable, skipping files under them: ${unavailableRoots.join(', ')}`,
 			);
 		}
 
@@ -596,7 +656,7 @@ class LibraryService {
 		) {
 			console.error(
 				`[LibraryService] Reconciliation ABORTED: ${missing.length}/${checked} files appear missing ` +
-				`(>= ${LibraryService.RECONCILE_ABORT_FRACTION * 100}%). Assuming a storage outage; no records were removed.`
+					`(>= ${LibraryService.RECONCILE_ABORT_FRACTION * 100}%). Assuming a storage outage; no records were removed.`,
 			);
 			return 0;
 		}
@@ -627,7 +687,11 @@ class LibraryService {
 					await prisma.download.delete({ where: { id: download.id } });
 
 					if (download.userId) {
-						sseEmitter.broadcastToUser('download:deleted', { id: download.id, reason: 'file_missing' }, download.userId);
+						sseEmitter.broadcastToUser(
+							'download:deleted',
+							{ id: download.id, reason: 'file_missing' },
+							download.userId,
+						);
 					} else {
 						sseEmitter.broadcast('download:deleted', { id: download.id, reason: 'file_missing' });
 					}

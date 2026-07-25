@@ -28,7 +28,9 @@ function specToText(spec: ReturnType<typeof buildSpec>): string {
 				lines.push('\nParameters:');
 				for (const p of op.parameters) {
 					const req = p.required ? ' (required)' : '';
-					lines.push(`  - ${p.name} [${p.in}]: ${p.schema?.type || 'string'}${req}${p.schema?.description ? ' - ' + p.schema.description : ''}`);
+					lines.push(
+						`  - ${p.name} [${p.in}]: ${p.schema?.type || 'string'}${req}${p.schema?.description ? ' - ' + p.schema.description : ''}`,
+					);
 				}
 			}
 

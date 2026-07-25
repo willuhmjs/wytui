@@ -52,7 +52,7 @@ export function showConfirm(
 	title: string,
 	message: string,
 	confirmText = 'Confirm',
-	cancelText = 'Cancel'
+	cancelText = 'Cancel',
 ): Promise<boolean> {
 	dismissActive();
 	return new Promise((resolve) => {

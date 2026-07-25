@@ -17,7 +17,10 @@ function mockResponse(blob: Blob, disposition?: string) {
 		ok: true,
 		status: 200,
 		blob: () => Promise.resolve(blob),
-		headers: { get: (h: string) => (h.toLowerCase() === 'content-disposition' ? disposition ?? null : null) },
+		headers: {
+			get: (h: string) =>
+				h.toLowerCase() === 'content-disposition' ? (disposition ?? null) : null,
+		},
 	};
 }
 
@@ -142,7 +145,10 @@ describe('downloadOrShare', () => {
 		it('should prefer the Content-Disposition filename from the server', async () => {
 			const id = nextId();
 			fetchSpy.mockResolvedValue(
-				mockResponse(new Blob(['x'], { type: 'video/mp4' }), 'attachment; filename="Server Name.mp4"')
+				mockResponse(
+					new Blob(['x'], { type: 'video/mp4' }),
+					'attachment; filename="Server Name.mp4"',
+				),
 			);
 			navigatorShareSpy.mockResolvedValue(undefined);
 
@@ -222,7 +228,7 @@ describe('downloadOrShare', () => {
 
 			expect(toastStore.addToast).toHaveBeenCalledWith(
 				'info',
-				'Video ready — tap download again to save it'
+				'Video ready — tap download again to save it',
 			);
 			expect(windowOpenSpy).not.toHaveBeenCalled();
 			expect(fetchSpy).toHaveBeenCalledTimes(1);

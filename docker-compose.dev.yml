@@ -6,11 +6,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
       POSTGRES_DB: ${POSTGRES_DB:-wytui}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,11 +22,15 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      # Keep SvelteKit's generated output container-local so it never collides
+      # with the host's .svelte-kit (host tooling like `npm run check` and the
+      # container's Vite dev server each own their own copy).
+      - /app/.svelte-kit
       - downloads:/downloads
       - library:/media
     ports:
-      - "5173:5173"
-      - "5555:5555"
+      - '5173:5173'
+      - '5555:5555'
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword}@db:5432/${POSTGRES_DB:-wytui}?schema=public
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-please-change-in-production}

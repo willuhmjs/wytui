@@ -4,7 +4,8 @@
 	import { focusOnMount } from '$lib/utils/a11y';
 	import ListPlusIcon from '$lib/components/icons/ListPlusIcon.svelte';
 
-	let { downloadId, storagePool = 'library' }: { downloadId: string; storagePool?: string } = $props();
+	let { downloadId, storagePool = 'library' }: { downloadId: string; storagePool?: string } =
+		$props();
 
 	const canAddToPlaylist = $derived(storagePool === 'library');
 
@@ -67,10 +68,13 @@
 			});
 			if (res.ok) {
 				playlists = playlists.map((p) =>
-					p.id === playlist.id ? { ...p, hasItem: !p.hasItem } : p
+					p.id === playlist.id ? { ...p, hasItem: !p.hasItem } : p,
 				);
 			} else {
-				addToast('error', playlist.hasItem ? 'Failed to remove from playlist' : 'Failed to add to playlist');
+				addToast(
+					'error',
+					playlist.hasItem ? 'Failed to remove from playlist' : 'Failed to add to playlist',
+				);
 			}
 		} catch {
 			addToast('error', 'Request failed');
@@ -118,7 +122,12 @@
 	$effect(() => {
 		if (!open) return;
 		function handler(e: MouseEvent) {
-			if (menuEl && !menuEl.contains(e.target as Node) && btnEl && !btnEl.contains(e.target as Node)) {
+			if (
+				menuEl &&
+				!menuEl.contains(e.target as Node) &&
+				btnEl &&
+				!btnEl.contains(e.target as Node)
+			) {
 				closeMenu();
 			}
 		}
@@ -164,7 +173,14 @@
 							>
 								<span class="playlist-check" class:checked={playlist.hasItem}>
 									{#if playlist.hasItem}
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+										<svg
+											width="12"
+											height="12"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="3"
+										>
 											<polyline points="20 6 9 17 4 12" />
 										</svg>
 									{/if}
@@ -189,16 +205,34 @@
 								use:focusOnMount
 								maxlength={100}
 							/>
-							<button class="btn btn-sm btn-primary" type="submit" disabled={creating || !newName.trim()}>
+							<button
+								class="btn btn-sm btn-primary"
+								type="submit"
+								disabled={creating || !newName.trim()}
+							>
 								{creating ? 'Creating…' : 'Create'}
 							</button>
-							<button class="btn btn-sm btn-ghost" type="button" onclick={() => { showNewInput = false; newName = ''; }}>
+							<button
+								class="btn btn-sm btn-ghost"
+								type="button"
+								onclick={() => {
+									showNewInput = false;
+									newName = '';
+								}}
+							>
 								Cancel
 							</button>
 						</form>
 					{:else}
 						<button class="new-playlist-btn" onclick={() => (showNewInput = true)}>
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+							>
 								<line x1="12" y1="5" x2="12" y2="19" />
 								<line x1="5" y1="12" x2="19" y2="12" />
 							</svg>
@@ -279,7 +313,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: background var(--transition-fast), border-color var(--transition-fast);
+		transition:
+			background var(--transition-fast),
+			border-color var(--transition-fast);
 	}
 
 	.playlist-check.checked {
@@ -323,7 +359,9 @@
 		cursor: pointer;
 		border-radius: var(--radius-sm);
 		min-height: unset;
-		transition: color var(--transition-fast), background var(--transition-fast);
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast);
 	}
 
 	.new-playlist-btn:hover {

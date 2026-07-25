@@ -8,16 +8,18 @@ name: Publish Extension (Firefox AMO)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'extension/**'
   workflow_dispatch: {}
 
 jobs:
   publish:
+    # Forks have no AMO credentials — publishing only runs in the upstream repo.
+    if: github.repository == 'willuhmjs/wytui'
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # to push the ext-v<version> tag
+      contents: write # to push the ext-v<version> tag
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

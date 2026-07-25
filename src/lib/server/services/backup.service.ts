@@ -54,17 +54,24 @@ class BackupService {
 		};
 
 		// Create timestamped filename
-		const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, '');
+		const timestamp = new Date()
+			.toISOString()
+			.replace(/:/g, '-')
+			.replace(/\.\d+Z$/, '');
 		const filename = `wytui-backup-${timestamp}.json`;
 		const filepath = join(backupPath, filename);
 
 		// Serialize with BigInt handling
-		const jsonContent = JSON.stringify(data, (_key, value) => {
-			if (typeof value === 'bigint') {
-				return value.toString();
-			}
-			return value;
-		}, 2);
+		const jsonContent = JSON.stringify(
+			data,
+			(_key, value) => {
+				if (typeof value === 'bigint') {
+					return value.toString();
+				}
+				return value;
+			},
+			2,
+		);
 
 		await fs.writeFile(filepath, jsonContent, 'utf-8');
 

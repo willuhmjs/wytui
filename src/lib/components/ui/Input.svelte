@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
 	import { uniqueId } from '$lib/utils/a11y';
+	import EyeToggleButton from './EyeToggleButton.svelte';
 
 	interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
 		value?: string;
@@ -35,6 +36,12 @@
 	let focused = $state(false);
 	let touched = $state(false);
 	let internalError = $state('');
+	let revealed = $state(false);
+
+	// Password fields get a reveal toggle; revealing swaps the rendered type to
+	// 'text' without touching the caller's `type` prop.
+	const isPassword = $derived(type === 'password');
+	const effectiveType = $derived(isPassword && revealed ? 'text' : type);
 
 	const displayError = $derived(error || internalError);
 	const charCount = $derived(value?.length ?? 0);
@@ -112,10 +119,15 @@
 </script>
 
 <div class="input-wrapper {extraClass}">
-	<div class="input-container" class:focused class:has-error={!!displayError} class:has-success={showSuccessState}>
+	<div
+		class="input-container"
+		class:focused
+		class:has-error={!!displayError}
+		class:has-success={showSuccessState}
+	>
 		<input
 			{...rest}
-			{type}
+			type={effectiveType}
 			id={inputId}
 			{value}
 			{required}
@@ -126,15 +138,36 @@
 			onblur={handleBlur}
 			onfocus={handleFocus}
 		/>
+		{#if isPassword}
+			<EyeToggleButton bind:revealed disabled={!!rest.disabled} />
+		{/if}
 		{#if showSuccessState}
 			<span class="status-icon success-icon" aria-hidden="true">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="3"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<polyline points="20 6 9 17 4 12"></polyline>
 				</svg>
 			</span>
 		{:else if displayError}
 			<span class="status-icon error-icon" aria-hidden="true">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<circle cx="12" cy="12" r="10"></circle>
 					<line x1="12" y1="8" x2="12" y2="12"></line>
 					<line x1="12" y1="16" x2="12.01" y2="16"></line>

@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { downloadService } from './download.service';
 import { ytdlpService } from './ytdlp.service';
+import { youtubeService } from './youtube.service';
 import { sseEmitter } from '../sse/emitter';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
@@ -85,15 +86,41 @@ class SubscriptionService {
 
 			console.log(`[Subscriptions] Checking ${subscription.name}...`);
 
-			// Get latest videos from channel, including real publish dates so we can
-			// tell genuinely-new uploads apart from back-catalog / pre-seeded entries.
-			const videos = await this.getLatestVideosWithDates(subscription.url);
+			// Feed-based detection: if the owner linked YouTube and enabled feed mode,
+			// prefer the single subscription feed over polling this channel directly.
+			let videos: any[] | null = null;
+			if (subscription.userId) {
+				const link = await prisma.youTubeLink.findUnique({
+					where: { userId: subscription.userId },
+				});
+				if (link?.useFeedForNewVideos) {
+					const feed = await youtubeService.fetchSubscriptionFeed(subscription.userId);
+					if (!('needsRelink' in feed)) {
+						const matched = this.matchFeedToSubscription(feed, subscription);
+						if (matched.length > 0) {
+							videos = matched;
+							console.log(
+								`[Subscriptions] Using YouTube feed for ${subscription.name}: ${videos.length} candidate(s)`,
+							);
+						}
+						// if matched.length === 0 we leave videos = null and fall through to polling
+					}
+					// needsRelink → leave videos = null, fall through to normal polling (graceful degradation)
+				}
+			}
+			if (videos === null) {
+				// Get latest videos from channel, including real publish dates so we can
+				// tell genuinely-new uploads apart from back-catalog / pre-seeded entries.
+				videos = await this.getLatestVideosWithDates(subscription.url);
+			}
 
 			// Filter out already downloaded videos
 			const newVideos = await this.filterNewVideos(videos, subscription);
 
 			if (newVideos.length > 0 && subscription.autoDownload) {
-				console.log(`[Subscriptions] Found ${newVideos.length} new videos for ${subscription.name}`);
+				console.log(
+					`[Subscriptions] Found ${newVideos.length} new videos for ${subscription.name}`,
+				);
 
 				for (const video of newVideos) {
 					try {
@@ -103,7 +130,7 @@ class SubscriptionService {
 							subscription.userId || undefined,
 							subscriptionId,
 							subscription.saveToLibrary,
-							subscription.customFlags?.length ? subscription.customFlags : undefined
+							subscription.customFlags?.length ? subscription.customFlags : undefined,
 						);
 					} catch (err) {
 						console.error(`[Subscriptions] Failed to create download for ${video.url}:`, err);
@@ -128,6 +155,26 @@ class SubscriptionService {
 		} finally {
 			this.activeChecks.delete(subscriptionId);
 		}
+	}
+
+	/**
+	 * Match feed entries to this subscription's channel
+	 */
+	private matchFeedToSubscription(feed: any[], subscription: any): any[] {
+		// Extract channel ID from subscription URL if present
+		const channelIdMatch = subscription.url.match(/\/channel\/(UC[\w-]+)/);
+		if (channelIdMatch) {
+			const channelId = channelIdMatch[1];
+			return feed.filter((entry) => entry.channelId === channelId);
+		}
+
+		// Otherwise match by uploader name (case-insensitive)
+		if (subscription.name) {
+			const normalizedName = subscription.name.toLowerCase();
+			return feed.filter((entry) => entry.uploader?.toLowerCase() === normalizedName);
+		}
+
+		return [];
 	}
 
 	/**
@@ -170,7 +217,9 @@ class SubscriptionService {
 			const timeout = setTimeout(() => {
 				if (settled) return;
 				settled = true;
-				try { proc.kill('SIGKILL'); } catch {}
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
 				reject(new Error('yt-dlp playlist fetch timed out'));
 			}, 120000);
 
@@ -225,17 +274,16 @@ class SubscriptionService {
 	/**
 	 * Fetch playlist entries from yt-dlp with optional limit and date filter
 	 */
-	private async fetchPlaylistEntries(url: string, opts: { limit?: number; dateAfter?: string } = {}): Promise<any[]> {
+	private async fetchPlaylistEntries(
+		url: string,
+		opts: { limit?: number; dateAfter?: string } = {},
+	): Promise<any[]> {
 		ytdlpService.validateUrl(url);
 
 		const useFullExtraction = !!opts.dateAfter;
 
 		return new Promise((resolve, reject) => {
-			const args = [
-				'--print', 'id',
-				'--print', 'title',
-				'--print', 'webpage_url',
-			];
+			const args = ['--print', 'id', '--print', 'title', '--print', 'webpage_url'];
 
 			if (useFullExtraction) {
 				args.unshift('--no-download');
@@ -259,7 +307,9 @@ class SubscriptionService {
 			const timeout = setTimeout(() => {
 				if (settled) return;
 				settled = true;
-				try { proc.kill('SIGKILL'); } catch {}
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
 				reject(new Error('yt-dlp playlist fetch timed out'));
 			}, 120000);
 
@@ -339,7 +389,10 @@ class SubscriptionService {
 	/**
 	 * Backfill a subscription — download all or date-filtered videos
 	 */
-	async backfillSubscription(subscriptionId: string, opts: { dateAfter?: string } = {}): Promise<{ totalVideos: number; newVideos: number }> {
+	async backfillSubscription(
+		subscriptionId: string,
+		opts: { dateAfter?: string } = {},
+	): Promise<{ totalVideos: number; newVideos: number }> {
 		const subscription = await prisma.subscription.findUnique({
 			where: { id: subscriptionId },
 			include: { profile: true },
@@ -360,14 +413,16 @@ class SubscriptionService {
 					subscription.userId || undefined,
 					subscriptionId,
 					subscription.saveToLibrary,
-					subscription.customFlags?.length ? subscription.customFlags : undefined
+					subscription.customFlags?.length ? subscription.customFlags : undefined,
 				);
 			} catch (err) {
 				console.error(`[Subscriptions] Backfill: failed to create download for ${video.url}:`, err);
 			}
 		}
 
-		console.log(`[Subscriptions] Backfill for ${subscription.name}: ${newVideos.length} new of ${videos.length} total`);
+		console.log(
+			`[Subscriptions] Backfill for ${subscription.name}: ${newVideos.length} new of ${videos.length} total`,
+		);
 
 		sseEmitter.broadcast('subscription:backfill', {
 			id: subscriptionId,
@@ -392,7 +447,9 @@ class SubscriptionService {
 	 */
 	private async filterNewVideos(videos: any[], subscription?: any): Promise<any[]> {
 		const newVideos = [];
-		const subCreatedAt = subscription?.createdAt ? new Date(subscription.createdAt).getTime() : null;
+		const subCreatedAt = subscription?.createdAt
+			? new Date(subscription.createdAt).getTime()
+			: null;
 		const now = Date.now();
 
 		for (const video of videos) {
@@ -425,9 +482,12 @@ class SubscriptionService {
 					}
 				} else {
 					// Seed-only archive entry (recorded without ever being downloaded).
-					// Only skip it if the video is genuinely older than the subscription;
-					// a video published *after* we subscribed but pre-seeded (e.g. it was
-					// a scheduled premiere when the channel was seeded) must not be lost.
+					// Only un-skip it if we can *positively* confirm the video was
+					// published after the subscription was created (e.g. a scheduled
+					// premiere that was pre-seeded and later went public). Feed entries
+					// carry no upload timestamp, so they cannot clear this bar and must
+					// keep respecting the pre-seed/archive skip — otherwise a
+					// back-catalog video surfacing in the feed would be resurrected.
 					const publishedAfterSub =
 						subCreatedAt != null &&
 						video.uploadedAt instanceof Date &&

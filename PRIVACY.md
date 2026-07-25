@@ -3,6 +3,7 @@
 wytui does not collect, store, or transmit any personal data to any third party.
 
 The extension stores the following data locally in your browser using chrome.storage.local:
+
 - Your wytui server URL
 - Your optional API key
 

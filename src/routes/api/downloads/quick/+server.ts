@@ -17,11 +17,11 @@ function getCorsHeaders(request: Request): Record<string, string> {
 	const origin = request.headers.get('origin');
 
 	// Check if origin is allowed or is a chrome-extension (for browser extensions)
-	const isAllowed = origin && (
-		ALLOWED_ORIGINS.includes(origin) ||
-		origin.startsWith('chrome-extension://') ||
-		origin.startsWith('moz-extension://')
-	);
+	const isAllowed =
+		origin &&
+		(ALLOWED_ORIGINS.includes(origin) ||
+			origin.startsWith('chrome-extension://') ||
+			origin.startsWith('moz-extension://'));
 
 	if (isAllowed) {
 		return {
@@ -45,7 +45,10 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 
 	const lookupUrl = url.searchParams.get('url');
 	if (!lookupUrl) {
-		return json({ error: 'Missing url parameter' }, { status: 400, headers: getCorsHeaders(request) });
+		return json(
+			{ error: 'Missing url parameter' },
+			{ status: 400, headers: getCorsHeaders(request) },
+		);
 	}
 
 	// Match on the stable videoId (indexed) when we can derive one — exact-URL
@@ -74,7 +77,9 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 			format: true,
 			height: true,
 			videoType: true,
-			profile: { select: { id: true, name: true, quality: true, audioOnly: true, audioFormat: true } },
+			profile: {
+				select: { id: true, name: true, quality: true, audioOnly: true, audioFormat: true },
+			},
 		},
 		orderBy: { createdAt: 'desc' },
 	});
@@ -89,91 +94,126 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 	return json(serialized, { headers: getCorsHeaders(request) });
 };
 
-export const POST = apiRoute('/api/downloads/quick', 'POST', {
-	summary: 'Quick download (browser extension)',
-	description: 'Simplified endpoint for browser extensions. Accepts just a URL and uses the default profile.',
-	tags: ['Downloads'],
-	auth: true,
-	body: {
-		url: { type: 'string', required: true, description: 'URL to download' },
-	},
-	responses: {
-		201: {
-			description: 'Created download object',
-			schema: {
-				type: 'object',
-				properties: {
-					id: { type: 'string' },
-					url: { type: 'string' },
-					status: { type: 'string', enum: ['PENDING', 'FETCHING_INFO', 'DOWNLOADING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'] },
-					title: { type: 'string', nullable: true },
-					thumbnail: { type: 'string', nullable: true },
-					duration: { type: 'integer', nullable: true },
-					uploader: { type: 'string', nullable: true },
-					progress: { type: 'number' },
-					speed: { type: 'string', nullable: true },
-					eta: { type: 'string', nullable: true },
-					filename: { type: 'string', nullable: true },
-					filepath: { type: 'string', nullable: true },
-					filesize: { type: 'string', nullable: true },
-					profileId: { type: 'string' },
-					userId: { type: 'string', nullable: true },
-					storagePool: { type: 'string', enum: ['cache', 'library'] },
-					createdAt: { type: 'string', format: 'date-time' },
-					completedAt: { type: 'string', format: 'date-time', nullable: true },
+export const POST = apiRoute(
+	'/api/downloads/quick',
+	'POST',
+	{
+		summary: 'Quick download (browser extension)',
+		description:
+			'Simplified endpoint for browser extensions. Accepts just a URL and uses the default profile.',
+		tags: ['Downloads'],
+		auth: true,
+		body: {
+			url: { type: 'string', required: true, description: 'URL to download' },
+		},
+		responses: {
+			201: {
+				description: 'Created download object',
+				schema: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' },
+						url: { type: 'string' },
+						status: {
+							type: 'string',
+							enum: [
+								'PENDING',
+								'FETCHING_INFO',
+								'DOWNLOADING',
+								'PROCESSING',
+								'COMPLETED',
+								'FAILED',
+								'CANCELLED',
+							],
+						},
+						title: { type: 'string', nullable: true },
+						thumbnail: { type: 'string', nullable: true },
+						duration: { type: 'integer', nullable: true },
+						uploader: { type: 'string', nullable: true },
+						progress: { type: 'number' },
+						speed: { type: 'string', nullable: true },
+						eta: { type: 'string', nullable: true },
+						filename: { type: 'string', nullable: true },
+						filepath: { type: 'string', nullable: true },
+						filesize: { type: 'string', nullable: true },
+						profileId: { type: 'string' },
+						userId: { type: 'string', nullable: true },
+						storagePool: { type: 'string', enum: ['cache', 'library'] },
+						createdAt: { type: 'string', format: 'date-time' },
+						completedAt: { type: 'string', format: 'date-time', nullable: true },
+					},
 				},
 			},
 		},
 	},
-}, async ({ request, locals }) => {
-	try {
-		const { url, profileId, saveToLibrary } = await request.json();
-
-		if (!url) {
-			return json({ error: 'Missing required field: url' }, { status: 400, headers: getCorsHeaders(request) });
-		}
-
-		// Validate URL format
+	async ({ request, locals }) => {
 		try {
-			const urlObj = new URL(url);
-			if (!['http:', 'https:'].includes(urlObj.protocol)) {
-				return json({ error: 'Only HTTP(S) URLs are allowed' }, { status: 400, headers: getCorsHeaders(request) });
+			const { url, profileId, saveToLibrary } = await request.json();
+
+			if (!url) {
+				return json(
+					{ error: 'Missing required field: url' },
+					{ status: 400, headers: getCorsHeaders(request) },
+				);
 			}
-		} catch {
-			return json({ error: 'Invalid URL format' }, { status: 400, headers: getCorsHeaders(request) });
+
+			// Validate URL format
+			try {
+				const urlObj = new URL(url);
+				if (!['http:', 'https:'].includes(urlObj.protocol)) {
+					return json(
+						{ error: 'Only HTTP(S) URLs are allowed' },
+						{ status: 400, headers: getCorsHeaders(request) },
+					);
+				}
+			} catch {
+				return json(
+					{ error: 'Invalid URL format' },
+					{ status: 400, headers: getCorsHeaders(request) },
+				);
+			}
+
+			const userId = locals.session?.user?.id;
+
+			// Use specified profile if provided, otherwise fall back to user's default
+			let profile;
+			if (profileId) {
+				profile = await prisma.downloadProfile.findFirst({
+					where: {
+						id: profileId,
+						OR: [{ isSystem: true }, { userId }],
+					},
+				});
+			}
+			if (!profile) {
+				profile = await prisma.downloadProfile.findFirst({
+					where: userId ? { OR: [{ userId }, { isSystem: true }] } : { isSystem: true },
+					orderBy: [{ isDefault: 'desc' }, { isSystem: 'asc' }],
+				});
+			}
+
+			if (!profile) {
+				return json(
+					{ error: 'No download profile found. Create a profile first.' },
+					{ status: 400, headers: getCorsHeaders(request) },
+				);
+			}
+
+			const download = await downloadService.createDownload(
+				url,
+				profile.id,
+				userId,
+				undefined,
+				!!saveToLibrary,
+			);
+
+			return json(download, { status: 201, headers: getCorsHeaders(request) });
+		} catch (e: any) {
+			console.error('Failed to create quick download:', e);
+			return json(
+				{ error: e.message || 'Failed to create download' },
+				{ status: e.status || 500, headers: getCorsHeaders(request) },
+			);
 		}
-
-		const userId = locals.session?.user?.id;
-
-		// Use specified profile if provided, otherwise fall back to user's default
-		let profile;
-		if (profileId) {
-			profile = await prisma.downloadProfile.findFirst({
-				where: {
-					id: profileId,
-					OR: [{ isSystem: true }, { userId }],
-				},
-			});
-		}
-		if (!profile) {
-			profile = await prisma.downloadProfile.findFirst({
-				where: userId ? { OR: [{ userId }, { isSystem: true }] } : { isSystem: true },
-				orderBy: [{ isDefault: 'desc' }, { isSystem: 'asc' }],
-			});
-		}
-
-		if (!profile) {
-			return json({ error: 'No download profile found. Create a profile first.' }, { status: 400, headers: getCorsHeaders(request) });
-		}
-
-		const download = await downloadService.createDownload(url, profile.id, userId, undefined, !!saveToLibrary);
-
-		return json(download, { status: 201, headers: getCorsHeaders(request) });
-	} catch (e: any) {
-		console.error('Failed to create quick download:', e);
-		return json(
-			{ error: e.message || 'Failed to create download' },
-			{ status: e.status || 500, headers: getCorsHeaders(request) }
-		);
-	}
-}) satisfies RequestHandler;
+	},
+) satisfies RequestHandler;

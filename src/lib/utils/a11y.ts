@@ -15,12 +15,12 @@ const FOCUSABLE_SELECTOR = [
 	'object',
 	'embed',
 	'[tabindex]:not([tabindex="-1"])',
-	'[contenteditable="true"]'
+	'[contenteditable="true"]',
 ].join(',');
 
 export function getFocusableElements(container: HTMLElement): HTMLElement[] {
 	return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-		(el) => !el.hasAttribute('disabled') && el.offsetParent !== null
+		(el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
 	);
 }
 

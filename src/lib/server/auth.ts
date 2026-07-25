@@ -116,7 +116,8 @@ export function validatePassword(password: string): { valid: boolean; error?: st
 	if (complexityCount < 3) {
 		return {
 			valid: false,
-			error: 'Password must include at least 3 of: uppercase letters, lowercase letters, digits, special characters',
+			error:
+				'Password must include at least 3 of: uppercase letters, lowercase letters, digits, special characters',
 		};
 	}
 
@@ -165,10 +166,12 @@ export async function resolveApiKey(key: string): Promise<SessionUser | null> {
 	});
 	if (!apiKey) return null;
 
-	prisma.apiKey.update({
-		where: { id: apiKey.id },
-		data: { lastUsedAt: new Date() },
-	}).catch(() => {});
+	prisma.apiKey
+		.update({
+			where: { id: apiKey.id },
+			data: { lastUsedAt: new Date() },
+		})
+		.catch(() => {});
 
 	// API keys never grant admin privileges, even when the owner is an admin.
 	// Admin actions require an interactive session (least privilege for keys).
@@ -185,7 +188,8 @@ export async function resolveApiKey(key: string): Promise<SessionUser | null> {
 export async function createFirstAdmin(
 	email: string,
 	password: string,
-	name: string
+	name: string,
+	username?: string | null,
 ): Promise<SessionUser> {
 	// Check if users already exist
 	const userCount = await prisma.user.count();
@@ -206,6 +210,7 @@ export async function createFirstAdmin(
 	const user = await prisma.user.create({
 		data: {
 			email,
+			username: username?.trim() || null,
 			password: hashedPassword,
 			name,
 			isAdmin: true,

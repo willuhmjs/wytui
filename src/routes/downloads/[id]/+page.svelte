@@ -38,15 +38,20 @@
 	const TASK_ICONS: Record<string, string> = {
 		download: 'M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2',
 		merge: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
-		metadata: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-		thumbnail: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
-		subtitle: 'M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z',
+		metadata:
+			'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+		thumbnail:
+			'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+		subtitle:
+			'M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z',
 		sponsorblock: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
-		convert: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+		convert:
+			'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
 	};
 
 	let showTasks = $derived(
-		tasks.length > 0 && ['DOWNLOADING', 'PROCESSING', 'COMPLETED', 'FAILED'].includes(download.status)
+		tasks.length > 0 &&
+			['DOWNLOADING', 'PROCESSING', 'COMPLETED', 'FAILED'].includes(download.status),
 	);
 
 	// Listen for SSE task updates
@@ -94,7 +99,16 @@
 			}
 		});
 
-		return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); };
+		return () => {
+			unsub1();
+			unsub2();
+			unsub3();
+			unsub4();
+			unsub5();
+			unsub6();
+			unsub7();
+			unsub8();
+		};
 	});
 
 	// Playlist autoplay
@@ -105,7 +119,9 @@
 
 	function handleVideoEnded() {
 		if (!autoplay || !data.playlistContext?.nextDownloadId) return;
-		goto(`/downloads/${data.playlistContext.nextDownloadId}?playlist=${data.playlistContext.playlistId}`);
+		goto(
+			`/downloads/${data.playlistContext.nextDownloadId}?playlist=${data.playlistContext.playlistId}`,
+		);
 	}
 
 	function toggleAutoplay() {
@@ -135,7 +151,7 @@
 			csrfFetch(`/api/watch-progress/${download.id}`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ position, duration: dur })
+				body: JSON.stringify({ position, duration: dur }),
 			}).catch(() => {
 				// Fail silently
 			});
@@ -149,7 +165,9 @@
 	function formatDate(date: string | Date | null): string {
 		if (!date) return 'Unknown';
 		return new Date(date).toLocaleDateString(undefined, {
-			year: 'numeric', month: 'long', day: 'numeric',
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
 		});
 	}
 
@@ -162,7 +180,7 @@
 		const confirmed = await showConfirm(
 			'Delete Download',
 			`Delete "${download.title || 'this download'}"? This cannot be undone.`,
-			'Delete'
+			'Delete',
 		);
 		if (!confirmed) return;
 
@@ -227,10 +245,12 @@
 		}
 	}
 
-
 	function openInJellyfin() {
 		if (data.jellyfinUrl) {
-			window.open(`${data.jellyfinUrl}/web/index.html#!/search.html?query=${encodeURIComponent(download.title || '')}`, '_blank');
+			window.open(
+				`${data.jellyfinUrl}/web/index.html#!/search.html?query=${encodeURIComponent(download.title || '')}`,
+				'_blank',
+			);
 		}
 	}
 
@@ -240,20 +260,15 @@
 		return t ? parseFloat(t) : null;
 	});
 
-	let isVideo = $derived(
-		download.filepath?.match(/\.(mp4|webm|mkv)$/i) !== null
-	);
+	let isVideo = $derived(download.filepath?.match(/\.(mp4|webm|mkv)$/i) !== null);
 
-	let isAudio = $derived(
-		download.filepath?.match(/\.(mp3|m4a|aac|flac|opus|ogg|wav)$/i) !== null
-	);
+	let isAudio = $derived(download.filepath?.match(/\.(mp3|m4a|aac|flac|opus|ogg|wav)$/i) !== null);
 
 	// Metadata is fetched in phase 1 (PENDING -> FETCHING_INFO). If the record was
 	// opened before that completed, title/uploader/etc. are still null. Show a
 	// loading treatment that the SSE handlers above will resolve in place.
 	let metadataPending = $derived(
-		!download.title &&
-		['PENDING', 'FETCHING_INFO', 'DOWNLOADING'].includes(download.status)
+		!download.title && ['PENDING', 'FETCHING_INFO', 'DOWNLOADING'].includes(download.status),
 	);
 
 	let urlCopied = $state(false);
@@ -273,19 +288,35 @@
 		<div class="playlist-nav-bar">
 			<a href="/playlists/{data.playlistContext.playlistId}" class="back-link">
 				<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-					<path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+					<path
+						d="M10 3L5 8L10 13"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
 				</svg>
 				{data.playlistContext.playlistName}
 			</a>
 			<div class="playlist-nav-controls">
 				{#if data.playlistContext.prevDownloadId}
-					<a href="/downloads/{data.playlistContext.prevDownloadId}?playlist={data.playlistContext.playlistId}" class="btn btn-sm btn-secondary">
+					<a
+						href="/downloads/{data.playlistContext.prevDownloadId}?playlist={data.playlistContext
+							.playlistId}"
+						class="btn btn-sm btn-secondary"
+					>
 						← Prev
 					</a>
 				{/if}
-				<span class="playlist-position">{data.playlistContext.currentPosition} / {data.playlistContext.totalItems}</span>
+				<span class="playlist-position"
+					>{data.playlistContext.currentPosition} / {data.playlistContext.totalItems}</span
+				>
 				{#if data.playlistContext.nextDownloadId}
-					<a href="/downloads/{data.playlistContext.nextDownloadId}?playlist={data.playlistContext.playlistId}" class="btn btn-sm btn-secondary">
+					<a
+						href="/downloads/{data.playlistContext.nextDownloadId}?playlist={data.playlistContext
+							.playlistId}"
+						class="btn btn-sm btn-secondary"
+					>
 						Next →
 					</a>
 				{/if}
@@ -303,7 +334,13 @@
 	{:else}
 		<a href="/downloads" class="back-link">
 			<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-				<path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+				<path
+					d="M10 3L5 8L10 13"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
 			</svg>
 			Back to Downloads
 		</a>
@@ -338,9 +375,16 @@
 				<div class="skeleton thumbnail-skeleton" aria-hidden="true"></div>
 			{:else}
 				<div class="no-thumbnail">
-					<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-						<rect x="2" y="2" width="20" height="20" rx="2"/>
-						<path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none"/>
+					<svg
+						width="48"
+						height="48"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					>
+						<rect x="2" y="2" width="20" height="20" rx="2" />
+						<path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
 					</svg>
 				</div>
 			{/if}
@@ -361,12 +405,18 @@
 				<h1 class="title">{download.title || 'Untitled'}</h1>
 
 				{#if download.uploader}
-					<a href="/channels/{encodeURIComponent(download.uploader)}" class="uploader-link">{download.uploader}</a>
+					<a href="/channels/{encodeURIComponent(download.uploader)}" class="uploader-link"
+						>{download.uploader}</a
+					>
 				{/if}
 			{/if}
 
 			<div class="badges">
-				<span class="badge" class:badge-library={download.storagePool === 'library'} class:badge-cache={download.storagePool === 'cache'}>
+				<span
+					class="badge"
+					class:badge-library={download.storagePool === 'library'}
+					class:badge-cache={download.storagePool === 'cache'}
+				>
 					{download.storagePool === 'library' ? 'Library' : 'Cache'}
 				</span>
 				{#if download.videoType}
@@ -476,7 +526,12 @@
 
 			<div class="actions">
 				{#if download.status === 'COMPLETED'}
-					<DownloadVersionPicker downloadId={download.id} label="Download File" className="btn btn-primary" bind:open={downloadPickerOpen} />
+					<DownloadVersionPicker
+						downloadId={download.id}
+						label="Download File"
+						className="btn btn-primary"
+						bind:open={downloadPickerOpen}
+					/>
 					{#if download.storagePool === 'cache'}
 						{#if libraryRequestStatus === 'pending'}
 							<button class="btn btn-secondary" disabled title="Library save requested">
@@ -484,12 +539,24 @@
 								Library Save Requested
 							</button>
 						{:else if data.libraryAction === 'save'}
-							<button class="btn btn-accent" onclick={handlePromote} disabled={promoting} title="Save to library" aria-label="Save to library">
+							<button
+								class="btn btn-accent"
+								onclick={handlePromote}
+								disabled={promoting}
+								title="Save to library"
+								aria-label="Save to library"
+							>
 								<FolderDownIcon />
 								{promoting ? 'Moving...' : 'Save to Library'}
 							</button>
 						{:else if data.libraryAction === 'request'}
-							<button class="btn btn-accent" onclick={handlePromote} disabled={promoting} title="Request to save to library" aria-label="Request to save to library">
+							<button
+								class="btn btn-accent"
+								onclick={handlePromote}
+								disabled={promoting}
+								title="Request to save to library"
+								aria-label="Request to save to library"
+							>
 								<FolderDownIcon />
 								{promoting ? 'Requesting...' : 'Request Library Save'}
 							</button>
@@ -497,17 +564,34 @@
 					{/if}
 					<AddToPlaylistMenu downloadId={download.id} storagePool={download.storagePool} />
 					{#if data.jellyfinUrl}
-						<button class="btn btn-secondary" onclick={openInJellyfin} title="Open in Jellyfin" aria-label="Open in Jellyfin">
+						<button
+							class="btn btn-secondary"
+							onclick={openInJellyfin}
+							title="Open in Jellyfin"
+							aria-label="Open in Jellyfin"
+						>
 							<ExternalLinkIcon />
 							Open in Jellyfin
 						</button>
 					{/if}
 				{/if}
-				<button class="btn btn-secondary" onclick={handleRefreshMetadata} disabled={refreshing} title="Refresh metadata" aria-label="Refresh metadata">
+				<button
+					class="btn btn-secondary"
+					onclick={handleRefreshMetadata}
+					disabled={refreshing}
+					title="Refresh metadata"
+					aria-label="Refresh metadata"
+				>
 					<RefreshIcon />
 					{refreshing ? 'Refreshing...' : 'Refresh Metadata'}
 				</button>
-				<button class="btn btn-danger" onclick={handleDelete} disabled={deleting} title="Delete download" aria-label="Delete download">
+				<button
+					class="btn btn-danger"
+					onclick={handleDelete}
+					disabled={deleting}
+					title="Delete download"
+					aria-label="Delete download"
+				>
 					<TrashIcon />
 					{deleting ? 'Deleting...' : 'Delete'}
 				</button>
@@ -516,7 +600,9 @@
 			<div class="source-url">
 				<span class="meta-label">Source</span>
 				<div class="url-row">
-					<a href={download.url} target="_blank" rel="noopener noreferrer" class="url-link">{download.url}</a>
+					<a href={download.url} target="_blank" rel="noopener noreferrer" class="url-link"
+						>{download.url}</a
+					>
 					<button
 						class="copy-url-btn"
 						class:copied={urlCopied}
@@ -524,9 +610,21 @@
 						title={urlCopied ? 'Copied!' : 'Copy source URL'}
 					>
 						{#if urlCopied}
-							<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" /></svg>
+							<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"
+								><path
+									fill-rule="evenodd"
+									d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+									clip-rule="evenodd"
+								/></svg
+							>
 						{:else}
-							<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm4.03-.78a.75.75 0 011.06 0L15 10.38V7.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 010-1.5h2.63L8.28 5.78a.75.75 0 010-1.06z" clip-rule="evenodd" /></svg>
+							<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"
+								><path
+									fill-rule="evenodd"
+									d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm4.03-.78a.75.75 0 011.06 0L15 10.38V7.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 010-1.5h2.63L8.28 5.78a.75.75 0 010-1.06z"
+									clip-rule="evenodd"
+								/></svg
+							>
 						{/if}
 					</button>
 				</div>
@@ -539,21 +637,55 @@
 			<h3 class="tasks-heading">Processing Steps</h3>
 			<div class="task-timeline">
 				{#each tasks as task (task.id)}
-					<div class="task-step" class:task-pending={task.status === 'pending'} class:task-in-progress={task.status === 'in_progress'} class:task-completed={task.status === 'completed'} class:task-failed={task.status === 'failed'} class:task-skipped={task.status === 'skipped'}>
+					<div
+						class="task-step"
+						class:task-pending={task.status === 'pending'}
+						class:task-in-progress={task.status === 'in_progress'}
+						class:task-completed={task.status === 'completed'}
+						class:task-failed={task.status === 'failed'}
+						class:task-skipped={task.status === 'skipped'}
+					>
 						<div class="task-indicator">
 							{#if task.status === 'completed'}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="20 6 9 17 4 12"/>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<polyline points="20 6 9 17 4 12" />
 								</svg>
 							{:else if task.status === 'failed'}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
 								</svg>
 							{:else if task.status === 'in_progress'}
 								<div class="task-spinner"></div>
 							{:else if task.status === 'skipped'}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="5" y1="12" x2="19" y2="12"/>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<line x1="5" y1="12" x2="19" y2="12" />
 								</svg>
 							{:else}
 								<div class="task-dot"></div>
@@ -562,23 +694,42 @@
 						<div class="task-content">
 							<div class="task-header">
 								<div class="task-icon">
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d={TASK_ICONS[task.type] || TASK_ICONS.convert}/>
+									<svg
+										width="14"
+										height="14"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<path d={TASK_ICONS[task.type] || TASK_ICONS.convert} />
 									</svg>
 								</div>
 								<span class="task-type">{TASK_LABELS[task.type] || task.type}</span>
-								<span class="task-status-badge task-status-{task.status}">{task.status.replace('_', ' ')}</span>
+								<span class="task-status-badge task-status-{task.status}"
+									>{task.status.replace('_', ' ')}</span
+								>
 							</div>
 							{#if task.status === 'in_progress' && task.progress != null}
 								<div class="task-progress-bar">
-									<div class="task-progress-fill" style="width: {Math.min(100, task.progress)}%"></div>
+									<div
+										class="task-progress-fill"
+										style="width: {Math.min(100, task.progress)}%"
+									></div>
 								</div>
 							{/if}
 							{#if task.message}
 								<p class="task-message">{task.message}</p>
 							{/if}
 							{#if task.startedAt && task.completedAt}
-								<p class="task-timing">{Math.round((new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000)}s</p>
+								<p class="task-timing">
+									{Math.round(
+										(new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) /
+											1000,
+									)}s
+								</p>
 							{/if}
 						</div>
 					</div>
@@ -589,7 +740,12 @@
 
 	{#if data.similar && data.similar.length > 0}
 		<div class="similar-section">
-			<h3 class="similar-heading">More from <a href="/channels/{encodeURIComponent(download.uploader ?? '')}" class="similar-channel-link">{download.uploader}</a></h3>
+			<h3 class="similar-heading">
+				More from <a
+					href="/channels/{encodeURIComponent(download.uploader ?? '')}"
+					class="similar-channel-link">{download.uploader}</a
+				>
+			</h3>
 			<div class="similar-grid">
 				{#each data.similar as item}
 					<a href="/downloads/{item.id}" class="similar-card">
@@ -1138,7 +1294,9 @@
 	}
 
 	@keyframes task-spin {
-		to { transform: rotate(360deg); }
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.task-content {
@@ -1231,10 +1389,21 @@
 	}
 
 	@media (max-width: 768px) {
-		.title { font-size: 1.25rem; }
-		.meta-grid { grid-template-columns: 1fr 1fr; }
-		.actions { flex-direction: column; }
-		.actions .btn { width: 100%; justify-content: center; }
-		.similar-grid { grid-template-columns: repeat(2, 1fr); }
+		.title {
+			font-size: 1.25rem;
+		}
+		.meta-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+		.actions {
+			flex-direction: column;
+		}
+		.actions .btn {
+			width: 100%;
+			justify-content: center;
+		}
+		.similar-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
 	}
 </style>

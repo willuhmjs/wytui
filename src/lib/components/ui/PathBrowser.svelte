@@ -169,7 +169,10 @@
 				<button
 					class="dropdown-item"
 					class:selected={i === selectedIndex}
-					onmousedown={(e) => { e.preventDefault(); selectDir(dir); }}
+					onmousedown={(e) => {
+						e.preventDefault();
+						selectDir(dir);
+					}}
 					type="button"
 				>
 					<span class="folder-icon">/</span>

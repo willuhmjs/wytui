@@ -12,7 +12,12 @@
 		videoType: string | null;
 		filesize: string | null;
 		storagePool: string;
-		profile?: { name?: string; quality?: string | null; audioOnly?: boolean; audioFormat?: string | null } | null;
+		profile?: {
+			name?: string;
+			quality?: string | null;
+			audioOnly?: boolean;
+			audioFormat?: string | null;
+		} | null;
 	};
 
 	let {
@@ -113,7 +118,13 @@
 	$effect(() => {
 		if (!open) return;
 		function down(e: MouseEvent) {
-			if (menuEl && !menuEl.contains(e.target as Node) && btnEl && !btnEl.contains(e.target as Node)) open = false;
+			if (
+				menuEl &&
+				!menuEl.contains(e.target as Node) &&
+				btnEl &&
+				!btnEl.contains(e.target as Node)
+			)
+				open = false;
 		}
 		function key(e: KeyboardEvent) {
 			if (e.key === 'Escape') open = false;
@@ -128,13 +139,27 @@
 </script>
 
 <div class="dvp-wrap">
-	<button bind:this={btnEl} class={className} onclick={handleClick} title="Download file" aria-label="Download file" aria-haspopup="menu" aria-expanded={open}>
+	<button
+		bind:this={btnEl}
+		class={className}
+		onclick={handleClick}
+		title="Download file"
+		aria-label="Download file"
+		aria-haspopup="menu"
+		aria-expanded={open}
+	>
 		<DownloadIcon />
 		{#if showLabel}{label}{/if}
 	</button>
 
 	{#if open && versions.length > 1}
-		<div class="dvp-popover" class:down={direction === 'down'} bind:this={menuEl} role="menu" aria-label="Choose version to download">
+		<div
+			class="dvp-popover"
+			class:down={direction === 'down'}
+			bind:this={menuEl}
+			role="menu"
+			aria-label="Choose version to download"
+		>
 			<div class="dvp-head">Choose version</div>
 			{#each versions as v}
 				<button class="dvp-row" role="menuitem" onclick={() => pick(v)}>

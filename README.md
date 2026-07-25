@@ -60,23 +60,23 @@ The chart includes a bundled PostgreSQL by default. To use an external database:
 postgresql:
   enabled: false
   secret:
-    url: "postgresql://user:pass@host:5432/wytui?schema=public"
+    url: 'postgresql://user:pass@host:5432/wytui?schema=public'
 ```
 
 ### Environment Variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `AUTH_SECRET` | Session signing secret |
-| `AUTH_TRUST_HOST` | Set `true` behind a reverse proxy (optional) |
-| `ORIGIN` | Public URL of the app (optional, defaults to `http://localhost:3000`) |
-| `ADMIN_USERNAME` | Auto-create admin user, skipping the setup wizard (optional) |
-| `ADMIN_PASSWORD` | Password for the auto-created admin user (optional) |
-| `OIDC_ISSUER_URL` | OIDC issuer URL (optional) |
-| `OIDC_CLIENT_ID` | OIDC client ID (optional) |
-| `OIDC_CLIENT_SECRET` | OIDC client secret (optional) |
-| `OIDC_DISPLAY_NAME` | OIDC provider display name (optional, defaults to "SSO") |
+| Variable             | Description                                                           |
+| -------------------- | --------------------------------------------------------------------- |
+| `DATABASE_URL`       | PostgreSQL connection string                                          |
+| `AUTH_SECRET`        | Session signing secret                                                |
+| `AUTH_TRUST_HOST`    | Set `true` behind a reverse proxy (optional)                          |
+| `ORIGIN`             | Public URL of the app (optional, defaults to `http://localhost:3000`) |
+| `ADMIN_USERNAME`     | Auto-create admin user, skipping the setup wizard (optional)          |
+| `ADMIN_PASSWORD`     | Password for the auto-created admin user (optional)                   |
+| `OIDC_ISSUER_URL`    | OIDC issuer URL (optional)                                            |
+| `OIDC_CLIENT_ID`     | OIDC client ID (optional)                                             |
+| `OIDC_CLIENT_SECRET` | OIDC client secret (optional)                                         |
+| `OIDC_DISPLAY_NAME`  | OIDC provider display name (optional, defaults to "SSO")              |
 
 ## OIDC Authentication
 

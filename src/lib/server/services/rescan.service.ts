@@ -34,7 +34,7 @@ class RescanService {
 				} catch {
 					missing.push({ id: dl.id, title: dl.title, filepath: dl.filepath! });
 				}
-			})
+			}),
 		);
 
 		return { missing, ok };

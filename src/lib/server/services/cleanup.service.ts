@@ -79,7 +79,12 @@ class CleanupService {
 		graceHours: number,
 	): Promise<boolean> {
 		const filename = basename(download.filepath!);
-		const jellyfinItemId = await this.findJellyfinItem(baseUrl, apiKey, filename, download.filepath!);
+		const jellyfinItemId = await this.findJellyfinItem(
+			baseUrl,
+			apiKey,
+			filename,
+			download.filepath!,
+		);
 
 		if (!jellyfinItemId) return false;
 
@@ -145,13 +150,10 @@ class CleanupService {
 		userIds: string[],
 	): Promise<boolean> {
 		for (const userId of userIds) {
-			const res = await internalFetch(
-				`${baseUrl}/Users/${userId}/Items/${itemId}/UserData`,
-				{
-					headers: { 'X-Emby-Token': apiKey },
-					signal: AbortSignal.timeout(10000),
-				},
-			);
+			const res = await internalFetch(`${baseUrl}/Users/${userId}/Items/${itemId}/UserData`, {
+				headers: { 'X-Emby-Token': apiKey },
+				signal: AbortSignal.timeout(10000),
+			});
 
 			if (!res.ok) return false;
 
@@ -199,11 +201,15 @@ class CleanupService {
 		});
 
 		if (download.userId) {
-			sseEmitter.broadcastToUser('download:updated', {
-				id: download.id,
-				status: 'DELETED',
-				filepath: null,
-			}, download.userId);
+			sseEmitter.broadcastToUser(
+				'download:updated',
+				{
+					id: download.id,
+					status: 'DELETED',
+					filepath: null,
+				},
+				download.userId,
+			);
 		} else {
 			sseEmitter.broadcast('download:updated', {
 				id: download.id,

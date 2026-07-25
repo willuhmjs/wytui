@@ -5,6 +5,7 @@ import type { DownloadMetadata } from '$lib/types';
 
 export class YtdlpService {
 	private ytdlpPath: string;
+	private aria2cAvailableCache: boolean | null = null;
 
 	constructor(ytdlpPath = '/usr/local/bin/yt-dlp') {
 		this.ytdlpPath = ytdlpPath;
@@ -12,6 +13,17 @@ export class YtdlpService {
 
 	getPath(): string {
 		return this.ytdlpPath;
+	}
+
+	async isAria2cAvailable(): Promise<boolean> {
+		if (this.aria2cAvailableCache !== null) return this.aria2cAvailableCache;
+		const available = await new Promise<boolean>((resolve) => {
+			const p = spawn('aria2c', ['--version'], { stdio: 'ignore' });
+			p.on('error', () => resolve(false));
+			p.on('close', (code) => resolve(code === 0));
+		});
+		this.aria2cAvailableCache = available;
+		return available;
 	}
 
 	/**
@@ -86,7 +98,8 @@ export class YtdlpService {
 		return new Promise((resolve) => {
 			const proc = spawn(this.ytdlpPath, [
 				'--flat-playlist',
-				'--playlist-items', '0',
+				'--playlist-items',
+				'0',
 				'-J',
 				'--no-warnings',
 				url,
@@ -120,7 +133,8 @@ export class YtdlpService {
 		return new Promise((resolve) => {
 			const proc = spawn(this.ytdlpPath, [
 				'--flat-playlist',
-				'--playlist-items', '0',
+				'--playlist-items',
+				'0',
 				'-J',
 				'--no-warnings',
 				channelUrl,
@@ -138,7 +152,8 @@ export class YtdlpService {
 				}
 				try {
 					const info = JSON.parse(output);
-					const thumbnails: { url: string; width?: number; height?: number }[] = info.thumbnails || [];
+					const thumbnails: { url: string; width?: number; height?: number }[] =
+						info.thumbnails || [];
 					const avatar = thumbnails.find((t) => {
 						if (!t.width || !t.height) return false;
 						const ratio = t.width / t.height;
@@ -167,7 +182,10 @@ export class YtdlpService {
 	/**
 	 * Fetch video metadata using -J flag
 	 */
-	async fetchMetadata(url: string, options?: { cookiePath?: string | null }): Promise<DownloadMetadata> {
+	async fetchMetadata(
+		url: string,
+		options?: { cookiePath?: string | null },
+	): Promise<DownloadMetadata> {
 		this.validateUrl(url);
 		return new Promise((resolve, reject) => {
 			const args = ['-J', '--no-warnings'];
@@ -196,7 +214,8 @@ export class YtdlpService {
 						if (info.is_live || info.was_live) {
 							videoType = 'stream';
 						} else if (
-							(info.duration && info.duration <= 60) &&
+							info.duration &&
+							info.duration <= 60 &&
 							(info.webpage_url?.includes('/shorts/') || info.original_url?.includes('/shorts/'))
 						) {
 							videoType = 'short';
@@ -476,7 +495,11 @@ export class YtdlpService {
 	private isYouTubeUrl(url: string): boolean {
 		try {
 			const host = new URL(url).hostname.toLowerCase();
-			return host.includes('youtube.com') || host.includes('youtu.be') || host.includes('youtube-nocookie.com');
+			return (
+				host.includes('youtube.com') ||
+				host.includes('youtu.be') ||
+				host.includes('youtube-nocookie.com')
+			);
 		} catch {
 			return false;
 		}
@@ -510,7 +533,15 @@ export class YtdlpService {
 		url: string,
 		outputPath: string,
 		customFlags: string[] = [],
-		options?: { rateLimit?: string | null; sleepInterval?: number | null; cookiePath?: string | null }
+		options?: {
+			rateLimit?: string | null;
+			sleepInterval?: number | null;
+			cookiePath?: string | null;
+			concurrentFragments?: number | null;
+			useAria2c?: boolean;
+			httpChunkSize?: string | null;
+			aria2cAvailable?: boolean;
+		},
 	): string[] {
 		this.validateUrl(url);
 
@@ -536,6 +567,19 @@ export class YtdlpService {
 		}
 		if (options?.sleepInterval && options.sleepInterval > 0) {
 			args.push('--sleep-interval', String(options.sleepInterval));
+		}
+
+		// Concurrent fragment downloads (biggest free speedup for DASH/HLS)
+		if (options?.concurrentFragments && options.concurrentFragments > 1) {
+			args.push('--concurrent-fragments', String(options.concurrentFragments));
+		}
+		// HTTP chunk size tuning for large sequential downloads
+		if (options?.httpChunkSize) {
+			args.push('--http-chunk-size', options.httpChunkSize);
+		}
+		// External downloader (aria2c) when enabled and present on PATH
+		if (options?.useAria2c && options.aria2cAvailable) {
+			args.push('--downloader', 'aria2c', '--downloader-args', 'aria2c:-x16 -s16 -k1M');
 		}
 
 		// Add cookie authentication if configured
@@ -571,7 +615,7 @@ export class YtdlpService {
 	spawnDownload(
 		args: string[],
 		onProgress?: (data: any) => void,
-		onError?: (error: string) => void
+		onError?: (error: string) => void,
 	): ChildProcess {
 		const proc = spawn(this.ytdlpPath, args, {
 			detached: true,
@@ -618,24 +662,28 @@ export class YtdlpService {
 						if (ppMatch && onProgress) {
 							const module = ppMatch[1];
 							const ignoredModules = new Set([
-								'download', 'info', 'debug', 'generic',
-								'youtube', 'youtube:tab',
+								'download',
+								'info',
+								'debug',
+								'generic',
+								'youtube',
+								'youtube:tab',
 							]);
 							if (!ignoredModules.has(module)) {
 								const stepMap: Record<string, string> = {
-									'SponsorBlock': 'SponsorBlock',
-									'ModifyChapters': 'Removing chapters',
-									'Merger': 'Merging formats',
-									'Metadata': 'Embedding metadata',
-									'EmbedSubtitle': 'Embedding subtitles',
-									'EmbedThumbnail': 'Embedding thumbnail',
-									'ExtractAudio': 'Extracting audio',
-									'FFmpegVideoConvertor': 'Converting video',
-									'FFmpegMetadata': 'Embedding metadata',
-									'ThumbnailsConvertor': 'Converting thumbnail',
-									'FixupM3u8': 'Fixing container',
-									'FixupDuplicateMoov': 'Fixing container',
-									'FixupStretchedRatio': 'Fixing aspect ratio',
+									SponsorBlock: 'SponsorBlock',
+									ModifyChapters: 'Removing chapters',
+									Merger: 'Merging formats',
+									Metadata: 'Embedding metadata',
+									EmbedSubtitle: 'Embedding subtitles',
+									EmbedThumbnail: 'Embedding thumbnail',
+									ExtractAudio: 'Extracting audio',
+									FFmpegVideoConvertor: 'Converting video',
+									FFmpegMetadata: 'Embedding metadata',
+									ThumbnailsConvertor: 'Converting thumbnail',
+									FixupM3u8: 'Fixing container',
+									FixupDuplicateMoov: 'Fixing container',
+									FixupStretchedRatio: 'Fixing aspect ratio',
 								};
 								const step = stepMap[module] || `Processing (${module})`;
 								onProgress({ type: 'postprocess', step, module });

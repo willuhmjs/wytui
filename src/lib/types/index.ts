@@ -1,4 +1,12 @@
-import type { Download, DownloadProfile, DownloadStatus, Subscription, Monitor, Settings, Archive } from '@prisma/client';
+import type {
+	Download,
+	DownloadProfile,
+	DownloadStatus,
+	Subscription,
+	Monitor,
+	Settings,
+	Archive,
+} from '@prisma/client';
 
 export type { Download, DownloadProfile, DownloadStatus, Subscription, Monitor, Settings, Archive };
 

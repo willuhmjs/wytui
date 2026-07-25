@@ -1,503 +1,741 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>wytui</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+	<head>
+		<meta charset="UTF-8" />
+		<title>wytui</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
 
-    body {
-      width: 340px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: #0a0a0a;
-      color: #ffffff;
-      font-size: 13px;
-      -webkit-font-smoothing: antialiased;
-    }
+			body {
+				width: 340px;
+				font-family:
+					-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+				background: #0a0a0a;
+				color: #ffffff;
+				font-size: 13px;
+				-webkit-font-smoothing: antialiased;
+			}
 
-    /* Header */
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 13px 16px;
-      border-bottom: 1px solid #1e1e1e;
-    }
-    .logo {
-      font-size: 16px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #7c3aed, #3b82f6);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .version {
-      font-size: 10px;
-      font-weight: 500;
-      color: #606060;
-      letter-spacing: 0.02em;
-      align-self: flex-end;
-      margin-bottom: 2px;
-      margin-left: -4px;
-    }
-    .status-badge {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: #606060;
-    }
-    .status-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: #3a3a3a;
-      flex-shrink: 0;
-    }
-    .status-dot.connected { background: #10b981; animation: pulse 2s infinite; }
-    .status-dot.checking { background: #f59e0b; animation: pulse 1s infinite; }
-    .status-dot.error { background: #ef4444; }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+			/* Header */
+			.header {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 13px 16px;
+				border-bottom: 1px solid #1e1e1e;
+			}
+			.logo {
+				font-size: 16px;
+				font-weight: 700;
+				background: linear-gradient(135deg, #7c3aed, #3b82f6);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+				background-clip: text;
+			}
+			.version {
+				font-size: 10px;
+				font-weight: 500;
+				color: #606060;
+				letter-spacing: 0.02em;
+				align-self: flex-end;
+				margin-bottom: 2px;
+				margin-left: -4px;
+			}
+			.status-badge {
+				margin-left: auto;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 11px;
+				color: #606060;
+			}
+			.status-dot {
+				width: 7px;
+				height: 7px;
+				border-radius: 50%;
+				background: #3a3a3a;
+				flex-shrink: 0;
+			}
+			.status-dot.connected {
+				background: #10b981;
+				animation: pulse 2s infinite;
+			}
+			.status-dot.checking {
+				background: #f59e0b;
+				animation: pulse 1s infinite;
+			}
+			.status-dot.error {
+				background: #ef4444;
+			}
+			@keyframes pulse {
+				0%,
+				100% {
+					opacity: 1;
+				}
+				50% {
+					opacity: 0.4;
+				}
+			}
 
-    /* Tabs */
-    .tabs {
-      display: flex;
-      border-bottom: 1px solid #1e1e1e;
-    }
-    .tab-btn {
-      flex: 1;
-      padding: 9px;
-      background: none;
-      border: none;
-      color: #606060;
-      font-size: 12px;
-      font-weight: 500;
-      font-family: inherit;
-      cursor: pointer;
-      transition: color 150ms ease, border-color 150ms ease;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-    }
-    .tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
-    .tab-btn:hover:not(.active):not(:disabled) { color: #a0a0a0; }
-    .tab-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+			/* Tabs */
+			.tabs {
+				display: flex;
+				border-bottom: 1px solid #1e1e1e;
+			}
+			.tab-btn {
+				flex: 1;
+				padding: 9px;
+				background: none;
+				border: none;
+				color: #606060;
+				font-size: 12px;
+				font-weight: 500;
+				font-family: inherit;
+				cursor: pointer;
+				transition:
+					color 150ms ease,
+					border-color 150ms ease;
+				border-bottom: 2px solid transparent;
+				margin-bottom: -1px;
+			}
+			.tab-btn.active {
+				color: #3b82f6;
+				border-bottom-color: #3b82f6;
+			}
+			.tab-btn:hover:not(.active):not(:disabled) {
+				color: #a0a0a0;
+			}
+			.tab-btn:disabled {
+				opacity: 0.35;
+				cursor: not-allowed;
+			}
 
-    /* Panels */
-    .panel { display: none; padding: 14px 16px; }
-    .panel.active { display: block; }
+			/* Panels */
+			.panel {
+				display: none;
+				padding: 14px 16px;
+			}
+			.panel.active {
+				display: block;
+			}
 
-    /* Current URL row */
-    .url-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: #141414;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      margin-bottom: 12px;
-    }
-    .url-favicon { width: 14px; height: 14px; flex-shrink: 0; border-radius: 2px; }
-    .url-text {
-      flex: 1;
-      font-size: 11px;
-      color: #a0a0a0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .url-open-btn {
-      flex-shrink: 0;
-      background: none;
-      border: none;
-      color: #606060;
-      cursor: pointer;
-      padding: 2px;
-      display: flex;
-      align-items: center;
-      border-radius: 4px;
-      transition: color 150ms ease;
-    }
-    .url-open-btn:hover { color: #3b82f6; }
+			/* Current URL row */
+			.url-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 10px;
+				background: #141414;
+				border: 1px solid #2a2a2a;
+				border-radius: 8px;
+				margin-bottom: 12px;
+			}
+			.url-favicon {
+				width: 14px;
+				height: 14px;
+				flex-shrink: 0;
+				border-radius: 2px;
+			}
+			.url-text {
+				flex: 1;
+				font-size: 11px;
+				color: #a0a0a0;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.url-open-btn {
+				flex-shrink: 0;
+				background: none;
+				border: none;
+				color: #606060;
+				cursor: pointer;
+				padding: 2px;
+				display: flex;
+				align-items: center;
+				border-radius: 4px;
+				transition: color 150ms ease;
+			}
+			.url-open-btn:hover {
+				color: #3b82f6;
+			}
 
-    /* Form controls */
-    .form-group { margin-bottom: 10px; }
-    label {
-      display: block;
-      font-size: 10.5px;
-      font-weight: 600;
-      color: #606060;
-      margin-bottom: 5px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
+			/* Form controls */
+			.form-group {
+				margin-bottom: 10px;
+			}
+			label {
+				display: block;
+				font-size: 10.5px;
+				font-weight: 600;
+				color: #606060;
+				margin-bottom: 5px;
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+			}
 
-    select, input[type="text"], input[type="password"] {
-      width: 100%;
-      padding: 8px 10px;
-      background: #1e1e1e;
-      border: 1px solid #3a3a3a;
-      border-radius: 8px;
-      color: #ffffff;
-      font-size: 13px;
-      font-family: inherit;
-      outline: none;
-      transition: border-color 150ms ease;
-      appearance: none;
-      -webkit-appearance: none;
-    }
-    select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23606060' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-      padding-right: 28px;
-      cursor: pointer;
-    }
-    select:focus, input:focus { border-color: #3b82f6; }
-    input::placeholder { color: #606060; }
-    select option { background: #1e1e1e; }
+			select,
+			input[type='text'],
+			input[type='password'] {
+				width: 100%;
+				padding: 8px 10px;
+				background: #1e1e1e;
+				border: 1px solid #3a3a3a;
+				border-radius: 8px;
+				color: #ffffff;
+				font-size: 13px;
+				font-family: inherit;
+				outline: none;
+				transition: border-color 150ms ease;
+				appearance: none;
+				-webkit-appearance: none;
+			}
+			select {
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23606060' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 10px center;
+				padding-right: 28px;
+				cursor: pointer;
+			}
+			select:focus,
+			input:focus {
+				border-color: #3b82f6;
+			}
+			input::placeholder {
+				color: #606060;
+			}
+			select option {
+				background: #1e1e1e;
+			}
 
-    /* Toggle */
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 9px 10px;
-      background: #141414;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      margin-bottom: 12px;
-      cursor: pointer;
-      user-select: none;
-    }
-    .toggle-label { font-size: 13px; color: #a0a0a0; }
-    .toggle-label span { font-size: 11px; color: #606060; display: block; margin-top: 1px; }
-    #libraryToggleTitle { font-size: 13px; color: #a0a0a0; margin-top: 0; }
-    .toggle {
-      width: 36px; height: 20px;
-      background: #3a3a3a;
-      border-radius: 10px;
-      position: relative;
-      transition: background 150ms ease;
-      flex-shrink: 0;
-    }
-    .toggle::after {
-      content: '';
-      position: absolute;
-      width: 14px; height: 14px;
-      background: #fff;
-      border-radius: 50%;
-      top: 3px; left: 3px;
-      transition: transform 150ms ease;
-    }
-    .toggle.on { background: #3b82f6; }
-    .toggle.on::after { transform: translateX(16px); }
+			/* Toggle */
+			.toggle-row {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 9px 10px;
+				background: #141414;
+				border: 1px solid #2a2a2a;
+				border-radius: 8px;
+				margin-bottom: 12px;
+				cursor: pointer;
+				user-select: none;
+			}
+			.toggle-label {
+				font-size: 13px;
+				color: #a0a0a0;
+			}
+			.toggle-label span {
+				font-size: 11px;
+				color: #606060;
+				display: block;
+				margin-top: 1px;
+			}
+			#libraryToggleTitle {
+				font-size: 13px;
+				color: #a0a0a0;
+				margin-top: 0;
+			}
+			.toggle {
+				width: 36px;
+				height: 20px;
+				background: #3a3a3a;
+				border-radius: 10px;
+				position: relative;
+				transition: background 150ms ease;
+				flex-shrink: 0;
+			}
+			.toggle::after {
+				content: '';
+				position: absolute;
+				width: 14px;
+				height: 14px;
+				background: #fff;
+				border-radius: 50%;
+				top: 3px;
+				left: 3px;
+				transition: transform 150ms ease;
+			}
+			.toggle.on {
+				background: #3b82f6;
+			}
+			.toggle.on::after {
+				transform: translateX(16px);
+			}
 
-    /* Buttons */
-    .btn {
-      width: 100%;
-      padding: 9px 12px;
-      border: none;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      font-family: inherit;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      transition: background 150ms ease, opacity 150ms ease;
-    }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-primary { background: #3b82f6; color: #fff; }
-    .btn-primary:hover:not(:disabled) { background: #2563eb; }
-    .btn-secondary { background: #1e1e1e; color: #ffffff; border: 1px solid #3a3a3a; }
-    .btn-secondary:hover:not(:disabled) { background: #2a2a2a; }
-    .btn-ghost {
-      background: none;
-      color: #606060;
-      border: 1px solid #2a2a2a;
-      font-size: 12px;
-      padding: 7px 12px;
-    }
-    .btn-ghost:hover:not(:disabled) { color: #a0a0a0; border-color: #3a3a3a; }
+			/* Buttons */
+			.btn {
+				width: 100%;
+				padding: 9px 12px;
+				border: none;
+				border-radius: 8px;
+				font-size: 13px;
+				font-weight: 500;
+				cursor: pointer;
+				font-family: inherit;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 7px;
+				transition:
+					background 150ms ease,
+					opacity 150ms ease;
+			}
+			.btn:disabled {
+				opacity: 0.4;
+				cursor: not-allowed;
+			}
+			.btn-primary {
+				background: #3b82f6;
+				color: #fff;
+			}
+			.btn-primary:hover:not(:disabled) {
+				background: #2563eb;
+			}
+			.btn-secondary {
+				background: #1e1e1e;
+				color: #ffffff;
+				border: 1px solid #3a3a3a;
+			}
+			.btn-secondary:hover:not(:disabled) {
+				background: #2a2a2a;
+			}
+			.btn-ghost {
+				background: none;
+				color: #606060;
+				border: 1px solid #2a2a2a;
+				font-size: 12px;
+				padding: 7px 12px;
+			}
+			.btn-ghost:hover:not(:disabled) {
+				color: #a0a0a0;
+				border-color: #3a3a3a;
+			}
 
-    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
-    .btn-row .btn { flex: 1; }
+			.btn-row {
+				display: flex;
+				gap: 8px;
+				margin-top: 4px;
+			}
+			.btn-row .btn {
+				flex: 1;
+			}
 
-    /* Message */
-    .message {
-      margin-top: 10px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      font-size: 12px;
-      display: none;
-      line-height: 1.4;
-    }
-    .message.success { display: block; background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
-    .message.error   { display: block; background: rgba(239,68,68,0.1);  color: #ef4444; border: 1px solid rgba(239,68,68,0.25);  }
+			/* Message */
+			.message {
+				margin-top: 10px;
+				padding: 8px 10px;
+				border-radius: 8px;
+				font-size: 12px;
+				display: none;
+				line-height: 1.4;
+			}
+			.message.success {
+				display: block;
+				background: rgba(16, 185, 129, 0.1);
+				color: #10b981;
+				border: 1px solid rgba(16, 185, 129, 0.25);
+			}
+			.message.error {
+				display: block;
+				background: rgba(239, 68, 68, 0.1);
+				color: #ef4444;
+				border: 1px solid rgba(239, 68, 68, 0.25);
+			}
 
-    /* Download link after success */
-    .view-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      color: #3b82f6;
-      text-decoration: none;
-      font-size: 12px;
-      margin-top: 6px;
-    }
-    .view-link:hover { text-decoration: underline; }
+			/* Download link after success */
+			.view-link {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				color: #3b82f6;
+				text-decoration: none;
+				font-size: 12px;
+				margin-top: 6px;
+			}
+			.view-link:hover {
+				text-decoration: underline;
+			}
 
-    /* Divider */
-    .divider { height: 1px; background: #1e1e1e; margin: 12px 0; }
+			/* Divider */
+			.divider {
+				height: 1px;
+				background: #1e1e1e;
+				margin: 12px 0;
+			}
 
-    /* Profile loading state */
-    .profile-loading { color: #606060; font-size: 12px; padding: 4px 0; }
+			/* Profile loading state */
+			.profile-loading {
+				color: #606060;
+				font-size: 12px;
+				padding: 4px 0;
+			}
 
-    /* Save row */
-    .save-row { display: flex; justify-content: flex-end; }
-    .btn-save { width: auto; padding: 7px 16px; font-size: 12px; }
+			/* Save row */
+			.save-row {
+				display: flex;
+				justify-content: flex-end;
+			}
+			.btn-save {
+				width: auto;
+				padding: 7px 16px;
+				font-size: 12px;
+			}
 
-    /* Existing download banner */
-    .existing-wrap {
-      display: none;
-      margin-bottom: 12px;
-      border: 1px solid rgba(16,185,129,0.3);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    .existing-wrap.visible { display: block; }
-    .existing-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 10px;
-      background: rgba(16,185,129,0.08);
-      font-size: 11px;
-      font-weight: 600;
-      color: #10b981;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .existing-item {
-      padding: 8px 10px;
-      background: #141414;
-    }
-    .existing-title {
-      font-size: 12px;
-      color: #e0e0e0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-bottom: 4px;
-    }
-    .existing-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      color: #606060;
-    }
-    .existing-status {
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .existing-status.completed { background: rgba(16,185,129,0.15); color: #10b981; }
-    .existing-status.pending, .existing-status.downloading { background: rgba(59,130,246,0.15); color: #3b82f6; }
-    .existing-status.failed { background: rgba(239,68,68,0.15); color: #ef4444; }
-    .existing-status.other { background: rgba(160,160,160,0.1); color: #a0a0a0; }
-    .existing-view {
-      margin-left: auto;
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      color: #3b82f6;
-      text-decoration: none;
-      font-size: 11px;
-      flex-shrink: 0;
-    }
-    .existing-view:hover { text-decoration: underline; }
-    .existing-channel {
-      font-size: 11px;
-      color: #606060;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-bottom: 6px;
-    }
+			/* Existing download banner */
+			.existing-wrap {
+				display: none;
+				margin-bottom: 12px;
+				border: 1px solid rgba(16, 185, 129, 0.3);
+				border-radius: 8px;
+				overflow: hidden;
+			}
+			.existing-wrap.visible {
+				display: block;
+			}
+			.existing-header {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 7px 10px;
+				background: rgba(16, 185, 129, 0.08);
+				font-size: 11px;
+				font-weight: 600;
+				color: #10b981;
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+			}
+			.existing-item {
+				padding: 8px 10px;
+				background: #141414;
+			}
+			.existing-title {
+				font-size: 12px;
+				color: #e0e0e0;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				margin-bottom: 4px;
+			}
+			.existing-meta {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 11px;
+				color: #606060;
+			}
+			.existing-status {
+				padding: 2px 6px;
+				border-radius: 4px;
+				font-size: 10px;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			.existing-status.completed {
+				background: rgba(16, 185, 129, 0.15);
+				color: #10b981;
+			}
+			.existing-status.pending,
+			.existing-status.downloading {
+				background: rgba(59, 130, 246, 0.15);
+				color: #3b82f6;
+			}
+			.existing-status.failed {
+				background: rgba(239, 68, 68, 0.15);
+				color: #ef4444;
+			}
+			.existing-status.other {
+				background: rgba(160, 160, 160, 0.1);
+				color: #a0a0a0;
+			}
+			.existing-view {
+				margin-left: auto;
+				display: inline-flex;
+				align-items: center;
+				gap: 3px;
+				color: #3b82f6;
+				text-decoration: none;
+				font-size: 11px;
+				flex-shrink: 0;
+			}
+			.existing-view:hover {
+				text-decoration: underline;
+			}
+			.existing-channel {
+				font-size: 11px;
+				color: #606060;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				margin-bottom: 6px;
+			}
 
-    /* Copy pager (page through the copies of one video) */
-    .copy-pager { display: flex; align-items: center; gap: 8px; }
-    .pager-arrow {
-      flex-shrink: 0;
-      width: 22px; height: 22px;
-      display: flex; align-items: center; justify-content: center;
-      background: #1e1e1e;
-      border: 1px solid #2a2a2a;
-      border-radius: 6px;
-      color: #a0a0a0;
-      font-size: 15px;
-      line-height: 1;
-      cursor: pointer;
-      font-family: inherit;
-      transition: background 150ms ease, color 150ms ease, opacity 150ms ease;
-    }
-    .pager-arrow:hover:not(:disabled) { background: #2a2a2a; color: #fff; }
-    .pager-arrow:disabled { opacity: 0.3; cursor: default; }
-    .pager-arrow.hidden { display: none; }
-    .copy-body { flex: 1; min-width: 0; }
-    .copy-format {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .copy-foot {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 8px;
-    }
-    .copy-counter { font-size: 10px; color: #606060; }
-    .copy-delete {
-      background: none;
-      border: none;
-      color: #ef4444;
-      font-size: 11px;
-      font-family: inherit;
-      cursor: pointer;
-      padding: 0;
-      transition: opacity 150ms ease;
-    }
-    .copy-delete:hover:not(:disabled) { text-decoration: underline; }
-    .copy-delete:disabled { opacity: 0.4; cursor: default; }
-  </style>
-</head>
-<body>
+			/* Copy pager (page through the copies of one video) */
+			.copy-pager {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.pager-arrow {
+				flex-shrink: 0;
+				width: 22px;
+				height: 22px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background: #1e1e1e;
+				border: 1px solid #2a2a2a;
+				border-radius: 6px;
+				color: #a0a0a0;
+				font-size: 15px;
+				line-height: 1;
+				cursor: pointer;
+				font-family: inherit;
+				transition:
+					background 150ms ease,
+					color 150ms ease,
+					opacity 150ms ease;
+			}
+			.pager-arrow:hover:not(:disabled) {
+				background: #2a2a2a;
+				color: #fff;
+			}
+			.pager-arrow:disabled {
+				opacity: 0.3;
+				cursor: default;
+			}
+			.pager-arrow.hidden {
+				display: none;
+			}
+			.copy-body {
+				flex: 1;
+				min-width: 0;
+			}
+			.copy-format {
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.copy-foot {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin-top: 8px;
+			}
+			.copy-counter {
+				font-size: 10px;
+				color: #606060;
+			}
+			.copy-delete {
+				background: none;
+				border: none;
+				color: #ef4444;
+				font-size: 11px;
+				font-family: inherit;
+				cursor: pointer;
+				padding: 0;
+				transition: opacity 150ms ease;
+			}
+			.copy-delete:hover:not(:disabled) {
+				text-decoration: underline;
+			}
+			.copy-delete:disabled {
+				opacity: 0.4;
+				cursor: default;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="header">
+			<svg width="20" height="20" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+				<defs>
+					<linearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%">
+						<stop offset="0%" stop-color="#7c3aed" />
+						<stop offset="100%" stop-color="#3b82f6" />
+					</linearGradient>
+				</defs>
+				<rect width="128" height="128" rx="28" fill="url(#pg)" />
+				<path
+					d="M64 30L64 78M44 62L64 82L84 62"
+					stroke="#fff"
+					stroke-width="10"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					fill="none"
+				/>
+				<path d="M38 94L90 94" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none" />
+			</svg>
+			<span class="logo">wytui</span>
+			<span class="version" id="versionText"></span>
+			<div class="status-badge">
+				<div class="status-dot" id="statusDot"></div>
+				<span id="statusText">Not configured</span>
+			</div>
+		</div>
 
-  <div class="header">
-    <svg width="20" height="20" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#7c3aed"/>
-          <stop offset="100%" stop-color="#3b82f6"/>
-        </linearGradient>
-      </defs>
-      <rect width="128" height="128" rx="28" fill="url(#pg)"/>
-      <path d="M64 30L64 78M44 62L64 82L84 62" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      <path d="M38 94L90 94" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
-    </svg>
-    <span class="logo">wytui</span>
-    <span class="version" id="versionText"></span>
-    <div class="status-badge">
-      <div class="status-dot" id="statusDot"></div>
-      <span id="statusText">Not configured</span>
-    </div>
-  </div>
+		<div class="tabs">
+			<button class="tab-btn active" data-tab="download">Download</button>
+			<button class="tab-btn" data-tab="settings">Settings</button>
+		</div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="download">Download</button>
-    <button class="tab-btn" data-tab="settings">Settings</button>
-  </div>
+		<!-- Download panel -->
+		<div class="panel active" id="panel-download">
+			<!-- Current page -->
+			<div class="url-row" id="urlRow">
+				<img class="url-favicon" id="urlFavicon" src="" alt="" />
+				<span class="url-text" id="urlText">Loading…</span>
+				<button class="url-open-btn" id="openWytuiBtn" title="Open in wytui">
+					<svg
+						width="13"
+						height="13"
+						viewBox="0 0 20 20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4" />
+					</svg>
+				</button>
+			</div>
 
-  <!-- Download panel -->
-  <div class="panel active" id="panel-download">
-    <!-- Current page -->
-    <div class="url-row" id="urlRow">
-      <img class="url-favicon" id="urlFavicon" src="" alt="">
-      <span class="url-text" id="urlText">Loading…</span>
-      <button class="url-open-btn" id="openWytuiBtn" title="Open in wytui">
-        <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4"/>
-        </svg>
-      </button>
-    </div>
+			<!-- Existing download card (one per video; page through its copies) -->
+			<div class="existing-wrap" id="existingWrap">
+				<div class="existing-header">
+					<svg width="11" height="11" viewBox="0 0 20 20" fill="currentColor">
+						<path
+							d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 3.5a1 1 0 011 1V10a1 1 0 01-2 0V6.5a1 1 0 011-1zm0 7a1.25 1.25 0 110 2.5 1.25 1.25 0 010-2.5z"
+						/>
+					</svg>
+					Already in wytui
+				</div>
+				<div class="existing-item">
+					<div class="existing-title" id="existingTitle"></div>
+					<div class="existing-channel" id="existingChannel" style="display: none"></div>
+					<div class="copy-pager">
+						<button class="pager-arrow" id="copyPrev" aria-label="Previous copy">‹</button>
+						<div class="copy-body">
+							<div class="existing-meta">
+								<span class="existing-status" id="existingStatus"></span>
+								<span class="copy-format" id="existingFormat"></span>
+							</div>
+						</div>
+						<button class="pager-arrow" id="copyNext" aria-label="Next copy">›</button>
+					</div>
+					<div class="copy-foot">
+						<span class="copy-counter" id="copyCounter"></span>
+						<a class="existing-view" id="existingViewLink" href="#" target="_blank">
+							<svg
+								width="10"
+								height="10"
+								viewBox="0 0 20 20"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4" />
+							</svg>
+							View
+						</a>
+						<button class="copy-delete" id="copyDeleteBtn">Delete</button>
+					</div>
+				</div>
+			</div>
 
-    <!-- Existing download card (one per video; page through its copies) -->
-    <div class="existing-wrap" id="existingWrap">
-      <div class="existing-header">
-        <svg width="11" height="11" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 3.5a1 1 0 011 1V10a1 1 0 01-2 0V6.5a1 1 0 011-1zm0 7a1.25 1.25 0 110 2.5 1.25 1.25 0 010-2.5z"/></svg>
-        Already in wytui
-      </div>
-      <div class="existing-item">
-        <div class="existing-title" id="existingTitle"></div>
-        <div class="existing-channel" id="existingChannel" style="display:none"></div>
-        <div class="copy-pager">
-          <button class="pager-arrow" id="copyPrev" aria-label="Previous copy">‹</button>
-          <div class="copy-body">
-            <div class="existing-meta">
-              <span class="existing-status" id="existingStatus"></span>
-              <span class="copy-format" id="existingFormat"></span>
-            </div>
-          </div>
-          <button class="pager-arrow" id="copyNext" aria-label="Next copy">›</button>
-        </div>
-        <div class="copy-foot">
-          <span class="copy-counter" id="copyCounter"></span>
-          <a class="existing-view" id="existingViewLink" href="#" target="_blank">
-            <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4"/></svg>
-            View
-          </a>
-          <button class="copy-delete" id="copyDeleteBtn">Delete</button>
-        </div>
-      </div>
-    </div>
+			<!-- Profile selector -->
+			<div class="form-group">
+				<label>Profile</label>
+				<select id="profileSelect" disabled>
+					<option value="">Default profile</option>
+				</select>
+			</div>
 
-    <!-- Profile selector -->
-    <div class="form-group">
-      <label>Profile</label>
-      <select id="profileSelect" disabled>
-        <option value="">Default profile</option>
-      </select>
-    </div>
+			<!-- Save to library toggle -->
+			<div class="toggle-row" id="libraryToggleRow">
+				<div class="toggle-label">
+					<span id="libraryToggleTitle">Save to Library</span>
+					<span id="libraryToggleSub">Skip cache and save permanently</span>
+				</div>
+				<div class="toggle" id="libraryToggle"></div>
+			</div>
 
-    <!-- Save to library toggle -->
-    <div class="toggle-row" id="libraryToggleRow">
-      <div class="toggle-label">
-        <span id="libraryToggleTitle">Save to Library</span>
-        <span id="libraryToggleSub">Skip cache and save permanently</span>
-      </div>
-      <div class="toggle" id="libraryToggle"></div>
-    </div>
+			<div class="btn-row">
+				<button class="btn btn-primary" id="downloadBtn" disabled>
+					<svg
+						width="14"
+						height="14"
+						viewBox="0 0 20 20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M10 3v10M6 9l4 4 4-4" />
+						<path d="M4 15h12" />
+					</svg>
+					<span id="downloadBtnLabel">Download</span>
+				</button>
+			</div>
 
-    <div class="btn-row">
-      <button class="btn btn-primary" id="downloadBtn" disabled>
-        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10 3v10M6 9l4 4 4-4"/><path d="M4 15h12"/>
-        </svg>
-        <span id="downloadBtnLabel">Download</span>
-      </button>
-    </div>
+			<div class="message" id="message"></div>
+			<a class="view-link" id="viewLink" href="#" target="_blank" style="display: none">
+				<svg
+					width="11"
+					height="11"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4" />
+				</svg>
+				View download in wytui
+			</a>
+		</div>
 
-    <div class="message" id="message"></div>
-    <a class="view-link" id="viewLink" href="#" target="_blank" style="display:none">
-      <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M11 3h6v6M17 3l-9 9M8 5H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-4"/>
-      </svg>
-      View download in wytui
-    </a>
-  </div>
+		<!-- Settings panel -->
+		<div class="panel" id="panel-settings">
+			<div class="form-group">
+				<label for="serverUrl">Server URL</label>
+				<input type="text" id="serverUrl" placeholder="https://wytui.example.com" />
+			</div>
+			<div class="form-group">
+				<label for="apiKey"
+					>API Key
+					<span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #3a3a3a"
+						>— optional if logged in</span
+					></label
+				>
+				<input
+					type="password"
+					id="apiKey"
+					placeholder="wytui_… (leave blank to use browser session)"
+				/>
+			</div>
+			<div class="save-row">
+				<button class="btn btn-primary btn-save" id="saveBtn">Save</button>
+			</div>
 
-  <!-- Settings panel -->
-  <div class="panel" id="panel-settings">
-    <div class="form-group">
-      <label for="serverUrl">Server URL</label>
-      <input type="text" id="serverUrl" placeholder="https://wytui.example.com">
-    </div>
-    <div class="form-group">
-      <label for="apiKey">API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#3a3a3a">— optional if logged in</span></label>
-      <input type="password" id="apiKey" placeholder="wytui_… (leave blank to use browser session)">
-    </div>
-    <div class="save-row">
-      <button class="btn btn-primary btn-save" id="saveBtn">Save</button>
-    </div>
-  </div>
+			<div class="divider"></div>
 
-  <script src="popup.js"></script>
-</body>
+			<div class="form-group">
+				<label>YouTube Account</label>
+				<button class="btn btn-secondary" id="link-youtube">Link YouTube to wytui</button>
+				<div class="message" id="yt-status"></div>
+			</div>
+		</div>
+
+		<script src="popup.js"></script>
+	</body>
 </html>

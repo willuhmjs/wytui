@@ -38,10 +38,10 @@
 <div class="app-layout">
 	<Sidebar
 		{isAdmin}
-		statsVisible={statsVisible}
+		{statsVisible}
 		connected={sseState.connected}
 		userEmail={data.session?.user?.email}
-		onHealthClick={() => healthPanelOpen = true}
+		onHealthClick={() => (healthPanelOpen = true)}
 		onSignout={handleSignout}
 		bind:collapsed={sidebarCollapsed}
 	/>
@@ -67,18 +67,36 @@
 					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 128 128">
 						<defs>
 							<linearGradient id="footer-g" x1="0%" y1="0%" x2="100%" y2="100%">
-								<stop offset="0%" stop-color="#7c3aed"/>
-								<stop offset="100%" stop-color="#3b82f6"/>
+								<stop offset="0%" stop-color="#7c3aed" />
+								<stop offset="100%" stop-color="#3b82f6" />
 							</linearGradient>
 						</defs>
-						<rect width="128" height="128" rx="28" fill="url(#footer-g)"/>
-						<path d="M64 30 L64 78 M44 62 L64 82 L84 62" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-						<path d="M38 94 L90 94" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
+						<rect width="128" height="128" rx="28" fill="url(#footer-g)" />
+						<path
+							d="M64 30 L64 78 M44 62 L64 82 L84 62"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+						<path
+							d="M38 94 L90 94"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							fill="none"
+						/>
 					</svg>
 					<span>wytui</span>
 				</span>
 				<span class="footer-divider"></span>
-				<a href="https://github.com/willuhmjs/wytui" target="_blank" rel="noopener noreferrer" class="footer-link">GitHub</a>
+				<a
+					href="https://github.com/willuhmjs/wytui"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="footer-link">GitHub</a
+				>
 			</div>
 		</footer>
 	</div>
@@ -86,7 +104,12 @@
 
 <Modal />
 <Toast />
-<HealthPanel open={healthPanelOpen} onClose={() => healthPanelOpen = false} {isAdmin} {showTotalSize} />
+<HealthPanel
+	open={healthPanelOpen}
+	onClose={() => (healthPanelOpen = false)}
+	{isAdmin}
+	{showTotalSize}
+/>
 <KeyboardShortcutHelp open={keyboard.showHelp} onClose={() => keyboard.closeHelp()} />
 
 <style>
@@ -133,8 +156,12 @@
 	}
 
 	@keyframes progress {
-		0% { transform: translateX(-100%); }
-		100% { transform: translateX(400%); }
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(400%);
+		}
 	}
 
 	.main-content {

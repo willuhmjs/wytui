@@ -19,7 +19,7 @@ export function requireAuth(locals: App.Locals): string {
  * `locals.session.user` for callers via the assertion signature.
  */
 export function requireAdmin(
-	locals: App.Locals
+	locals: App.Locals,
 ): asserts locals is App.Locals & { session: { user: SessionUser } } {
 	if (!locals.session?.user?.isAdmin) {
 		throw error(403, 'Admin access required');

@@ -35,11 +35,7 @@ export function addToast(type: ToastType, message: string, duration = 4000): str
 	return id;
 }
 
-export function addStickyToast(
-	type: ToastType,
-	message: string,
-	progress?: number,
-): string {
+export function addStickyToast(type: ToastType, message: string, progress?: number): string {
 	const id = `toast-${++idCounter}`;
 	toasts = [...toasts, { id, type, message, progress, sticky: true }];
 	return id;

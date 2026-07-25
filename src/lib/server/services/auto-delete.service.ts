@@ -38,14 +38,17 @@ class AutoDeleteService {
 			if (dl.status !== 'COMPLETED' || dl.storagePool === 'library') continue;
 
 			const watchedAt = wp.watchedAt || wp.updatedAt;
-			const threshold = dl.channelUrl && channelThresholds.has(dl.channelUrl)
-				? channelThresholds.get(dl.channelUrl)!
-				: globalThresholdDate;
+			const threshold =
+				dl.channelUrl && channelThresholds.has(dl.channelUrl)
+					? channelThresholds.get(dl.channelUrl)!
+					: globalThresholdDate;
 
 			if (watchedAt < threshold) {
 				// Delete file
 				if (dl.filepath) {
-					try { await unlink(dl.filepath); } catch {}
+					try {
+						await unlink(dl.filepath);
+					} catch {}
 				}
 				// Delete record
 				await prisma.download.delete({ where: { id: dl.id } });

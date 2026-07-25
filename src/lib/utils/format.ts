@@ -14,6 +14,16 @@ export function formatDuration(seconds: number): string {
 	return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/** Compact human duration for totals, e.g. "12h 34m", "5m", "42s". */
+export function formatDurationLong(seconds: number): string {
+	const s = Math.max(0, Math.floor(seconds));
+	const h = Math.floor(s / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+	if (m > 0) return `${m}m`;
+	return `${s}s`;
+}
+
 export function formatTimestamp(totalSeconds: number): string {
 	const h = Math.floor(totalSeconds / 3600);
 	const m = Math.floor((totalSeconds % 3600) / 60);
@@ -23,14 +33,14 @@ export function formatTimestamp(totalSeconds: number): string {
 }
 
 const DOWNLOAD_STATUS_COLORS: Record<string, string> = {
-	PENDING: 'var(--text-tertiary)',
-	FETCHING_INFO: 'var(--info)',
-	DOWNLOADING: 'var(--accent-primary)',
-	PROCESSING: 'var(--warning)',
-	COMPLETED: 'var(--success)',
-	FAILED: 'var(--error)',
-	CANCELLED: 'var(--text-tertiary)',
-	DELETED: 'var(--text-tertiary)',
+	PENDING: 'var(--color-text-tertiary)',
+	FETCHING_INFO: 'var(--color-status-info)',
+	DOWNLOADING: 'var(--color-accent-primary)',
+	PROCESSING: 'var(--color-status-warning)',
+	COMPLETED: 'var(--color-status-success)',
+	FAILED: 'var(--color-status-error)',
+	CANCELLED: 'var(--color-text-tertiary)',
+	DELETED: 'var(--color-text-tertiary)',
 };
 
 const DOWNLOAD_STATUS_LABELS: Record<string, string> = {
@@ -45,7 +55,7 @@ const DOWNLOAD_STATUS_LABELS: Record<string, string> = {
 };
 
 export function getDownloadStatusColor(status: string): string {
-	return DOWNLOAD_STATUS_COLORS[status] || 'var(--text-secondary)';
+	return DOWNLOAD_STATUS_COLORS[status] || 'var(--color-text-secondary)';
 }
 
 export function getDownloadStatusLabel(status: string): string {
@@ -60,4 +70,22 @@ export function formatUptime(ms: number): string {
 	if (days > 0) return `${days}d ${hours}h`;
 	if (hours > 0) return `${hours}h ${minutes}m`;
 	return `${minutes}m`;
+}
+
+/** Abbreviate a count the way YouTube does: 2761758 -> "2.8M". */
+export function formatCount(n: number): string {
+	const units: [number, string][] = [
+		[1_000_000_000, 'B'],
+		[1_000_000, 'M'],
+		[1_000, 'K'],
+	];
+	for (const [size, suffix] of units) {
+		if (n >= size) {
+			const scaled = n / size;
+			// One decimal below 100, none above — "2.8M" but "999K".
+			const text = scaled < 100 ? scaled.toFixed(1) : String(Math.round(scaled));
+			return `${text.replace(/\.0$/, '')}${suffix}`;
+		}
+	}
+	return String(n);
 }

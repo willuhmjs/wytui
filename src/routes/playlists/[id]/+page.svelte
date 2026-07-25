@@ -8,6 +8,11 @@
 	import { formatDuration, formatBytes } from '$lib/utils/format';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 
+	interface Profile {
+		id: string;
+		name: string;
+	}
+
 	let playlist = $state<any>(null);
 	let loading = $state(true);
 	let loadError = $state('');
@@ -18,10 +23,18 @@
 	let saving = $state(false);
 	let deleting = $state(false);
 
+	let profiles = $state<Profile[]>([]);
+	let selectedProfile = $state('');
+	let downloadingItems = $state(new Set<string>());
+	let downloadingAll = $state(false);
+
 	let playlistId = $derived($page.params.id);
+	let pendingCount = $derived(playlist?.items?.filter((i: any) => !i.download).length ?? 0);
+	let hasDownloaded = $derived(playlist?.items?.some((i: any) => i.downloadId) ?? false);
 
 	onMount(() => {
 		loadPlaylist();
+		loadProfiles();
 	});
 
 	async function loadPlaylist() {
@@ -40,6 +53,77 @@
 			loadError = 'Failed to load playlist';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadProfiles() {
+		try {
+			const res = await fetch('/api/profiles');
+			if (res.ok) {
+				profiles = await res.json();
+				if (!selectedProfile && profiles.length > 0) selectedProfile = profiles[0].id;
+			}
+		} catch {
+			profiles = [];
+		}
+	}
+
+	async function downloadItem(item: any) {
+		if (!selectedProfile) {
+			addToast('error', 'Select a download profile first');
+			return;
+		}
+		downloadingItems.add(item.id);
+		downloadingItems = downloadingItems;
+		try {
+			const res = await csrfFetch(`/api/playlists/${playlistId}/download`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ profileId: selectedProfile, itemIds: [item.id] }),
+			});
+			if (res.ok) {
+				const data = await res.json();
+				if (data.started > 0) {
+					addToast('success', 'Download started');
+					await loadPlaylist();
+				} else {
+					addToast('error', data.errors?.[0] || 'Failed to start download');
+				}
+			} else {
+				addToast('error', 'Failed to start download');
+			}
+		} catch {
+			addToast('error', 'Failed to start download');
+		} finally {
+			downloadingItems.delete(item.id);
+			downloadingItems = downloadingItems;
+		}
+	}
+
+	async function downloadAll() {
+		if (!selectedProfile) {
+			addToast('error', 'Select a download profile first');
+			return;
+		}
+		downloadingAll = true;
+		try {
+			const res = await csrfFetch(`/api/playlists/${playlistId}/download`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ profileId: selectedProfile }),
+			});
+			if (res.ok) {
+				const data = await res.json();
+				addToast('success', `Started ${data.started} download(s)`);
+				if (data.errors?.length) addToast('error', `${data.errors.length} failed to start`);
+				await loadPlaylist();
+			} else {
+				addToast('error', 'Failed to start downloads');
+			}
+		} catch {
+			addToast('error', 'Failed to start downloads');
+		} finally {
+			downloadingAll = false;
 		}
 	}
 
@@ -81,7 +165,7 @@
 		const confirmed = await showConfirm(
 			'Delete Playlist',
 			`Delete "${playlist.name}"? This cannot be undone.`,
-			'Delete'
+			'Delete',
 		);
 		if (!confirmed) return;
 
@@ -101,22 +185,26 @@
 		}
 	}
 
-	async function removeItem(downloadId: string, title: string) {
+	async function removeItem(item: any) {
+		const title = item.download?.title || item.title || 'this item';
 		const confirmed = await showConfirm(
 			'Remove Item',
-			`Remove "${title || 'this item'}" from the playlist?`,
-			'Remove'
+			`Remove "${title}" from the playlist?`,
+			'Remove',
 		);
 		if (!confirmed) return;
+
+		// Downloaded items are keyed by downloadId; pending items only have their own id.
+		const body = item.downloadId ? { downloadId: item.downloadId } : { itemId: item.id };
 
 		try {
 			const res = await csrfFetch(`/api/playlists/${playlistId}/items`, {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ downloadId }),
+				body: JSON.stringify(body),
 			});
 			if (res.ok) {
-				playlist.items = playlist.items.filter((item: any) => item.downloadId !== downloadId);
+				playlist.items = playlist.items.filter((i: any) => i.id !== item.id);
 				addToast('success', 'Item removed');
 			} else {
 				addToast('error', 'Failed to remove item');
@@ -170,9 +258,9 @@
 	}
 
 	function playPlaylist() {
-		if (!playlist || playlist.items.length === 0) return;
-		const firstItem = playlist.items[0];
-		goto(`/downloads/${firstItem.downloadId}?playlist=${playlistId}`);
+		const firstDownloaded = playlist?.items?.find((i: any) => i.downloadId);
+		if (!firstDownloaded) return;
+		goto(`/downloads/${firstDownloaded.downloadId}?playlist=${playlistId}`);
 	}
 </script>
 
@@ -183,7 +271,13 @@
 <div class="page">
 	<a href="/playlists" class="back-link">
 		<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-			<path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+			<path
+				d="M10 3L5 8L10 13"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
 		</svg>
 		Back to Playlists
 	</a>
@@ -204,7 +298,12 @@
 					</div>
 					<div class="form-group">
 						<label for="edit-desc">Description</label>
-						<input type="text" id="edit-desc" bind:value={editDescription} placeholder="Optional description" />
+						<input
+							type="text"
+							id="edit-desc"
+							bind:value={editDescription}
+							placeholder="Optional description"
+						/>
 					</div>
 					<div class="edit-actions">
 						<button class="btn btn-sm btn-primary" onclick={saveEdit} disabled={saving}>
@@ -220,31 +319,124 @@
 						<p class="text-muted">{playlist.description}</p>
 					{/if}
 					<p class="meta">
-						{playlist.items.length} item{playlist.items.length !== 1 ? 's' : ''} · Created {formatDate(playlist.createdAt)}
+						{playlist.items.length} item{playlist.items.length !== 1 ? 's' : ''} · Created {formatDate(
+							playlist.createdAt,
+						)}
 					</p>
 				</div>
 				<div class="header-actions">
-					{#if playlist.items.length > 0}
-						<button class="btn btn-sm btn-primary" onclick={playPlaylist} aria-label="Play playlist" title="Play playlist">
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polygon points="5 3 19 12 5 21 5 3"/>
+					{#if hasDownloaded}
+						<button
+							class="btn btn-sm btn-primary"
+							onclick={playPlaylist}
+							aria-label="Play playlist"
+							title="Play playlist"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<polygon points="5 3 19 12 5 21 5 3" />
 							</svg>
 							<span>Play Playlist</span>
 						</button>
 					{/if}
-					<button class="btn btn-sm btn-icon btn-secondary" onclick={startEdit} aria-label="Edit playlist" title="Edit playlist">
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+					<button
+						class="btn btn-sm btn-icon btn-secondary"
+						onclick={startEdit}
+						aria-label="Edit playlist"
+						title="Edit playlist"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path
+								d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+							/></svg
+						>
 					</button>
-					<button class="btn btn-sm btn-icon btn-danger" onclick={handleDelete} disabled={deleting} aria-label="Delete playlist" title="Delete playlist">
+					<button
+						class="btn btn-sm btn-icon btn-danger"
+						onclick={handleDelete}
+						disabled={deleting}
+						aria-label="Delete playlist"
+						title="Delete playlist"
+					>
 						{#if deleting}
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg
+							>
 						{:else}
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								><polyline points="3 6 5 6 21 6" /><path
+									d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+								/></svg
+							>
 						{/if}
 					</button>
 				</div>
 			{/if}
 		</div>
+
+		{#if pendingCount > 0}
+			<div class="pending-bar">
+				<span class="pending-info">
+					{pendingCount} video{pendingCount !== 1 ? 's' : ''} not downloaded yet
+				</span>
+				<div class="pending-controls">
+					{#if profiles.length === 0}
+						<span class="hint">
+							<a href="/settings">Create a download profile</a> to download these.
+						</span>
+					{:else}
+						<select bind:value={selectedProfile} aria-label="Download profile">
+							{#each profiles as profile}
+								<option value={profile.id}>{profile.name}</option>
+							{/each}
+						</select>
+						<button
+							class="btn btn-sm btn-primary"
+							onclick={downloadAll}
+							disabled={!selectedProfile || downloadingAll}
+						>
+							{downloadingAll ? 'Starting…' : 'Download All'}
+						</button>
+					{/if}
+				</div>
+			</div>
+		{/if}
 
 		{#if playlist.items.length === 0}
 			<div class="empty-state">
@@ -263,7 +455,15 @@
 								disabled={index === 0 || reordering}
 								title="Move to top"
 							>
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+								<svg
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									><polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" /></svg
+								>
 							</button>
 							<button
 								class="reorder-btn"
@@ -271,7 +471,14 @@
 								disabled={index === 0 || reordering}
 								title="Move up"
 							>
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+								<svg
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"><polyline points="18 15 12 9 6 15" /></svg
+								>
 							</button>
 							<button
 								class="reorder-btn"
@@ -279,7 +486,14 @@
 								disabled={index === playlist.items.length - 1 || reordering}
 								title="Move down"
 							>
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+								<svg
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"><polyline points="6 9 12 15 18 9" /></svg
+								>
 							</button>
 							<button
 								class="reorder-btn"
@@ -287,45 +501,96 @@
 								disabled={index === playlist.items.length - 1 || reordering}
 								title="Move to bottom"
 							>
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="7 6 12 11 17 6"/><polyline points="7 13 12 18 17 13"/></svg>
+								<svg
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									><polyline points="7 6 12 11 17 6" /><polyline points="7 13 12 18 17 13" /></svg
+								>
 							</button>
 						</div>
-						<button
-							class="item-content"
-							onclick={() => goto(`/downloads/${item.downloadId}?playlist=${playlistId}`)}
-						>
-							{#if item.download.thumbnail}
-								<img
-									class="item-thumbnail"
-									src={item.download.thumbnail}
-									alt={item.download.title || 'Thumbnail'}
-								/>
-							{:else}
-								<div class="item-thumbnail placeholder-thumb"></div>
-							{/if}
-							<div class="item-info">
-								<h4>{item.download.title || 'Untitled'}</h4>
-								<div class="item-meta">
-									{#if item.download.uploader}
-										<span>{item.download.uploader}</span>
-									{/if}
-									{#if item.download.duration}
-										<span>{formatDuration(item.download.duration)}</span>
-									{/if}
-									{#if item.download.filesize}
-										<span>{formatBytes(item.download.filesize)}</span>
-									{/if}
+						{#if item.download}
+							<button
+								class="item-content"
+								onclick={() => goto(`/downloads/${item.downloadId}?playlist=${playlistId}`)}
+							>
+								{#if item.download.thumbnail}
+									<img
+										class="item-thumbnail"
+										src={item.download.thumbnail}
+										alt={item.download.title || 'Thumbnail'}
+									/>
+								{:else}
+									<div class="item-thumbnail placeholder-thumb"></div>
+								{/if}
+								<div class="item-info">
+									<h4>{item.download.title || 'Untitled'}</h4>
+									<div class="item-meta">
+										{#if item.download.uploader}
+											<span>{item.download.uploader}</span>
+										{/if}
+										{#if item.download.duration}
+											<span>{formatDuration(item.download.duration)}</span>
+										{/if}
+										{#if item.download.filesize}
+											<span>{formatBytes(item.download.filesize)}</span>
+										{/if}
+									</div>
+								</div>
+							</button>
+						{:else}
+							<div class="item-content pending">
+								{#if item.thumbnail}
+									<img
+										class="item-thumbnail"
+										src={item.thumbnail}
+										alt={item.title || 'Thumbnail'}
+									/>
+								{:else}
+									<div class="item-thumbnail placeholder-thumb"></div>
+								{/if}
+								<div class="item-info">
+									<h4>{item.title || 'Untitled'}</h4>
+									<div class="item-meta">
+										<span class="pending-badge">Not downloaded</span>
+									</div>
 								</div>
 							</div>
-						</button>
-						<button
-							class="btn btn-sm btn-icon btn-danger remove-btn"
-							onclick={() => removeItem(item.downloadId, item.download.title)}
-							aria-label="Remove from playlist"
-							title="Remove from playlist"
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-						</button>
+						{/if}
+						<div class="item-actions">
+							{#if !item.download}
+								<button
+									class="btn btn-sm btn-primary"
+									onclick={() => downloadItem(item)}
+									disabled={!selectedProfile || downloadingItems.has(item.id)}
+									title={selectedProfile ? 'Download this video' : 'Select a profile first'}
+								>
+									{downloadingItems.has(item.id) ? 'Starting…' : 'Download'}
+								</button>
+							{/if}
+							<button
+								class="btn btn-sm btn-icon btn-danger remove-btn"
+								onclick={() => removeItem(item)}
+								aria-label="Remove from playlist"
+								title="Remove from playlist"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
+								>
+							</button>
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -416,6 +681,67 @@
 	.edit-actions {
 		display: flex;
 		gap: var(--spacing-sm);
+	}
+
+	.pending-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--spacing-md);
+		flex-wrap: wrap;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border-default);
+		border-radius: var(--radius-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		margin-bottom: var(--spacing-md);
+	}
+
+	.pending-info {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+	}
+
+	.pending-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.pending-controls select {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border-default);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-primary);
+		font-size: 0.875rem;
+	}
+
+	.hint {
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+	}
+
+	.pending-badge {
+		display: inline-block;
+		padding: 1px 8px;
+		border-radius: var(--radius-sm);
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-tertiary);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.item-content.pending {
+		cursor: default;
+	}
+
+	.item-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		flex-shrink: 0;
 	}
 
 	.items-list {
@@ -525,7 +851,9 @@
 		justify-content: center;
 		min-height: unset;
 		min-width: unset;
-		transition: color var(--transition-fast), background var(--transition-fast);
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast);
 	}
 
 	.reorder-btn:hover:not(:disabled) {
@@ -554,8 +882,14 @@
 		display: block;
 	}
 
-	@keyframes spin { to { transform: rotate(360deg); } }
-	:global(.spin) { animation: spin 1s linear infinite; }
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	:global(.spin) {
+		animation: spin 1s linear infinite;
+	}
 
 	@media (max-width: 768px) {
 		.page {

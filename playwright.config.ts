@@ -35,9 +35,11 @@ export default defineConfig({
 			use: { ...devices['iPhone 13'] },
 		},
 	],
-	webServer: process.env.CI ? undefined : {
-		command: 'npm run preview',
-		url: 'http://localhost:3000',
-		reuseExistingServer: !process.env.CI,
-	},
+	webServer: process.env.CI
+		? undefined
+		: {
+				command: 'npm run preview',
+				url: 'http://localhost:3000',
+				reuseExistingServer: !process.env.CI,
+			},
 });

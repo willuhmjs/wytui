@@ -27,10 +27,8 @@
 
 	let filtered = $derived(
 		input.trim()
-			? allTags.filter(
-					(t) => t.toLowerCase().includes(input.toLowerCase()) && !tags.includes(t)
-				)
-			: []
+			? allTags.filter((t) => t.toLowerCase().includes(input.toLowerCase()) && !tags.includes(t))
+			: [],
 	);
 
 	function addTag(tag: string) {
@@ -63,8 +61,17 @@
 		{#each tags as tag (tag)}
 			<span class="tag-chip">
 				{tag}
-				<button type="button" class="tag-remove" onclick={() => removeTag(tag)} aria-label="Remove tag {tag}">
-					<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" /></svg>
+				<button
+					type="button"
+					class="tag-remove"
+					onclick={() => removeTag(tag)}
+					aria-label="Remove tag {tag}"
+				>
+					<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
+						><path
+							d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+						/></svg
+					>
 				</button>
 			</span>
 		{/each}
@@ -75,8 +82,11 @@
 				placeholder={tags.length === 0 ? 'Add tags...' : ''}
 				bind:value={input}
 				onkeydown={handleKeydown}
-				onfocus={() => showSuggestions = true}
-				onblur={() => { clearTimeout(blurTimer); blurTimer = setTimeout(() => showSuggestions = false, 150); }}
+				onfocus={() => (showSuggestions = true)}
+				onblur={() => {
+					clearTimeout(blurTimer);
+					blurTimer = setTimeout(() => (showSuggestions = false), 150);
+				}}
 			/>
 			{#if showSuggestions && filtered.length > 0}
 				<div class="tag-suggestions">

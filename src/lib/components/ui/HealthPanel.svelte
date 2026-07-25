@@ -77,9 +77,7 @@
 					<button class="refresh-btn" onclick={fetchHealth} disabled={loading} aria-label="Refresh">
 						<i class="bi bi-arrow-clockwise" class:spinning={loading}></i>
 					</button>
-					<button class="close-btn" onclick={onClose} aria-label="Close">
-						×
-					</button>
+					<button class="close-btn" onclick={onClose} aria-label="Close"> × </button>
 				</div>
 			</div>
 
@@ -151,7 +149,9 @@
 										<span class="stat-label">Total Cache</span>
 										<span class="stat-detail">
 											{#if data.storage.totalCache.quotaBytes}
-												{formatBytes(data.storage.totalCache.usedBytes)} / {formatBytes(data.storage.totalCache.quotaBytes)}
+												{formatBytes(data.storage.totalCache.usedBytes)} / {formatBytes(
+													data.storage.totalCache.quotaBytes,
+												)}
 											{:else}
 												{formatBytes(data.storage.totalCache.usedBytes)} &middot; No limit
 											{/if}
@@ -160,7 +160,10 @@
 									<div class="health-progress">
 										<div
 											class="health-progress-bar"
-											style="width: {data.storage.totalCache.percentage}%; background: {progressColor(data.storage.totalCache.percentage)};"
+											style="width: {data.storage.totalCache
+												.percentage}%; background: {progressColor(
+												data.storage.totalCache.percentage,
+											)};"
 										></div>
 									</div>
 								</div>
@@ -168,12 +171,18 @@
 							<div class="progress-section">
 								<div class="progress-header">
 									<span class="stat-label">Your Cache</span>
-									<span class="stat-detail">{formatBytes(data.storage.cache.usedBytes)} / {formatBytes(data.storage.cache.quotaBytes)}</span>
+									<span class="stat-detail"
+										>{formatBytes(data.storage.cache.usedBytes)} / {formatBytes(
+											data.storage.cache.quotaBytes,
+										)}</span
+									>
 								</div>
 								<div class="health-progress">
 									<div
 										class="health-progress-bar"
-										style="width: {data.storage.cache.percentage}%; background: {progressColor(data.storage.cache.percentage)};"
+										style="width: {data.storage.cache.percentage}%; background: {progressColor(
+											data.storage.cache.percentage,
+										)};"
 									></div>
 								</div>
 							</div>
@@ -181,12 +190,18 @@
 								<div class="progress-section">
 									<div class="progress-header">
 										<span class="stat-label">Disk</span>
-										<span class="stat-detail">{formatBytes(data.storage.disk.usedBytes)} / {formatBytes(data.storage.disk.totalBytes)}</span>
+										<span class="stat-detail"
+											>{formatBytes(data.storage.disk.usedBytes)} / {formatBytes(
+												data.storage.disk.totalBytes,
+											)}</span
+										>
 									</div>
 									<div class="health-progress">
 										<div
 											class="health-progress-bar"
-											style="width: {data.storage.disk.percentage}%; background: {progressColor(data.storage.disk.percentage)};"
+											style="width: {data.storage.disk.percentage}%; background: {progressColor(
+												data.storage.disk.percentage,
+											)};"
 										></div>
 									</div>
 								</div>
@@ -196,13 +211,23 @@
 									{#if data.storage.library.video}
 										<div class="stat-row">
 											<span class="stat-label"><i class="bi bi-film"></i> Video Library</span>
-											<span class="stat-detail">{data.storage.library.video.count} files &middot; {formatBytes(data.storage.library.video.usedBytes)}</span>
+											<span class="stat-detail"
+												>{data.storage.library.video.count} files &middot; {formatBytes(
+													data.storage.library.video.usedBytes,
+												)}</span
+											>
 										</div>
 									{/if}
 									{#if data.storage.library.music}
 										<div class="stat-row">
-											<span class="stat-label"><i class="bi bi-music-note-beamed"></i> Music Library</span>
-											<span class="stat-detail">{data.storage.library.music.count} files &middot; {formatBytes(data.storage.library.music.usedBytes)}</span>
+											<span class="stat-label"
+												><i class="bi bi-music-note-beamed"></i> Music Library</span
+											>
+											<span class="stat-detail"
+												>{data.storage.library.music.count} files &middot; {formatBytes(
+													data.storage.library.music.usedBytes,
+												)}</span
+											>
 										</div>
 									{/if}
 								</div>
@@ -241,11 +266,17 @@
 							<div class="card-title"><i class="bi bi-arrow-repeat"></i> Automations</div>
 							<div class="stat-row">
 								<span class="stat-label">Subscriptions</span>
-								<span class="stat-value">{data.subscriptions.active} <span class="stat-dim">/ {data.subscriptions.total}</span></span>
+								<span class="stat-value"
+									>{data.subscriptions.active}
+									<span class="stat-dim">/ {data.subscriptions.total}</span></span
+								>
 							</div>
 							<div class="stat-row">
 								<span class="stat-label">Monitors</span>
-								<span class="stat-value">{data.monitors.enabled} <span class="stat-dim">/ {data.monitors.total}</span></span>
+								<span class="stat-value"
+									>{data.monitors.enabled}
+									<span class="stat-dim">/ {data.monitors.total}</span></span
+								>
 							</div>
 							{#if data.monitors.live > 0}
 								<div class="stat-row">
@@ -275,13 +306,23 @@
 	}
 
 	@keyframes fadeIn {
-		from { opacity: 0; }
-		to { opacity: 1; }
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 
 	@keyframes slideUp {
-		from { opacity: 0; transform: translateY(16px); }
-		to { opacity: 1; transform: translateY(0); }
+		from {
+			opacity: 0;
+			transform: translateY(16px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.health-panel {
@@ -430,11 +471,22 @@
 		color: var(--color-text-primary);
 	}
 
-	.stat-value.accent { color: var(--color-accent-primary); }
-	.stat-value.success { color: var(--color-status-success); }
-	.stat-value.error { color: var(--color-status-error); }
-	.stat-value.live { color: var(--color-status-error); }
-	.stat-value.mono { font-family: monospace; font-size: 0.8rem; }
+	.stat-value.accent {
+		color: var(--color-accent-primary);
+	}
+	.stat-value.success {
+		color: var(--color-status-success);
+	}
+	.stat-value.error {
+		color: var(--color-status-error);
+	}
+	.stat-value.live {
+		color: var(--color-status-error);
+	}
+	.stat-value.mono {
+		font-family: monospace;
+		font-size: 0.8rem;
+	}
 
 	.stat-dim {
 		font-weight: 400;

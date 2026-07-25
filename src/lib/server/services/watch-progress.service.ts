@@ -3,7 +3,7 @@ import { prisma } from '../db';
 class WatchProgressService {
 	async saveProgress(userId: string, downloadId: string, position: number, duration?: number) {
 		// Determine if this position means "watched" (>90% through)
-		const isWatchedNow = duration ? (position / duration) > 0.9 : false;
+		const isWatchedNow = duration ? position / duration > 0.9 : false;
 
 		// Check if there's an existing record that's already marked watched
 		const existing = await prisma.watchProgress.findUnique({
@@ -11,7 +11,7 @@ class WatchProgressService {
 		});
 
 		// Don't un-watch something that was already marked watched
-		const watched = (existing?.watched === true) || isWatchedNow;
+		const watched = existing?.watched === true || isWatchedNow;
 
 		return prisma.watchProgress.upsert({
 			where: { userId_downloadId: { userId, downloadId } },
@@ -19,7 +19,7 @@ class WatchProgressService {
 				position,
 				duration,
 				watched,
-				watchedAt: (isWatchedNow && !existing?.watched) ? new Date() : undefined,
+				watchedAt: isWatchedNow && !existing?.watched ? new Date() : undefined,
 			},
 			create: {
 				userId,

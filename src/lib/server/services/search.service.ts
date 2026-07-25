@@ -11,21 +11,25 @@ class SearchService {
 			.trim()
 			.replace(/[&|!():*]/g, ' ')
 			.split(/\s+/)
-			.filter(word => word.length > 0)
+			.filter((word) => word.length > 0)
 			.join(' & ');
 	}
-	async search(query: string, userId: string, options: {
-		limit?: number;
-		offset?: number;
-		videoType?: string;
-		storagePool?: string;
-		uploader?: string;
-		watchState?: 'watched' | 'unwatched' | 'in_progress';
-		minHeight?: number;
-		maxHeight?: number;
-		dateFrom?: Date;
-		dateTo?: Date;
-	} = {}) {
+	async search(
+		query: string,
+		userId: string,
+		options: {
+			limit?: number;
+			offset?: number;
+			videoType?: string;
+			storagePool?: string;
+			uploader?: string;
+			watchState?: 'watched' | 'unwatched' | 'in_progress';
+			minHeight?: number;
+			maxHeight?: number;
+			dateFrom?: Date;
+			dateTo?: Date;
+		} = {},
+	) {
 		// Try full-text search first, fall back to LIKE on error
 		try {
 			return await this.fullTextSearch(query, userId, options);
@@ -38,19 +42,34 @@ class SearchService {
 	/**
 	 * PostgreSQL full-text search with ts_rank ranking.
 	 */
-	private async fullTextSearch(query: string, userId: string, options: {
-		limit?: number;
-		offset?: number;
-		videoType?: string;
-		storagePool?: string;
-		uploader?: string;
-		watchState?: 'watched' | 'unwatched' | 'in_progress';
-		minHeight?: number;
-		maxHeight?: number;
-		dateFrom?: Date;
-		dateTo?: Date;
-	} = {}) {
-		const { limit = 20, offset = 0, videoType, storagePool, uploader, watchState, minHeight, maxHeight, dateFrom, dateTo } = options;
+	private async fullTextSearch(
+		query: string,
+		userId: string,
+		options: {
+			limit?: number;
+			offset?: number;
+			videoType?: string;
+			storagePool?: string;
+			uploader?: string;
+			watchState?: 'watched' | 'unwatched' | 'in_progress';
+			minHeight?: number;
+			maxHeight?: number;
+			dateFrom?: Date;
+			dateTo?: Date;
+		} = {},
+	) {
+		const {
+			limit = 20,
+			offset = 0,
+			videoType,
+			storagePool,
+			uploader,
+			watchState,
+			minHeight,
+			maxHeight,
+			dateFrom,
+			dateTo,
+		} = options;
 
 		const sanitized = this.sanitizeQuery(query);
 
@@ -177,7 +196,7 @@ class SearchService {
 		const subtitleData = await this.searchSubtitlesFTS(query, userId, { storagePool, uploader });
 
 		return {
-			results: results.map(r => ({
+			results: results.map((r) => ({
 				...r,
 				filesize: r.filesize?.toString() ?? null,
 				downloadedBytes: r.downloadedBytes?.toString() ?? null,
@@ -198,19 +217,34 @@ class SearchService {
 	/**
 	 * LIKE-based search fallback (original implementation).
 	 */
-	private async likeSearch(query: string, userId: string, options: {
-		limit?: number;
-		offset?: number;
-		videoType?: string;
-		storagePool?: string;
-		uploader?: string;
-		watchState?: 'watched' | 'unwatched' | 'in_progress';
-		minHeight?: number;
-		maxHeight?: number;
-		dateFrom?: Date;
-		dateTo?: Date;
-	} = {}) {
-		const { limit = 20, offset = 0, videoType, storagePool, uploader, watchState, minHeight, maxHeight, dateFrom, dateTo } = options;
+	private async likeSearch(
+		query: string,
+		userId: string,
+		options: {
+			limit?: number;
+			offset?: number;
+			videoType?: string;
+			storagePool?: string;
+			uploader?: string;
+			watchState?: 'watched' | 'unwatched' | 'in_progress';
+			minHeight?: number;
+			maxHeight?: number;
+			dateFrom?: Date;
+			dateTo?: Date;
+		} = {},
+	) {
+		const {
+			limit = 20,
+			offset = 0,
+			videoType,
+			storagePool,
+			uploader,
+			watchState,
+			minHeight,
+			maxHeight,
+			dateFrom,
+			dateTo,
+		} = options;
 
 		const where: any = {
 			userId,
@@ -229,10 +263,7 @@ class SearchService {
 			where.storagePool = storagePool;
 		}
 		if (uploader) {
-			where.AND = [
-				{ OR: where.OR },
-				{ uploader: { contains: uploader, mode: 'insensitive' } }
-			];
+			where.AND = [{ OR: where.OR }, { uploader: { contains: uploader, mode: 'insensitive' } }];
 			delete where.OR;
 		}
 
@@ -249,10 +280,7 @@ class SearchService {
 						watchProgress: {
 							some: {
 								userId,
-								OR: [
-									{ watched: true },
-									{ position: { gt: 0 } },
-								],
+								OR: [{ watched: true }, { position: { gt: 0 } }],
 							},
 						},
 					};
@@ -296,7 +324,7 @@ class SearchService {
 		]);
 
 		return {
-			results: results.map(r => ({
+			results: results.map((r) => ({
 				...r,
 				filesize: r.filesize?.toString() ?? null,
 				downloadedBytes: r.downloadedBytes?.toString() ?? null,
@@ -312,10 +340,14 @@ class SearchService {
 	 * Full-text search within subtitle text using PostgreSQL tsvector.
 	 * Returns matching lines grouped by download.
 	 */
-	private async searchSubtitlesFTS(query: string, userId: string, filters: {
-		storagePool?: string;
-		uploader?: string;
-	} = {}) {
+	private async searchSubtitlesFTS(
+		query: string,
+		userId: string,
+		filters: {
+			storagePool?: string;
+			uploader?: string;
+		} = {},
+	) {
 		const sanitized = this.sanitizeQuery(query);
 
 		// Build WHERE conditions as parameterized Prisma.Sql fragments
@@ -366,7 +398,7 @@ class SearchService {
 		const total = Number(countResult[0]?.count ?? 0);
 
 		return {
-			results: results.map(r => ({
+			results: results.map((r) => ({
 				id: r.id,
 				downloadId: r.downloadId,
 				startTime: r.startTime,
@@ -389,10 +421,14 @@ class SearchService {
 	 * LIKE-based subtitle search fallback.
 	 * Returns matching lines grouped by download.
 	 */
-	private async searchSubtitles(query: string, userId: string, filters: {
-		storagePool?: string;
-		uploader?: string;
-	} = {}) {
+	private async searchSubtitles(
+		query: string,
+		userId: string,
+		filters: {
+			storagePool?: string;
+			uploader?: string;
+		} = {},
+	) {
 		const downloadWhere: any = {
 			userId,
 			status: 'COMPLETED',
@@ -433,7 +469,7 @@ class SearchService {
 		]);
 
 		return {
-			results: results.map(m => ({
+			results: results.map((m) => ({
 				id: m.id,
 				downloadId: m.downloadId,
 				startTime: m.startTime,

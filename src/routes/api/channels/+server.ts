@@ -47,6 +47,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			name: g.uploader,
 			count: g._count.id,
 			thumbnail: thumbMap.get(g.uploader!) ?? null,
-		}))
+		})),
 	);
 };

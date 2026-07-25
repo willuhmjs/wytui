@@ -37,7 +37,8 @@ function classifyError(err: unknown, status?: number): FetchError {
 			if (status === 401) message = 'You need to sign in to do that.';
 			else if (status === 403) message = "You don't have permission to do that.";
 			else if (status === 404) message = 'The requested resource was not found.';
-			else if (status === 409) message = 'Conflict with the current state. Please refresh and try again.';
+			else if (status === 409)
+				message = 'Conflict with the current state. Please refresh and try again.';
 			else if (status === 422) message = 'The submitted data is invalid.';
 			else if (status === 429) message = 'Too many requests. Please slow down and try again.';
 			return {
@@ -81,20 +82,29 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Wrapper around fetch that automatically includes CSRF token
+ * Return a new options object with the CSRF header applied when appropriate.
+ * Reads the current csrfToken from page data and skips safe methods
+ * (GET/HEAD/OPTIONS). Does not mutate the caller's options object.
  */
-export async function csrfFetch(url: RequestInfo | URL, options?: RequestInit): Promise<Response> {
-	const pageData = get(page);
-	const csrfToken = pageData.data?.csrfToken;
+function applyCsrf<T extends RequestInit>(options?: T): T {
+	const merged = { ...(options ?? ({} as T)) };
+	const csrfToken = get(page).data?.csrfToken;
 
-	if (csrfToken && options?.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method)) {
-		options.headers = {
-			...options.headers,
+	if (csrfToken && merged.method && !['GET', 'HEAD', 'OPTIONS'].includes(merged.method)) {
+		merged.headers = {
+			...merged.headers,
 			'x-csrf-token': csrfToken,
 		};
 	}
 
-	return fetch(url, options);
+	return merged;
+}
+
+/**
+ * Wrapper around fetch that automatically includes CSRF token
+ */
+export async function csrfFetch(url: RequestInfo | URL, options?: RequestInit): Promise<Response> {
+	return fetch(url, applyCsrf(options));
 }
 
 /**
@@ -109,17 +119,10 @@ export async function safeFetch(
 		timeout = DEFAULT_TIMEOUT,
 		retries = DEFAULT_RETRIES,
 		retryDelay = DEFAULT_RETRY_DELAY,
-		...fetchOptions
+		...rest
 	} = options;
 
-	const pageData = get(page);
-	const csrfToken = pageData.data?.csrfToken;
-	if (csrfToken && fetchOptions.method && !['GET', 'HEAD', 'OPTIONS'].includes(fetchOptions.method)) {
-		fetchOptions.headers = {
-			...fetchOptions.headers,
-			'x-csrf-token': csrfToken,
-		};
-	}
+	const fetchOptions = applyCsrf(rest);
 
 	let lastError: FetchError | null = null;
 

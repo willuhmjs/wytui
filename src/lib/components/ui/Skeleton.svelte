@@ -6,12 +6,7 @@
 		lineWidths?: string[];
 	}
 
-	let {
-		count = 6,
-		variant = 'card',
-		columns = 4,
-		lineWidths,
-	}: Props = $props();
+	let { count = 6, variant = 'card', columns = 4, lineWidths }: Props = $props();
 
 	function widthFor(i: number): string {
 		if (lineWidths && lineWidths[i]) return lineWidths[i];
@@ -74,10 +69,7 @@
 		{#each Array(count) as _, i}
 			<div class="skeleton-table-row skeleton-item">
 				{#each Array(columns) as _, c}
-					<div
-						class="skeleton-cell"
-						style="flex: {c === 0 ? '2' : '1'}"
-					></div>
+					<div class="skeleton-cell" style="flex: {c === 0 ? '2' : '1'}"></div>
 				{/each}
 			</div>
 		{/each}

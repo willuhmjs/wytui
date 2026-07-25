@@ -1,407 +1,509 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>wytui - Self-Hosted yt-dlp Web UI | Video Downloader Interface</title>
-  <meta name="description" content="A self-hosted web UI for yt-dlp. Download and manage videos from YouTube and 1000+ sites with in-browser playback, watch progress, subtitle search, playlists, SponsorBlock, Chromecast, Plex/Jellyfin integration, browser extension, and more. Docker & Helm supported.">
-  <meta name="keywords" content="yt-dlp web ui, self-hosted video downloader, youtube downloader ui, yt-dlp frontend, yt-dlp docker, video download manager, yt-dlp gui, youtube downloader self hosted, media server downloader, jellyfin downloader, plex downloader, tubearchivist alternative, sponsorblock, chromecast, video player, subtitle search">
-  <link rel="canonical" href="https://willuhmjs.github.io/wytui/">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>wytui - Self-Hosted yt-dlp Web UI | Video Downloader Interface</title>
+		<meta
+			name="description"
+			content="A self-hosted web UI for yt-dlp. Download and manage videos from YouTube and 1000+ sites with in-browser playback, watch progress, subtitle search, playlists, SponsorBlock, Chromecast, Plex/Jellyfin integration, browser extension, and more. Docker & Helm supported."
+		/>
+		<meta
+			name="keywords"
+			content="yt-dlp web ui, self-hosted video downloader, youtube downloader ui, yt-dlp frontend, yt-dlp docker, video download manager, yt-dlp gui, youtube downloader self hosted, media server downloader, jellyfin downloader, plex downloader, tubearchivist alternative, sponsorblock, chromecast, video player, subtitle search"
+		/>
+		<link rel="canonical" href="https://willuhmjs.github.io/wytui/" />
+		<link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-  <!-- OpenGraph -->
-  <meta property="og:title" content="wytui - Self-Hosted yt-dlp Web UI">
-  <meta property="og:description" content="Download and manage videos from YouTube and 1000+ sites. In-browser player, watch progress, subtitle search, playlists, SponsorBlock, Chromecast, Plex/Jellyfin integration, browser extension, and more.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://willuhmjs.github.io/wytui/">
-  <meta property="og:site_name" content="wytui">
+		<!-- OpenGraph -->
+		<meta property="og:title" content="wytui - Self-Hosted yt-dlp Web UI" />
+		<meta
+			property="og:description"
+			content="Download and manage videos from YouTube and 1000+ sites. In-browser player, watch progress, subtitle search, playlists, SponsorBlock, Chromecast, Plex/Jellyfin integration, browser extension, and more."
+		/>
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://willuhmjs.github.io/wytui/" />
+		<meta property="og:site_name" content="wytui" />
 
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="wytui - Self-Hosted yt-dlp Web UI">
-  <meta name="twitter:description" content="Download videos from YouTube and 1000+ sites with a beautiful self-hosted web interface.">
+		<!-- Twitter Card -->
+		<meta name="twitter:card" content="summary" />
+		<meta name="twitter:title" content="wytui - Self-Hosted yt-dlp Web UI" />
+		<meta
+			name="twitter:description"
+			content="Download videos from YouTube and 1000+ sites with a beautiful self-hosted web interface."
+		/>
 
-  <!-- JSON-LD Structured Data -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "wytui",
-    "description": "A self-hosted web UI for yt-dlp. Download videos from YouTube and 1000+ supported sites.",
-    "url": "https://willuhmjs.github.io/wytui/",
-    "applicationCategory": "MultimediaApplication",
-    "operatingSystem": "Linux, Docker, Kubernetes",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "license": "https://opensource.org/licenses/MIT",
-    "codeRepository": "https://github.com/willuhmjs/wytui",
-    "programmingLanguage": ["TypeScript", "Svelte"],
-    "softwareRequirements": "Docker or Node.js, PostgreSQL"
-  }
-  </script>
+		<!-- JSON-LD Structured Data -->
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "SoftwareApplication",
+				"name": "wytui",
+				"description": "A self-hosted web UI for yt-dlp. Download videos from YouTube and 1000+ supported sites.",
+				"url": "https://willuhmjs.github.io/wytui/",
+				"applicationCategory": "MultimediaApplication",
+				"operatingSystem": "Linux, Docker, Kubernetes",
+				"offers": {
+					"@type": "Offer",
+					"price": "0",
+					"priceCurrency": "USD"
+				},
+				"license": "https://opensource.org/licenses/MIT",
+				"codeRepository": "https://github.com/willuhmjs/wytui",
+				"programmingLanguage": ["TypeScript", "Svelte"],
+				"softwareRequirements": "Docker or Node.js, PostgreSQL"
+			}
+		</script>
 
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+		<style>
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
 
-    :root {
-      --bg: #0a0a0a;
-      --bg-card: #141414;
-      --bg-code: #1e1e1e;
-      --text: #ffffff;
-      --text-dim: #a0a0a0;
-      --text-muted: #606060;
-      --accent: #3b82f6;
-      --accent-hover: #2563eb;
-      --purple: #7c3aed;
-      --border: #2a2a2a;
-    }
+			:root {
+				--bg: #0a0a0a;
+				--bg-card: #141414;
+				--bg-code: #1e1e1e;
+				--text: #ffffff;
+				--text-dim: #a0a0a0;
+				--text-muted: #606060;
+				--accent: #3b82f6;
+				--accent-hover: #2563eb;
+				--purple: #7c3aed;
+				--border: #2a2a2a;
+			}
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-    }
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				line-height: 1.6;
+				-webkit-font-smoothing: antialiased;
+			}
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { color: var(--accent-hover); }
+			a {
+				color: var(--accent);
+				text-decoration: none;
+			}
+			a:hover {
+				color: var(--accent-hover);
+			}
 
-    .container {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
+			.container {
+				max-width: 960px;
+				margin: 0 auto;
+				padding: 0 1.5rem;
+			}
 
-    /* Header */
-    header {
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 0;
-    }
+			/* Header */
+			header {
+				border-bottom: 1px solid var(--border);
+				padding: 1rem 0;
+			}
 
-    header .container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+			header .container {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: var(--text);
-    }
+			.logo {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+				font-size: 1.25rem;
+				font-weight: 700;
+				color: var(--text);
+			}
 
-    .nav-links {
-      display: flex;
-      gap: 1.5rem;
-      align-items: center;
-    }
+			.nav-links {
+				display: flex;
+				gap: 1.5rem;
+				align-items: center;
+			}
 
-    .nav-links a {
-      color: var(--text-dim);
-      font-size: 0.875rem;
-      transition: color 150ms;
-    }
+			.nav-links a {
+				color: var(--text-dim);
+				font-size: 0.875rem;
+				transition: color 150ms;
+			}
 
-    .nav-links a:hover { color: var(--text); }
+			.nav-links a:hover {
+				color: var(--text);
+			}
 
-    /* Hero */
-    .hero {
-      padding: 5rem 0 4rem;
-      text-align: center;
-    }
+			/* Hero */
+			.hero {
+				padding: 5rem 0 4rem;
+				text-align: center;
+			}
 
-    .hero-icon {
-      margin-bottom: 1.5rem;
-    }
+			.hero-icon {
+				margin-bottom: 1.5rem;
+			}
 
-    .hero h1 {
-      font-size: 3rem;
-      font-weight: 800;
-      margin-bottom: 0.75rem;
-      letter-spacing: -0.02em;
-    }
+			.hero h1 {
+				font-size: 3rem;
+				font-weight: 800;
+				margin-bottom: 0.75rem;
+				letter-spacing: -0.02em;
+			}
 
-    .hero h1 span {
-      background: linear-gradient(135deg, var(--purple), var(--accent));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
+			.hero h1 span {
+				background: linear-gradient(135deg, var(--purple), var(--accent));
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+				background-clip: text;
+			}
 
-    .hero p {
-      font-size: 1.25rem;
-      color: var(--text-dim);
-      max-width: 560px;
-      margin: 0 auto 2rem;
-    }
+			.hero p {
+				font-size: 1.25rem;
+				color: var(--text-dim);
+				max-width: 560px;
+				margin: 0 auto 2rem;
+			}
 
-    .hero-buttons {
-      display: flex;
-      gap: 1rem;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
+			.hero-buttons {
+				display: flex;
+				gap: 1rem;
+				justify-content: center;
+				flex-wrap: wrap;
+			}
 
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      font-size: 0.9375rem;
-      font-weight: 600;
-      transition: all 150ms;
-      border: none;
-      cursor: pointer;
-    }
+			.btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 0.9375rem;
+				font-weight: 600;
+				transition: all 150ms;
+				border: none;
+				cursor: pointer;
+			}
 
-    .btn-primary {
-      background: var(--accent);
-      color: white;
-    }
+			.btn-primary {
+				background: var(--accent);
+				color: white;
+			}
 
-    .btn-primary:hover {
-      background: var(--accent-hover);
-      color: white;
-    }
+			.btn-primary:hover {
+				background: var(--accent-hover);
+				color: white;
+			}
 
-    .btn-secondary {
-      background: var(--bg-card);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
+			.btn-secondary {
+				background: var(--bg-card);
+				color: var(--text);
+				border: 1px solid var(--border);
+			}
 
-    .btn-secondary:hover {
-      border-color: var(--accent);
-      color: var(--text);
-    }
+			.btn-secondary:hover {
+				border-color: var(--accent);
+				color: var(--text);
+			}
 
-    /* Features */
-    .features {
-      padding: 4rem 0;
-    }
+			/* Features */
+			.features {
+				padding: 4rem 0;
+			}
 
-    .features h2 {
-      text-align: center;
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-    }
+			.features h2 {
+				text-align: center;
+				font-size: 2rem;
+				font-weight: 700;
+				margin-bottom: 0.5rem;
+			}
 
-    .features > .container > p {
-      text-align: center;
-      color: var(--text-dim);
-      margin-bottom: 3rem;
-    }
+			.features > .container > p {
+				text-align: center;
+				color: var(--text-dim);
+				margin-bottom: 3rem;
+			}
 
-    .feature-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.25rem;
-    }
+			.feature-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+				gap: 1.25rem;
+			}
 
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      transition: border-color 150ms, transform 150ms;
-    }
+			.feature-card {
+				background: var(--bg-card);
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				padding: 1.5rem;
+				transition:
+					border-color 150ms,
+					transform 150ms;
+			}
 
-    .feature-card:hover {
-      border-color: #3a3a3a;
-      transform: translateY(-2px);
-    }
+			.feature-card:hover {
+				border-color: #3a3a3a;
+				transform: translateY(-2px);
+			}
 
-    .feature-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1rem;
-      font-size: 1.25rem;
-    }
+			.feature-icon {
+				width: 40px;
+				height: 40px;
+				border-radius: 10px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				margin-bottom: 1rem;
+				font-size: 1.25rem;
+			}
 
-    .feature-card h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-    }
+			.feature-card h3 {
+				font-size: 1rem;
+				font-weight: 600;
+				margin-bottom: 0.5rem;
+			}
 
-    .feature-card p {
-      font-size: 0.875rem;
-      color: var(--text-dim);
-      line-height: 1.5;
-    }
+			.feature-card p {
+				font-size: 0.875rem;
+				color: var(--text-dim);
+				line-height: 1.5;
+			}
 
-    /* Install */
-    .install {
-      padding: 4rem 0;
-      border-top: 1px solid var(--border);
-    }
+			/* Install */
+			.install {
+				padding: 4rem 0;
+				border-top: 1px solid var(--border);
+			}
 
-    .install h2 {
-      text-align: center;
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-    }
+			.install h2 {
+				text-align: center;
+				font-size: 2rem;
+				font-weight: 700;
+				margin-bottom: 0.5rem;
+			}
 
-    .install > .container > p {
-      text-align: center;
-      color: var(--text-dim);
-      margin-bottom: 2.5rem;
-    }
+			.install > .container > p {
+				text-align: center;
+				color: var(--text-dim);
+				margin-bottom: 2.5rem;
+			}
 
-    .install-methods {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-    }
+			.install-methods {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 1.5rem;
+			}
 
-    .install-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-    }
+			.install-card {
+				background: var(--bg-card);
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				padding: 1.5rem;
+			}
 
-    .install-card h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
+			.install-card h3 {
+				font-size: 1rem;
+				font-weight: 600;
+				margin-bottom: 1rem;
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+			}
 
-    pre {
-      background: var(--bg-code);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1rem;
-      overflow-x: auto;
-      font-size: 0.8125rem;
-      line-height: 1.6;
-      color: var(--text-dim);
-    }
+			pre {
+				background: var(--bg-code);
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 1rem;
+				overflow-x: auto;
+				font-size: 0.8125rem;
+				line-height: 1.6;
+				color: var(--text-dim);
+			}
 
-    code {
-      font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
-    }
+			code {
+				font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+			}
 
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 2rem 0;
-      text-align: center;
-    }
+			/* Footer */
+			footer {
+				border-top: 1px solid var(--border);
+				padding: 2rem 0;
+				text-align: center;
+			}
 
-    .footer-content {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 1.5rem;
-      flex-wrap: wrap;
-    }
+			.footer-content {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				gap: 1.5rem;
+				flex-wrap: wrap;
+			}
 
-    .footer-content span {
-      color: var(--text-muted);
-      font-size: 0.8125rem;
-    }
+			.footer-content span {
+				color: var(--text-muted);
+				font-size: 0.8125rem;
+			}
 
-    .footer-content a {
-      color: var(--text-dim);
-      font-size: 0.8125rem;
-    }
+			.footer-content a {
+				color: var(--text-dim);
+				font-size: 0.8125rem;
+			}
 
-    .footer-content a:hover { color: var(--text); }
+			.footer-content a:hover {
+				color: var(--text);
+			}
 
-    /* Responsive */
-    @media (max-width: 640px) {
-      .hero { padding: 3rem 0 2.5rem; }
-      .hero h1 { font-size: 2rem; }
-      .hero p { font-size: 1rem; }
-      .features, .install { padding: 2.5rem 0; }
-      .features h2, .install h2 { font-size: 1.5rem; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="container">
-      <a href="/" class="logo">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 128 128">
-          <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient></defs>
-          <rect width="128" height="128" rx="28" fill="url(#g)"/>
-          <path d="M64 30 L64 78 M44 62 L64 82 L84 62" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <path d="M38 94 L90 94" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
-        </svg>
-        wytui
-      </a>
-      <div class="nav-links">
-        <a href="#install">Install</a>
-        <a href="#features">Features</a>
-        <a href="https://github.com/willuhmjs/wytui">GitHub</a>
-      </div>
-    </div>
-  </header>
+			/* Responsive */
+			@media (max-width: 640px) {
+				.hero {
+					padding: 3rem 0 2.5rem;
+				}
+				.hero h1 {
+					font-size: 2rem;
+				}
+				.hero p {
+					font-size: 1rem;
+				}
+				.features,
+				.install {
+					padding: 2.5rem 0;
+				}
+				.features h2,
+				.install h2 {
+					font-size: 1.5rem;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<div class="container">
+				<a href="/" class="logo">
+					<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 128 128">
+						<defs>
+							<linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+								<stop offset="0%" stop-color="#7c3aed" />
+								<stop offset="100%" stop-color="#3b82f6" />
+							</linearGradient>
+						</defs>
+						<rect width="128" height="128" rx="28" fill="url(#g)" />
+						<path
+							d="M64 30 L64 78 M44 62 L64 82 L84 62"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+						<path
+							d="M38 94 L90 94"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							fill="none"
+						/>
+					</svg>
+					wytui
+				</a>
+				<div class="nav-links">
+					<a href="#install">Install</a>
+					<a href="#features">Features</a>
+					<a href="https://github.com/willuhmjs/wytui">GitHub</a>
+				</div>
+			</div>
+		</header>
 
-  <section class="hero">
-    <div class="container">
-      <div class="hero-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 128 128">
-          <defs><linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient></defs>
-          <rect width="128" height="128" rx="28" fill="url(#g2)"/>
-          <path d="M64 30 L64 78 M44 62 L64 82 L84 62" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <path d="M38 94 L90 94" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
-        </svg>
-      </div>
-      <h1><span>wytui</span></h1>
-      <p>A self-hosted web UI for yt-dlp. Download videos from YouTube and 1000+ sites with a beautiful dark interface.</p>
-      <div class="hero-buttons">
-        <a href="https://github.com/willuhmjs/wytui" class="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          View on GitHub
-        </a>
-        <a href="#install" class="btn btn-secondary">
-          Quick Start
-        </a>
-      </div>
-    </div>
-  </section>
+		<section class="hero">
+			<div class="container">
+				<div class="hero-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 128 128">
+						<defs>
+							<linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+								<stop offset="0%" stop-color="#7c3aed" />
+								<stop offset="100%" stop-color="#3b82f6" />
+							</linearGradient>
+						</defs>
+						<rect width="128" height="128" rx="28" fill="url(#g2)" />
+						<path
+							d="M64 30 L64 78 M44 62 L64 82 L84 62"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							fill="none"
+						/>
+						<path
+							d="M38 94 L90 94"
+							stroke="#fff"
+							stroke-width="10"
+							stroke-linecap="round"
+							fill="none"
+						/>
+					</svg>
+				</div>
+				<h1><span>wytui</span></h1>
+				<p>
+					A self-hosted web UI for yt-dlp. Download videos from YouTube and 1000+ sites with a
+					beautiful dark interface.
+				</p>
+				<div class="hero-buttons">
+					<a href="https://github.com/willuhmjs/wytui" class="btn btn-primary">
+						<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+							<path
+								d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+							/>
+						</svg>
+						View on GitHub
+					</a>
+					<a href="#install" class="btn btn-secondary"> Quick Start </a>
+				</div>
+			</div>
+		</section>
 
-  <section class="install" id="install">
-    <div class="container">
-      <h2>Quick Start</h2>
-      <p>Get running in minutes with Docker Compose or Helm.</p>
-      <div class="install-methods">
-        <div class="install-card">
-          <h3>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color: #2496ED;"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.186.186 0 00-.185.186v1.887c0 .102.083.185.185.185zm-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.186.186 0 00-.185.185v1.888c0 .102.082.186.185.186zm0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.186.186 0 00-.185.185v1.888c0 .102.082.185.185.186zm-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.186.186 0 00-.185.185v1.888c0 .102.083.185.185.186zm-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.186.186 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.888c0 .102.084.185.186.186zm5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.186.186 0 00-.185.186v1.887c0 .102.082.185.185.185zm-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.186v1.887c0 .102.083.185.185.185zm-2.964 0h2.119a.186.186 0 00.185-.185V9.006a.186.186 0 00-.185-.186H5.136a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zm-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zM23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.687 11.687 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.228 12.228 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288z"/></svg>
-            Docker Compose
-          </h3>
-          <pre><code><span style="color: #606060;"># Copy .env.example to .env and fill in your values</span>
+		<section class="install" id="install">
+			<div class="container">
+				<h2>Quick Start</h2>
+				<p>Get running in minutes with Docker Compose or Helm.</p>
+				<div class="install-methods">
+					<div class="install-card">
+						<h3>
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+								style="color: #2496ed"
+							>
+								<path
+									d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.186.186 0 00-.185.186v1.887c0 .102.083.185.185.185zm-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.186.186 0 00-.185.185v1.888c0 .102.082.186.185.186zm0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.186.186 0 00-.185.185v1.888c0 .102.082.185.185.186zm-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.186.186 0 00-.185.185v1.888c0 .102.083.185.185.186zm-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.186.186 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.888c0 .102.084.185.186.186zm5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.186.186 0 00-.185.186v1.887c0 .102.082.185.185.185zm-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.186v1.887c0 .102.083.185.185.185zm-2.964 0h2.119a.186.186 0 00.185-.185V9.006a.186.186 0 00-.185-.186H5.136a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zm-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185zM23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.687 11.687 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.228 12.228 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288z"
+								/>
+							</svg>
+							Docker Compose
+						</h3>
+						<pre><code><span style="color: #606060;"># Copy .env.example to .env and fill in your values</span>
 cp .env.example .env
 
 <span style="color: #606060;"># Start the stack</span>
 docker compose up -d</code></pre>
-        </div>
-        <div class="install-card">
-          <h3>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color: #0F1689;"><path d="M10.204 14.35l.007.01-.999 2.413a5.171 5.171 0 01-2.075-2.597l2.578-.437.004.005a.44.44 0 01.485.606zm3.022 1.542a5.33 5.33 0 01-2.477-.357l1.037-2.509.003-.006a.443.443 0 01.754-.097l1.668 2.028-.001.001a5.204 5.204 0 01-.984.94zM12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm5.449 14.32c-.021.085-.079.158-.158.199-2.185 1.098-4.547 1.366-6.755.77a10.19 10.19 0 01-.466-.146l-.111-.04c-2.705-1.04-4.534-3.513-4.534-6.103 0-1.546.533-3.027 1.503-4.173.345-.408.733-.769 1.154-1.076.185-.135.395-.17.583-.095a.495.495 0 01.292.42l.093 1.735c.005.096.045.185.112.253.067.068.158.11.254.115l1.66.088a.455.455 0 01.401.327l.55 1.826a.434.434 0 01-.063.38l-1.354 1.834a.41.41 0 00-.067.254c.037.455.16.896.362 1.297a.375.375 0 00.18.183l2.104.885a.44.44 0 01.25.375l.124 2.647a.461.461 0 01-.001.058z"/></svg>
-            Helm
-          </h3>
-          <pre><code><span style="color: #606060;"># Install with Helm</span>
+					</div>
+					<div class="install-card">
+						<h3>
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+								style="color: #0f1689"
+							>
+								<path
+									d="M10.204 14.35l.007.01-.999 2.413a5.171 5.171 0 01-2.075-2.597l2.578-.437.004.005a.44.44 0 01.485.606zm3.022 1.542a5.33 5.33 0 01-2.477-.357l1.037-2.509.003-.006a.443.443 0 01.754-.097l1.668 2.028-.001.001a5.204 5.204 0 01-.984.94zM12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm5.449 14.32c-.021.085-.079.158-.158.199-2.185 1.098-4.547 1.366-6.755.77a10.19 10.19 0 01-.466-.146l-.111-.04c-2.705-1.04-4.534-3.513-4.534-6.103 0-1.546.533-3.027 1.503-4.173.345-.408.733-.769 1.154-1.076.185-.135.395-.17.583-.095a.495.495 0 01.292.42l.093 1.735c.005.096.045.185.112.253.067.068.158.11.254.115l1.66.088a.455.455 0 01.401.327l.55 1.826a.434.434 0 01-.063.38l-1.354 1.834a.41.41 0 00-.067.254c.037.455.16.896.362 1.297a.375.375 0 00.18.183l2.104.885a.44.44 0 01.25.375l.124 2.647a.461.461 0 01-.001.058z"
+								/>
+							</svg>
+							Helm
+						</h3>
+						<pre><code><span style="color: #606060;"># Install with Helm</span>
 helm install wytui \
   oci://ghcr.io/willuhmjs/wytui
 
@@ -409,229 +511,714 @@ helm install wytui \
 helm install wytui \
   oci://ghcr.io/willuhmjs/wytui \
   -f values.yaml</code></pre>
-        </div>
-      </div>
-    </div>
-  </section>
+					</div>
+				</div>
+			</div>
+		</section>
 
-  <section class="features" id="features">
-    <div class="container">
-      <h2>Features</h2>
-      <p>A complete media management platform — download, watch, organize, and automate.</p>
-      <div class="feature-grid">
-        <!-- Playback & Viewing -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="4"/><path d="M10 8l6 4-6 4V8z"/></svg>
-          </div>
-          <h3>In-Browser Video Player</h3>
-          <p>Watch downloads directly in the browser. Variable speed, keyboard shortcuts, HTTP Range seeking, timestamp deep links (<code>?t=</code>), similar videos sidebar, and a context menu for loop, speed, and SponsorBlock controls.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
-          </div>
-          <h3>SponsorBlock</h3>
-          <p>Automatic sponsor segment skipping with colored seek bar overlays. Powered by the community SponsorBlock database.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/><path d="M19 3v18"/></svg>
-          </div>
-          <h3>Watch Progress</h3>
-          <p>Per-user playback position tracking. Resume where you left off and see which videos you've watched. Continue Watching section on the homepage.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><line x1="2" y1="20" x2="2.01" y2="20"/></svg>
-          </div>
-          <h3>Chromecast</h3>
-          <p>Cast videos to any Chromecast device. Play, pause, and seek from the browser with full Cast SDK integration.</p>
-        </div>
+		<section class="features" id="features">
+			<div class="container">
+				<h2>Features</h2>
+				<p>A complete media management platform — download, watch, organize, and automate.</p>
+				<div class="feature-grid">
+					<!-- Playback & Viewing -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="2" y="2" width="20" height="20" rx="4" />
+								<path d="M10 8l6 4-6 4V8z" />
+							</svg>
+						</div>
+						<h3>In-Browser Video Player</h3>
+						<p>
+							Watch downloads directly in the browser. Variable speed, keyboard shortcuts, HTTP
+							Range seeking, timestamp deep links (<code>?t=</code>), similar videos sidebar, and a
+							context menu for loop, speed, and SponsorBlock controls.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M12 20V10" />
+								<path d="M18 20V4" />
+								<path d="M6 20v-4" />
+							</svg>
+						</div>
+						<h3>SponsorBlock</h3>
+						<p>
+							Automatic sponsor segment skipping with colored seek bar overlays. Powered by the
+							community SponsorBlock database.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M5 3l14 9-14 9V3z" />
+								<path d="M19 3v18" />
+							</svg>
+						</div>
+						<h3>Watch Progress</h3>
+						<p>
+							Per-user playback position tracking. Resume where you left off and see which videos
+							you've watched. Continue Watching section on the homepage.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"
+								/>
+								<line x1="2" y1="20" x2="2.01" y2="20" />
+							</svg>
+						</div>
+						<h3>Chromecast</h3>
+						<p>
+							Cast videos to any Chromecast device. Play, pause, and seek from the browser with full
+							Cast SDK integration.
+						</p>
+					</div>
 
-        <!-- Downloading -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10m-5-3l5 5 5-5"/><path d="M5 18h14"/></svg>
-          </div>
-          <h3>Download Profiles</h3>
-          <p>Pre-configured presets for 4K, 1080p, 720p, 480p video and MP3, AAC, FLAC audio. Save custom profiles with any yt-dlp flags.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20M9 21V9"/></svg>
-          </div>
-          <h3>Two-Tier Storage</h3>
-          <p>Temporary cache with configurable quota plus a permanent library organized by uploader. Promote downloads to your library with one click.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="10"/></svg>
-          </div>
-          <h3>Subscriptions & Playlist Import</h3>
-          <p>Monitor channels and playlists. Auto-download new content on a schedule. Backfill by date, download entire channels, or import a YouTube playlist with live progress tracking.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-          </div>
-          <h3>Livestream Monitors</h3>
-          <p>Watch livestreams and auto-download when they go live. Never miss a stream from your favorite creators.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <h3>Real-Time Progress</h3>
-          <p>Live download status via Server-Sent Events. Granular step-by-step tracking through fetch, download, and post-processing stages — speed, ETA, and ffmpeg progress all update live.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"/></svg>
-          </div>
-          <h3>Browser Extension</h3>
-          <p>Companion extension for Chrome and Firefox. Works on YouTube and 1000+ supported sites — select quality, profile, and playlist, then send to wytui in one click. Detects already-downloaded URLs automatically.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(236, 72, 153, 0.1); color: #ec4899;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
-          </div>
-          <h3>Channel Overrides</h3>
-          <p>Per-channel download settings. Override format, quality, SponsorBlock, and auto-delete on a per-creator basis.</p>
-        </div>
+					<!-- Downloading -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M12 2v10m-5-3l5 5 5-5" />
+								<path d="M5 18h14" />
+							</svg>
+						</div>
+						<h3>Download Profiles</h3>
+						<p>
+							Pre-configured presets for 4K, 1080p, 720p, 480p video and MP3, AAC, FLAC audio. Save
+							custom profiles with any yt-dlp flags.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="2" y="3" width="20" height="18" rx="2" />
+								<path d="M2 9h20M9 21V9" />
+							</svg>
+						</div>
+						<h3>Two-Tier Storage</h3>
+						<p>
+							Temporary cache with configurable quota plus a permanent library organized by
+							uploader. Promote downloads to your library with one click.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M4 12h16M12 4v16" />
+								<circle cx="12" cy="12" r="10" />
+							</svg>
+						</div>
+						<h3>Subscriptions & Playlist Import</h3>
+						<p>
+							Monitor channels and playlists. Auto-download new content on a schedule. Backfill by
+							date, download entire channels, or import a YouTube playlist with live progress
+							tracking.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<circle cx="12" cy="12" r="10" />
+								<circle cx="12" cy="12" r="3" fill="currentColor" />
+							</svg>
+						</div>
+						<h3>Livestream Monitors</h3>
+						<p>
+							Watch livestreams and auto-download when they go live. Never miss a stream from your
+							favorite creators.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+							</svg>
+						</div>
+						<h3>Real-Time Progress</h3>
+						<p>
+							Live download status via Server-Sent Events. Granular step-by-step tracking through
+							fetch, download, and post-processing stages — speed, ETA, and ffmpeg progress all
+							update live.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"
+								/>
+							</svg>
+						</div>
+						<h3>Browser Extension</h3>
+						<p>
+							Companion extension for Chrome and Firefox. Works on YouTube and 1000+ supported sites
+							— select quality, profile, and playlist, then send to wytui in one click. Detects
+							already-downloaded URLs automatically.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M9 17H7A5 5 0 0 1 7 7h2" />
+								<path d="M15 7h2a5 5 0 1 1 0 10h-2" />
+								<line x1="8" y1="12" x2="16" y2="12" />
+							</svg>
+						</div>
+						<h3>Linked YouTube Account</h3>
+						<p>
+							Securely link your YouTube account via the browser extension — cookies are encrypted
+							at rest. Sync watch history, mark videos watched back on YouTube, and keep an
+							authenticated session for search, subscriptions, and playlists.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<polyline points="17 1 21 5 17 9" />
+								<path d="M3 11V9a4 4 0 0 1 4-4h14" />
+								<polyline points="7 23 3 19 7 15" />
+								<path d="M21 13v2a4 4 0 0 1-4 4H3" />
+							</svg>
+						</div>
+						<h3>YouTube Subscription & Playlist Sync</h3>
+						<p>
+							Import your real YouTube subscriptions as monitors, with OPML/CSV export. Sync your
+							YouTube playlists — including Watch Later and Liked videos — into wytui playlists,
+							ready to download.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(236, 72, 153, 0.1); color: #ec4899">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+								<path d="M17 21v-8H7v8M7 3v5h8" />
+							</svg>
+						</div>
+						<h3>Channel Overrides</h3>
+						<p>
+							Per-channel download settings. Override format, quality, SponsorBlock, and auto-delete
+							on a per-creator basis.
+						</p>
+					</div>
 
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </div>
-          <h3>Cookie Import</h3>
-          <p>Import browser cookies to download member-only, age-restricted, or paywalled content. Paste a Netscape-format cookie file directly in the settings.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
-          </div>
-          <h3>Speed Throttling</h3>
-          <p>Cap download bandwidth with a configurable speed limit and optional sleep interval between downloads. Avoid hammering your network or CDN rate limits.</p>
-        </div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+							</svg>
+						</div>
+						<h3>Cookie Import</h3>
+						<p>
+							Import browser cookies to download member-only, age-restricted, or paywalled content.
+							Paste a Netscape-format cookie file directly in the settings.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+								<line x1="3" y1="3" x2="21" y2="21" />
+							</svg>
+						</div>
+						<h3>Speed Throttling</h3>
+						<p>
+							Cap download bandwidth with a configurable speed limit and optional sleep interval
+							between downloads. Avoid hammering your network or CDN rate limits.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+								<polyline points="17 6 23 6 23 12" />
+							</svg>
+						</div>
+						<h3>Download Acceleration</h3>
+						<p>
+							Tune concurrent fragment downloads and HTTP chunk size, or hand off to the aria2c
+							accelerated downloader for faster multi-connection transfers.
+						</p>
+					</div>
 
-        <!-- Organization & Search -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-          </div>
-          <h3>Full-Text Search</h3>
-          <p>Instant search across titles, descriptions, uploaders, and subtitles. Powered by PostgreSQL full-text search with ranked results — find the exact moment someone says something in any video.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path d="M12 12V3"/><path d="M9.5 15a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path d="M3 21v-9"/><path d="M.5 15a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
-          </div>
-          <h3>Custom Playlists</h3>
-          <p>Organize downloads into playlists with drag-to-reorder. Create, edit, and manage playlists with a dedicated UI.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-          </div>
-          <h3>Tags & Categories</h3>
-          <p>YouTube categories from metadata plus user-defined tags. Filter and organize your library with flexible tagging.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-          </div>
-          <h3>Video Type Classification</h3>
-          <p>Automatically classifies videos as regular, short, or livestream. Filter your library by content type.</p>
-        </div>
+					<!-- Organization & Search -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<circle cx="11" cy="11" r="8" />
+								<path d="M21 21l-4.35-4.35" />
+							</svg>
+						</div>
+						<h3>Full-Text Search</h3>
+						<p>
+							Instant search across titles, descriptions, uploaders, and subtitles. Powered by
+							PostgreSQL full-text search with ranked results — find the exact moment someone says
+							something in any video.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<circle cx="12" cy="12" r="10" />
+								<line x1="2" y1="12" x2="22" y2="12" />
+								<path
+									d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+								/>
+							</svg>
+						</div>
+						<h3>YouTube Search</h3>
+						<p>
+							Search YouTube directly from wytui, right alongside your library. Filter by type,
+							sort, upload date, and duration, then download any result in one click.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M21 15V6" />
+								<path d="M18.5 18a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+								<path d="M12 12V3" />
+								<path d="M9.5 15a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+								<path d="M3 21v-9" />
+								<path d="M.5 15a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+							</svg>
+						</div>
+						<h3>Custom Playlists</h3>
+						<p>
+							Organize downloads into playlists with drag-to-reorder. Create, edit, and manage
+							playlists with a dedicated UI.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"
+								/>
+								<line x1="7" y1="7" x2="7.01" y2="7" />
+							</svg>
+						</div>
+						<h3>Tags & Categories</h3>
+						<p>
+							YouTube categories from metadata plus user-defined tags. Filter and organize your
+							library with flexible tagging.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="2" y="2" width="20" height="8" rx="2" />
+								<rect x="2" y="14" width="20" height="8" rx="2" />
+								<line x1="6" y1="6" x2="6.01" y2="6" />
+								<line x1="6" y1="18" x2="6.01" y2="18" />
+							</svg>
+						</div>
+						<h3>Video Type Classification</h3>
+						<p>
+							Automatically classifies videos as regular, short, or livestream. Filter your library
+							by content type.
+						</p>
+					</div>
 
-        <!-- Metadata & Integration -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="4"/><path d="M10 8l6 4-6 4V8z"/></svg>
-          </div>
-          <h3>Jellyfin & Plex Integration</h3>
-          <p>Auto library scan on download completion for both Jellyfin and Plex. Jellyfin also gets thumbnail artwork and deep-link search. Your downloads flow seamlessly into your media server.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/></svg>
-          </div>
-          <h3>Return YouTube Dislike</h3>
-          <p>See dislike counts on videos via the Return YouTube Dislike API. Metadata is fetched and stored alongside your downloads.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4l-6 6-3-3-8 8"/><path d="M17 4h6v6"/></svg>
-          </div>
-          <h3>Metadata Refresh</h3>
-          <p>Re-fetch metadata for individual videos or in bulk. Update titles, descriptions, thumbnails, and dislike counts on demand.</p>
-        </div>
+					<!-- Metadata & Integration -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="2" y="2" width="20" height="20" rx="4" />
+								<path d="M10 8l6 4-6 4V8z" />
+							</svg>
+						</div>
+						<h3>Jellyfin & Plex Integration</h3>
+						<p>
+							Auto library scan on download completion for both Jellyfin and Plex. Jellyfin also
+							gets thumbnail artwork and deep-link search. Your downloads flow seamlessly into your
+							media server.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"
+								/>
+							</svg>
+						</div>
+						<h3>Return YouTube Dislike</h3>
+						<p>
+							See dislike counts on videos via the Return YouTube Dislike API. Metadata is fetched
+							and stored alongside your downloads.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(6, 182, 212, 0.1); color: #06b6d4">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M23 4l-6 6-3-3-8 8" />
+								<path d="M17 4h6v6" />
+							</svg>
+						</div>
+						<h3>Metadata Refresh</h3>
+						<p>
+							Re-fetch metadata for individual videos or in bulk. Update titles, descriptions,
+							thumbnails, and dislike counts on demand.
+						</p>
+					</div>
 
-        <!-- Automation & System -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-          </div>
-          <h3>Auto-Delete Watched</h3>
-          <p>Automatically delete watched videos after a configurable number of days. Per-channel overrides for fine-grained control.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-          </div>
-          <h3>Notifications (Apprise)</h3>
-          <p>Get notified on download completion or failure via 80+ services. Powered by Apprise — supports Discord, Slack, email, and more.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          </div>
-          <h3>Backup & Restore</h3>
-          <p>Full database backup and restore with scheduled backups via cron. Download backups as JSON, restore with one click.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
-          </div>
-          <h3>Filesystem Import</h3>
-          <p>Import existing video files from your filesystem. Scans directories, extracts YouTube IDs, and creates library entries automatically.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          </div>
-          <h3>Scheduled Tasks</h3>
-          <p>Dashboard for all background jobs — subscriptions, monitors, auto-delete, backups, cache cleanup. View history and trigger runs manually.</p>
-        </div>
+					<!-- Automation & System -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"
+								/>
+							</svg>
+						</div>
+						<h3>Auto-Delete Watched</h3>
+						<p>
+							Automatically delete watched videos after a configurable number of days. Per-channel
+							overrides for fine-grained control.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+								<path d="M13.73 21a2 2 0 01-3.46 0" />
+							</svg>
+						</div>
+						<h3>Notifications (Apprise)</h3>
+						<p>
+							Get notified on download completion or failure via 80+ services. Powered by Apprise —
+							supports Discord, Slack, email, and more.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+								<path d="M7 10l5 5 5-5" />
+								<path d="M12 15V3" />
+							</svg>
+						</div>
+						<h3>Backup & Restore</h3>
+						<p>
+							Full database backup and restore with scheduled backups via cron. Download backups as
+							JSON, restore with one click.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<line x1="4" y1="21" x2="4" y2="14" />
+								<line x1="4" y1="10" x2="4" y2="3" />
+								<line x1="12" y1="21" x2="12" y2="12" />
+								<line x1="12" y1="8" x2="12" y2="3" />
+								<line x1="20" y1="21" x2="20" y2="16" />
+								<line x1="20" y1="12" x2="20" y2="3" />
+								<line x1="1" y1="14" x2="7" y2="14" />
+								<line x1="9" y1="8" x2="15" y2="8" />
+								<line x1="17" y1="16" x2="23" y2="16" />
+							</svg>
+						</div>
+						<h3>Config Export/Import (YAML)</h3>
+						<p>
+							Export your full app configuration as a YAML file and restore it on this or another
+							instance — handy for migrations, version control, or standing up a second server.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+								<path d="M14 2v6h6M12 18v-6M9 15h6" />
+							</svg>
+						</div>
+						<h3>Filesystem Import</h3>
+						<p>
+							Import existing video files from your filesystem. Scans directories, extracts YouTube
+							IDs, and creates library entries automatically.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<circle cx="12" cy="12" r="10" />
+								<path d="M12 6v6l4 2" />
+							</svg>
+						</div>
+						<h3>Scheduled Tasks</h3>
+						<p>
+							Dashboard for all background jobs — subscriptions, monitors, auto-delete, backups,
+							cache cleanup. View history and trigger runs manually.
+						</p>
+					</div>
 
-        <!-- Auth & UI -->
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-          </div>
-          <h3>OIDC, LDAP & Reverse-Proxy Auth</h3>
-          <p>OpenID Connect SSO, LDAP, and reverse-proxy header auth (Authelia, Authentik). Admin and user roles with secure multi-user access via your existing identity provider.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-          </div>
-          <h3>Mobile-Friendly</h3>
-          <p>Responsive sidebar navigation with bottom tab bar on mobile. Web Share API on iOS, keyboard shortcuts on desktop.</p>
-        </div>
-      </div>
-    </div>
-  </section>
+					<!-- Auth & UI -->
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="3" y="11" width="18" height="11" rx="2" />
+								<path d="M7 11V7a5 5 0 0110 0v4" />
+							</svg>
+						</div>
+						<h3>OIDC, LDAP & Reverse-Proxy Auth</h3>
+						<p>
+							OpenID Connect SSO, LDAP, and reverse-proxy header auth (Authelia, Authentik). Admin
+							and user roles with secure multi-user access via your existing identity provider.
+						</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981">
+							<svg
+								width="22"
+								height="22"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<rect x="5" y="2" width="14" height="20" rx="2" />
+								<path d="M12 18h.01" />
+							</svg>
+						</div>
+						<h3>Mobile-Friendly</h3>
+						<p>
+							Responsive sidebar navigation with bottom tab bar on mobile. Web Share API on iOS,
+							keyboard shortcuts on desktop.
+						</p>
+					</div>
+				</div>
+			</div>
+		</section>
 
-  <footer>
-    <div class="container">
-      <div class="footer-content">
-        <span>MIT License</span>
-        <a href="https://github.com/willuhmjs/wytui">GitHub</a>
-        <a href="https://github.com/willuhmjs/wytui/issues">Issues</a>
-      </div>
-    </div>
-  </footer>
-</body>
+		<footer>
+			<div class="container">
+				<div class="footer-content">
+					<span>MIT License</span>
+					<a href="https://github.com/willuhmjs/wytui">GitHub</a>
+					<a href="https://github.com/willuhmjs/wytui/issues">Issues</a>
+				</div>
+			</div>
+		</footer>
+	</body>
 </html>

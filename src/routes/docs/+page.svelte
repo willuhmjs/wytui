@@ -23,7 +23,17 @@
 <div class="docs-page">
 	<div class="docs-header">
 		<a href="/settings" class="back-link">
-			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="20"
+				height="20"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg
+			>
 			Back to Settings
 		</a>
 		<h1>API Documentation</h1>
@@ -139,7 +149,7 @@
 		border-color: var(--color-border-default);
 	}
 
-	:global(.swagger-ui input[type=text]),
+	:global(.swagger-ui input[type='text']),
 	:global(.swagger-ui textarea) {
 		background: var(--color-bg-tertiary);
 		color: var(--color-text-primary);

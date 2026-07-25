@@ -35,7 +35,7 @@
 		const k = 1024;
 		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+		return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 	}
 </script>
 
@@ -52,8 +52,26 @@
 		<div class="settings-section">
 			<div class="section-header">
 				<h2>Analytics Overview</h2>
-				<button class="btn btn-secondary btn-sm btn-icon" onclick={loadAnalytics} aria-label="Refresh analytics" title="Refresh analytics">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+				<button
+					class="btn btn-secondary btn-sm btn-icon"
+					onclick={loadAnalytics}
+					aria-label="Refresh analytics"
+					title="Refresh analytics"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><polyline points="23 4 23 10 17 10" /><path
+							d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"
+						/></svg
+					>
 				</button>
 			</div>
 
@@ -64,7 +82,9 @@
 				</div>
 				<div class="stat-card">
 					<div class="stat-label">Completed</div>
-					<div class="stat-value success">{analytics.overview.completedDownloads.toLocaleString()}</div>
+					<div class="stat-value success">
+						{analytics.overview.completedDownloads.toLocaleString()}
+					</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-label">Failed</div>
@@ -91,14 +111,32 @@
 				<div class="storage-row">
 					<span class="storage-label">Cache</span>
 					<div class="storage-bar">
-						<div class="storage-fill cache" style="width: {Math.min(100, (Number(analytics.storage.cacheBytes) / Number(analytics.storage.cacheQuotaBytes)) * 100)}%"></div>
+						<div
+							class="storage-fill cache"
+							style="width: {Math.min(
+								100,
+								(Number(analytics.storage.cacheBytes) / Number(analytics.storage.cacheQuotaBytes)) *
+									100,
+							)}%"
+						></div>
 					</div>
-					<span class="storage-value">{formatBytes(Number(analytics.storage.cacheBytes))} / {formatBytes(Number(analytics.storage.cacheQuotaBytes))}</span>
+					<span class="storage-value"
+						>{formatBytes(Number(analytics.storage.cacheBytes))} / {formatBytes(
+							Number(analytics.storage.cacheQuotaBytes),
+						)}</span
+					>
 				</div>
 				<div class="storage-row">
 					<span class="storage-label">Library</span>
 					<div class="storage-bar">
-						<div class="storage-fill library" style="width: {Math.min(100, (Number(analytics.storage.libraryBytes) / Number(analytics.storage.totalBytes)) * 100)}%"></div>
+						<div
+							class="storage-fill library"
+							style="width: {Math.min(
+								100,
+								(Number(analytics.storage.libraryBytes) / Number(analytics.storage.totalBytes)) *
+									100,
+							)}%"
+						></div>
 					</div>
 					<span class="storage-value">{formatBytes(Number(analytics.storage.libraryBytes))}</span>
 				</div>
@@ -148,10 +186,18 @@
 			<h2>Downloads Per Day (Last 30 Days)</h2>
 			<div class="chart">
 				{#each analytics.downloadsPerDay as day}
-					{@const maxDailyDownloads = Math.max(1, ...analytics.downloadsPerDay.map((d: any) => d.count))}
+					{@const maxDailyDownloads = Math.max(
+						1,
+						...analytics.downloadsPerDay.map((d: any) => d.count),
+					)}
 					<div class="chart-bar-container">
-						<div class="chart-bar" style="height: {Math.min(100, (day.count / maxDailyDownloads) * 100)}%"></div>
-						<div class="chart-label">{new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+						<div
+							class="chart-bar"
+							style="height: {Math.min(100, (day.count / maxDailyDownloads) * 100)}%"
+						></div>
+						<div class="chart-label">
+							{new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+						</div>
 						<div class="chart-value">{day.count}</div>
 					</div>
 				{/each}

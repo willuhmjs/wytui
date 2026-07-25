@@ -19,7 +19,7 @@ export function connectSSE() {
 		const download = JSON.parse(e.data);
 
 		// Check if already exists
-		const index = downloads.findIndex(d => d.id === download.id);
+		const index = downloads.findIndex((d) => d.id === download.id);
 		if (index >= 0) {
 			downloads[index] = download;
 		} else {
@@ -30,7 +30,7 @@ export function connectSSE() {
 	eventSource.addEventListener('download:status', (e) => {
 		const data = JSON.parse(e.data);
 
-		const index = downloads.findIndex(d => d.id === data.id);
+		const index = downloads.findIndex((d) => d.id === data.id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], ...data };
 			downloads = [...downloads]; // Trigger reactivity
@@ -42,7 +42,7 @@ export function connectSSE() {
 	eventSource.addEventListener('download:metadata', (e) => {
 		const data = JSON.parse(e.data);
 
-		const index = downloads.findIndex(d => d.id === data.id);
+		const index = downloads.findIndex((d) => d.id === data.id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], ...data };
 			downloads = [...downloads];
@@ -54,7 +54,7 @@ export function connectSSE() {
 	eventSource.addEventListener('download:progress', (e) => {
 		const data = JSON.parse(e.data);
 
-		const index = downloads.findIndex(d => d.id === data.id);
+		const index = downloads.findIndex((d) => d.id === data.id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], ...data };
 			downloads = [...downloads]; // Trigger reactivity
@@ -67,14 +67,14 @@ export function connectSSE() {
 		const data = JSON.parse(e.data);
 		const { id, download } = data;
 
-		const index = downloads.findIndex(d => d.id === id);
+		const index = downloads.findIndex((d) => d.id === id);
 		if (index >= 0) {
 			downloads[index] = download;
 			downloads = [...downloads];
 		}
 
 		setTimeout(() => {
-			downloads = downloads.filter(d => d.id !== id);
+			downloads = downloads.filter((d) => d.id !== id);
 		}, 3000);
 
 		dispatchCallbacks('download:complete', data);
@@ -83,14 +83,14 @@ export function connectSSE() {
 	eventSource.addEventListener('download:failed', (e) => {
 		const { id, error } = JSON.parse(e.data);
 
-		const index = downloads.findIndex(d => d.id === id);
+		const index = downloads.findIndex((d) => d.id === id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], status: 'FAILED', error };
 			downloads = [...downloads];
 		}
 
 		setTimeout(() => {
-			downloads = downloads.filter(d => d.id !== id);
+			downloads = downloads.filter((d) => d.id !== id);
 		}, 5000);
 
 		dispatchCallbacks('download:failed', { id, error });
@@ -99,14 +99,14 @@ export function connectSSE() {
 	eventSource.addEventListener('download:cancelled', (e) => {
 		const { id } = JSON.parse(e.data);
 
-		const index = downloads.findIndex(d => d.id === id);
+		const index = downloads.findIndex((d) => d.id === id);
 		if (index >= 0) {
 			downloads[index] = { ...downloads[index], status: 'CANCELLED' };
 			downloads = [...downloads];
 		}
 
 		setTimeout(() => {
-			downloads = downloads.filter(d => d.id !== id);
+			downloads = downloads.filter((d) => d.id !== id);
 		}, 3000);
 
 		dispatchCallbacks('download:cancelled', { id });
@@ -114,7 +114,7 @@ export function connectSSE() {
 
 	eventSource.addEventListener('download:deleted', (e) => {
 		const data = JSON.parse(e.data);
-		downloads = downloads.filter(d => d.id !== data.id);
+		downloads = downloads.filter((d) => d.id !== data.id);
 		dispatchCallbacks('download:deleted', data);
 	});
 

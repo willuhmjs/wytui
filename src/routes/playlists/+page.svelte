@@ -8,10 +8,13 @@
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
+	import SyncPlaylistsModal from '$lib/components/youtube/SyncPlaylistsModal.svelte';
 
 	let playlists = $state<any[]>([]);
 	let loading = $state(true);
 	let viewMode = $state<'grid' | 'list'>('grid');
+	let youtubeLinked = $state(false);
+	let showSyncModal = $state(false);
 
 	let showCreateForm = $state(false);
 	let formName = $state('');
@@ -35,7 +38,20 @@
 
 	onMount(() => {
 		loadPlaylists();
+		checkYoutubeLink();
 	});
+
+	async function checkYoutubeLink() {
+		try {
+			const res = await fetch('/api/youtube/link');
+			if (res.ok) {
+				const data = await res.json();
+				youtubeLinked = !!data.linked;
+			}
+		} catch {
+			youtubeLinked = false;
+		}
+	}
 
 	async function loadPlaylists() {
 		loading = true;
@@ -125,7 +141,7 @@
 		const confirmed = await showConfirm(
 			'Delete Playlist',
 			`Delete "${playlist.name}"? This cannot be undone.`,
-			'Delete'
+			'Delete',
 		);
 		if (!confirmed) return;
 
@@ -164,6 +180,11 @@
 			</div>
 			<div class="header-right">
 				<ViewToggle bind:view={viewMode} />
+				{#if youtubeLinked}
+					<button class="btn btn-secondary" onclick={() => (showSyncModal = true)}>
+						Sync with YouTube
+					</button>
+				{/if}
 				<button class="btn btn-primary" onclick={() => (showCreateForm = !showCreateForm)}>
 					{showCreateForm ? 'Cancel' : 'Create Playlist'}
 				</button>
@@ -211,13 +232,17 @@
 					aria-label="Edit playlist"
 					tabindex="-1"
 					onclick={(e) => e.stopPropagation()}
-					onkeydown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+					onkeydown={(e) => {
+						if (e.key === 'Escape') cancelEdit();
+					}}
 				>
 					<div class="modal-header">
 						<h3>Edit Playlist</h3>
 						<button class="modal-close" onclick={cancelEdit} aria-label="Close">
 							<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-								<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+								<path
+									d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+								/>
 							</svg>
 						</button>
 					</div>
@@ -267,7 +292,16 @@
 				{#each playlists as playlist}
 					<div class="list-row">
 						<button class="list-row-main" onclick={() => goto(`/playlists/${playlist.id}`)}>
-							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
 								<path d="M3 12h18M3 6h18M3 18h18" />
 							</svg>
 							<div class="list-row-info">
@@ -276,16 +310,58 @@
 									<span class="list-row-desc">{playlist.description}</span>
 								{/if}
 							</div>
-							<span class="list-row-count">{playlist.itemCount} item{playlist.itemCount !== 1 ? 's' : ''}</span>
+							<span class="list-row-count"
+								>{playlist.itemCount} item{playlist.itemCount !== 1 ? 's' : ''}</span
+							>
 							<span class="list-row-date">{formatDate(playlist.updatedAt)}</span>
 						</button>
 						<div class="list-row-actions">
-							<button class="btn btn-sm btn-secondary" onclick={(e) => { e.stopPropagation(); startEdit(playlist); }} title="Edit playlist" aria-label="Edit playlist">
-								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+							<button
+								class="btn btn-sm btn-secondary"
+								onclick={(e) => {
+									e.stopPropagation();
+									startEdit(playlist);
+								}}
+								title="Edit playlist"
+								aria-label="Edit playlist"
+							>
+								<svg
+									width="15"
+									height="15"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path
+										d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+									/></svg
+								>
 								Edit
 							</button>
-							<button class="btn btn-sm btn-danger" onclick={(e) => { e.stopPropagation(); deletePlaylist(playlist); }} title="Delete playlist" aria-label="Delete playlist">
-								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+							<button
+								class="btn btn-sm btn-danger"
+								onclick={(e) => {
+									e.stopPropagation();
+									deletePlaylist(playlist);
+								}}
+								title="Delete playlist"
+								aria-label="Delete playlist"
+							>
+								<svg
+									width="15"
+									height="15"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><path
+										d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+									/></svg
+								>
 								Delete
 							</button>
 						</div>
@@ -298,7 +374,16 @@
 					<div class="content-card">
 						<button class="card-main" onclick={() => goto(`/playlists/${playlist.id}`)}>
 							<div class="card-icon">
-								<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<svg
+									width="24"
+									height="24"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
 									<path d="M3 12h18M3 6h18M3 18h18" />
 								</svg>
 								<span class="icon-count">{playlist.itemCount}</span>
@@ -319,16 +404,52 @@
 							</div>
 						</button>
 						<div class="card-actions">
-							<button class="btn btn-sm btn-secondary" onclick={(e) => { e.stopPropagation(); startEdit(playlist); }} title="Edit playlist" aria-label="Edit playlist">
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<button
+								class="btn btn-sm btn-secondary"
+								onclick={(e) => {
+									e.stopPropagation();
+									startEdit(playlist);
+								}}
+								title="Edit playlist"
+								aria-label="Edit playlist"
+							>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
 									<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
 									<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
 								</svg>
 								Edit
 							</button>
-							<button class="btn btn-sm btn-danger" onclick={(e) => { e.stopPropagation(); deletePlaylist(playlist); }} title="Delete playlist" aria-label="Delete playlist">
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+							<button
+								class="btn btn-sm btn-danger"
+								onclick={(e) => {
+									e.stopPropagation();
+									deletePlaylist(playlist);
+								}}
+								title="Delete playlist"
+								aria-label="Delete playlist"
+							>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+									/>
 								</svg>
 								Delete
 							</button>
@@ -339,6 +460,8 @@
 		{/if}
 	</div>
 </div>
+
+<SyncPlaylistsModal bind:open={showSyncModal} onSynced={loadPlaylists} />
 
 <style>
 	.page {
@@ -495,7 +618,9 @@
 	.content-card:hover {
 		border-color: var(--color-border-translucent-hover);
 		transform: translateY(-3px);
-		box-shadow: var(--shadow-lg), 0 0 0 1px rgba(59, 130, 246, 0.05);
+		box-shadow:
+			var(--shadow-lg),
+			0 0 0 1px rgba(59, 130, 246, 0.05);
 	}
 
 	.content-card:hover .card-actions {

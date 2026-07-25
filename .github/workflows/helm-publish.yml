@@ -2,7 +2,7 @@ name: Package and Publish Helm Chart
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'charts/**'
   workflow_dispatch:

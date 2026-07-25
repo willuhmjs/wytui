@@ -28,7 +28,8 @@ export interface MusicFileInfo {
 	coverArtBuffer: Buffer | null;
 }
 
-const SUFFIXES_PATTERN = /\s*[\(\[](official\s*(audio|video|music\s*video|visualizer|lyric\s*video|mv)?|lyrics?|audio|visualizer|music\s*video|mv|hd|hq|4k|remaster(ed)?(\s*\d{4})?|explicit|clean|prod\.?\s+by\s+[^)\]]+|ft\.?\s+[^)\]]+|feat\.?\s+[^)\]]+)[\)\]]\s*/gi;
+const SUFFIXES_PATTERN =
+	/\s*[\(\[](official\s*(audio|video|music\s*video|visualizer|lyric\s*video|mv)?|lyrics?|audio|visualizer|music\s*video|mv|hd|hq|4k|remaster(ed)?(\s*\d{4})?|explicit|clean|prod\.?\s+by\s+[^)\]]+|ft\.?\s+[^)\]]+|feat\.?\s+[^)\]]+)[\)\]]\s*/gi;
 const LEADING_TAGS_PATTERN = /^\s*\[[^\]]*\]\s*/;
 
 class MusicMetadataService {
@@ -115,7 +116,7 @@ class MusicMetadataService {
 	async embedMetadata(
 		filepath: string,
 		metadata: { artist: string; title: string; album: string; trackNumber?: number; year?: number },
-		coverArtPath?: string
+		coverArtPath?: string,
 	): Promise<void> {
 		const ext = extname(filepath);
 		const tempPath = filepath + '.tagged' + ext;
@@ -192,11 +193,13 @@ class MusicMetadataService {
 							trackNumber: mbResult.trackNumber,
 							year: mbResult.releaseYear,
 						},
-						coverTempPath
+						coverTempPath,
 					);
 
 					if (coverTempPath) {
-						try { await unlink(coverTempPath); } catch {}
+						try {
+							await unlink(coverTempPath);
+						} catch {}
 					}
 				} catch (error) {
 					console.warn('[MusicMetadata] Metadata embedding failed:', error);
@@ -243,7 +246,7 @@ class MusicMetadataService {
 		if (!releases?.length) return null;
 
 		const albums = releases.filter(
-			(r) => r['release-group']?.['primary-type'] === 'Album' && r.date
+			(r) => r['release-group']?.['primary-type'] === 'Album' && r.date,
 		);
 		if (albums.length) return albums[0];
 

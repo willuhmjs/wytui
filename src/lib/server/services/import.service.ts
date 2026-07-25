@@ -5,8 +5,19 @@ import { ytdlpService } from './ytdlp.service';
 import { DownloadStatus } from '@prisma/client';
 
 const VIDEO_AUDIO_EXTENSIONS = new Set([
-	'.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv',
-	'.m4a', '.mp3', '.ogg', '.opus', '.flac', '.wav', '.aac',
+	'.mp4',
+	'.mkv',
+	'.webm',
+	'.avi',
+	'.mov',
+	'.flv',
+	'.m4a',
+	'.mp3',
+	'.ogg',
+	'.opus',
+	'.flac',
+	'.wav',
+	'.aac',
 ]);
 
 const YOUTUBE_ID_PATTERN = /[a-zA-Z0-9_-]{11}/;
@@ -69,7 +80,7 @@ class ImportService {
 	async importFiles(
 		files: { filepath: string; videoId: string | null }[],
 		userId: string,
-		profileId: string
+		profileId: string,
 	): Promise<{ imported: number; errors: string[] }> {
 		let imported = 0;
 		const errors: string[] = [];

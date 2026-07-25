@@ -1,0 +1,22 @@
+# Package managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Build output & generated
+.svelte-kit/
+build/
+dist/
+node_modules/
+extension-artifacts/
+
+# Prisma generated client
+prisma/generated/
+src/lib/prisma/
+
+# Misc
+*.min.js
+*.min.css
+
+# Helm charts (Go templates break under Prettier)
+charts/

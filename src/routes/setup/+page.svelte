@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -58,7 +59,12 @@
 		<h1>Welcome to wytui</h1>
 		<p class="subtitle">Let's create your admin account to get started</p>
 
-		<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				handleSubmit();
+			}}
+		>
 			{#if error}
 				<div class="error-message">{error}</div>
 			{/if}
@@ -89,9 +95,8 @@
 
 			<div class="form-group">
 				<label for="password">Password</label>
-				<input
+				<PasswordInput
 					id="password"
-					type="password"
 					bind:value={password}
 					placeholder="Enter a password"
 					disabled={loading}
@@ -103,16 +108,17 @@
 						<span class="suggestion" class:met={/[a-z]/.test(password)}>lowercase</span>
 						<span class="suggestion" class:met={/[A-Z]/.test(password)}>uppercase</span>
 						<span class="suggestion" class:met={/[0-9]/.test(password)}>number</span>
-						<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(password)}>special character</span>
+						<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(password)}
+							>special character</span
+						>
 					</div>
 				{/if}
 			</div>
 
 			<div class="form-group">
 				<label for="confirm-password">Confirm Password</label>
-				<input
+				<PasswordInput
 					id="confirm-password"
-					type="password"
 					bind:value={confirmPassword}
 					placeholder="Re-enter your password"
 					disabled={loading}
@@ -138,8 +144,8 @@
 		{/if}
 
 		<div class="info-box">
-			<strong>Note:</strong> This will be the primary admin account with full access to wytui.
-			You can create additional users later from the settings page.
+			<strong>Note:</strong> This will be the primary admin account with full access to wytui. You can
+			create additional users later from the settings page.
 		</div>
 	</div>
 </div>

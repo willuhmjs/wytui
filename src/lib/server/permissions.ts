@@ -12,7 +12,7 @@ export type LibraryAccess = 'allowed' | 'request' | 'denied';
  */
 export function libraryAccessStatus(
 	user: Pick<User, 'libraryAccess' | 'isAdmin'> | null | undefined,
-	settings: Pick<Settings, 'libraryAccessMode'>
+	settings: Pick<Settings, 'libraryAccessMode'>,
 ): LibraryAccess {
 	if (user?.isAdmin) return 'allowed';
 	if (user?.libraryAccess === true) return 'allowed';
@@ -33,7 +33,7 @@ export function libraryAccessStatus(
  */
 export function effectiveCacheQuota(
 	user: Pick<User, 'cacheQuotaBytes'> | null | undefined,
-	settings: Pick<Settings, 'cacheQuotaBytes'>
+	settings: Pick<Settings, 'cacheQuotaBytes'>,
 ): bigint {
 	return user?.cacheQuotaBytes ?? settings.cacheQuotaBytes;
 }

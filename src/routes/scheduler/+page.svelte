@@ -382,7 +382,6 @@
 		max-width: 300px;
 	}
 
-
 	/* Buttons use the global .btn system (src/app.css). */
 
 	@media (max-width: 768px) {

@@ -10,7 +10,9 @@
 	let email = $state<string>(form?.email || '');
 	let password = $state<string>('');
 
-	let showOidc = $derived(data.oidcConfigured && (data.authMode === 'oidc' || data.authMode === 'both'));
+	let showOidc = $derived(
+		data.oidcConfigured && (data.authMode === 'oidc' || data.authMode === 'both'),
+	);
 	let showPassword = $derived(data.authMode !== 'oidc' || data.fallback);
 	let ldapEnabled = $derived(data.ldapEnabled ?? false);
 
@@ -57,23 +59,26 @@
 		{/if}
 
 		{#if showPassword}
-			<form method="POST" use:enhance={() => {
-				loading = true;
-				return async ({ update }) => {
-					await update();
-					loading = false;
-				};
-			}}>
-				<FormField label="Email" for="email" required>
+			<form
+				method="POST"
+				use:enhance={() => {
+					loading = true;
+					return async ({ update }) => {
+						await update();
+						loading = false;
+					};
+				}}
+			>
+				<FormField label="Username or email" for="email" required>
 					<Input
-						type="email"
+						type="text"
 						id="email"
 						name="email"
 						bind:value={email}
-						placeholder="you@example.com"
+						placeholder="you@example.com or username"
 						required
 						disabled={loading}
-						autocomplete="email"
+						autocomplete="username"
 					/>
 				</FormField>
 
@@ -133,7 +138,11 @@
 	.logo-gradient {
 		font-size: var(--font-size-3xl);
 		font-weight: var(--font-weight-bold);
-		background: linear-gradient(135deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+		background: linear-gradient(
+			135deg,
+			var(--color-accent-primary) 0%,
+			var(--color-accent-secondary) 100%
+		);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;

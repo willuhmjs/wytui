@@ -21,7 +21,7 @@ function validateCookieFile(content: string): boolean {
 
 	// Check for Netscape header
 	const hasHeader = lines.some((line) =>
-		line.trim().toLowerCase().includes('netscape http cookie file')
+		line.trim().toLowerCase().includes('netscape http cookie file'),
 	);
 	if (hasHeader) return true;
 
@@ -77,7 +77,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!validateCookieFile(content)) {
 		throw error(
 			400,
-			'Invalid cookie file. Expected a Netscape-format cookies.txt file with tab-separated fields.'
+			'Invalid cookie file. Expected a Netscape-format cookies.txt file with tab-separated fields.',
 		);
 	}
 

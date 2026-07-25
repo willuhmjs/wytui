@@ -10,7 +10,7 @@ class PlexService {
 				{
 					method: 'POST',
 					signal: AbortSignal.timeout(10000),
-				}
+				},
 			);
 
 			if (!res.ok) {
@@ -24,13 +24,16 @@ class PlexService {
 	/**
 	 * Test connection by fetching Plex server identity info.
 	 */
-	async testConnection(plexUrl: string, plexToken: string): Promise<{ success: boolean; serverName?: string; error?: string }> {
+	async testConnection(
+		plexUrl: string,
+		plexToken: string,
+	): Promise<{ success: boolean; serverName?: string; error?: string }> {
 		try {
 			const baseUrl = plexUrl.replace(/\/$/, '');
 			const res = await fetch(`${baseUrl}/identity`, {
 				headers: {
 					'X-Plex-Token': plexToken,
-					'Accept': 'application/json',
+					Accept: 'application/json',
 				},
 				signal: AbortSignal.timeout(10000),
 			});
@@ -45,7 +48,8 @@ class PlexService {
 				: 'Plex';
 			return { success: true, serverName };
 		} catch (e: any) {
-			const message = e.name === 'TimeoutError' ? 'Connection timed out' : (e.message || 'Connection failed');
+			const message =
+				e.name === 'TimeoutError' ? 'Connection timed out' : e.message || 'Connection failed';
 			return { success: false, error: message };
 		}
 	}

@@ -7,7 +7,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const playlists = await playlistService.getPlaylistsForDownload(
 		locals.session.user.id,
-		params.id
+		params.id,
 	);
 	return json(playlists);
 };

@@ -90,14 +90,14 @@
 
 	/* ---------- Typography: Font size ---------- */
 	--font-size-2xs: 0.6875rem; /* 11px */
-	--font-size-xs: 0.75rem;    /* 12px */
+	--font-size-xs: 0.75rem; /* 12px */
 	--font-size-control: 0.8125rem; /* 13px — buttons, player chrome */
-	--font-size-sm: 0.875rem;   /* 14px */
-	--font-size-base: 1rem;     /* 16px */
-	--font-size-lg: 1.125rem;   /* 18px */
-	--font-size-xl: 1.25rem;    /* 20px */
-	--font-size-2xl: 1.5rem;    /* 24px */
-	--font-size-3xl: 2rem;      /* 32px */
+	--font-size-sm: 0.875rem; /* 14px */
+	--font-size-base: 1rem; /* 16px */
+	--font-size-lg: 1.125rem; /* 18px */
+	--font-size-xl: 1.25rem; /* 20px */
+	--font-size-2xl: 1.5rem; /* 24px */
+	--font-size-3xl: 2rem; /* 32px */
 
 	/* ---------- Typography: Font weight ---------- */
 	--font-weight-normal: 400;
@@ -111,10 +111,10 @@
 	--line-height-relaxed: 1.6;
 
 	/* ---------- Typography: Families ---------- */
-	--font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-		'Helvetica Neue', Arial, sans-serif;
-	--font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
-		'Liberation Mono', monospace;
+	--font-family-base:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--font-family-mono:
+		ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
 	/* ---------- Shadows ---------- */
 	--shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
@@ -131,7 +131,9 @@
 	--transition-slow: 350ms ease;
 
 	/* ---------- Control height (buttons, dropdowns, toggles, inputs in toolbars) ---------- */
+	--control-height-sm: 32px;
 	--control-height: 38px;
+	--control-height-lg: 46px;
 
 	/* ---------- Icon sizes ---------- */
 	--icon-xs: 14px;

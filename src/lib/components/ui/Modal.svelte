@@ -102,7 +102,9 @@
 	}
 
 	.modal:focus-visible {
-		box-shadow: var(--shadow-xl), 0 0 0 3px var(--color-focus-ring);
+		box-shadow:
+			var(--shadow-xl),
+			0 0 0 3px var(--color-focus-ring);
 	}
 
 	@keyframes slideUp {

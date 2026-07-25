@@ -35,7 +35,9 @@ class SSEEmitter {
 				}, 30000);
 
 				this.clients.set(clientId, { id: clientId, controller, userId, heartbeat });
-				console.log(`[SSE] Client connected: ${clientId} (user: ${userId || 'anonymous'}, total: ${this.clients.size})`);
+				console.log(
+					`[SSE] Client connected: ${clientId} (user: ${userId || 'anonymous'}, total: ${this.clients.size})`,
+				);
 
 				this.sendToClient(clientId, 'connected', { clientId, timestamp: new Date() });
 

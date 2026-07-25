@@ -43,7 +43,7 @@ test.describe('Download Share API Integration', () => {
 		await page.evaluate(() => {
 			(window as any).windowOpenCalls = [];
 			const originalOpen = window.open;
-			window.open = function(...args: any[]) {
+			window.open = function (...args: any[]) {
 				(window as any).windowOpenCalls.push(args);
 				return null; // Don't actually open
 			};
@@ -75,7 +75,7 @@ test.describe('Download Share API Integration', () => {
 		await page.evaluate(() => {
 			(window.navigator as any).shareCalls = [];
 			(window.navigator as any).canShare = () => true;
-			(window.navigator as any).share = async function(data: any) {
+			(window.navigator as any).share = async function (data: any) {
 				(window.navigator as any).shareCalls.push(data);
 				return Promise.resolve();
 			};
@@ -113,7 +113,7 @@ test.describe('Download Share API Integration', () => {
 		await page.evaluate(() => {
 			(window.navigator as any).shareCalls = [];
 			(window.navigator as any).canShare = () => true;
-			(window.navigator as any).share = async function(data: any) {
+			(window.navigator as any).share = async function (data: any) {
 				(window.navigator as any).shareCalls.push(data);
 				return Promise.resolve();
 			};
@@ -147,7 +147,7 @@ test.describe('Download Share API Integration', () => {
 		// Mock navigator.share to throw error
 		await page.evaluate(() => {
 			(window.navigator as any).canShare = () => true;
-			(window.navigator as any).share = async function() {
+			(window.navigator as any).share = async function () {
 				throw new Error('Share not supported');
 			};
 		});
@@ -169,7 +169,9 @@ test.describe('Download Share API Integration', () => {
 		await context.close();
 	});
 
-	test('Mobile: should NOT show toast when user cancels share (AbortError)', async ({ browser }) => {
+	test('Mobile: should NOT show toast when user cancels share (AbortError)', async ({
+		browser,
+	}) => {
 		const context = await browser.newContext({
 			...devices['iPhone 13'],
 		});
@@ -180,7 +182,7 @@ test.describe('Download Share API Integration', () => {
 		// Mock navigator.share to throw AbortError
 		await page.evaluate(() => {
 			(window.navigator as any).canShare = () => true;
-			(window.navigator as any).share = async function() {
+			(window.navigator as any).share = async function () {
 				const error = new Error('User cancelled');
 				error.name = 'AbortError';
 				throw error;
@@ -216,7 +218,7 @@ test.describe('Download Share API Integration', () => {
 		await page.evaluate(() => {
 			(window.navigator as any).shareCalls = [];
 			(window.navigator as any).canShare = () => true;
-			(window.navigator as any).share = async function(data: any) {
+			(window.navigator as any).share = async function (data: any) {
 				(window.navigator as any).shareCalls.push(data);
 				return Promise.resolve();
 			};
@@ -231,7 +233,10 @@ test.describe('Download Share API Integration', () => {
 		await page.click('button:has-text("Download File")');
 
 		// If multiple versions exist, picker should appear
-		const pickerVisible = await page.locator('.dvp-popover').isVisible({ timeout: 1000 }).catch(() => false);
+		const pickerVisible = await page
+			.locator('.dvp-popover')
+			.isVisible({ timeout: 1000 })
+			.catch(() => false);
 
 		if (pickerVisible) {
 			// Verify picker has version options

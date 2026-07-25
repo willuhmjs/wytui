@@ -17,7 +17,8 @@
 		}
 	});
 
-	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+	const isMac =
+		typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 	const modKey = isMac ? 'Cmd' : 'Ctrl';
 
 	const shortcuts: { keys: string[]; description: string }[] = [
@@ -50,12 +51,23 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="overlay" onclick={handleOverlayClick} onkeydown={handleOverlayKeydown}>
-		<div bind:this={modalEl} class="modal" onclick={handleModalClick} onkeydown={handleOverlayKeydown} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabindex="-1">
+		<div
+			bind:this={modalEl}
+			class="modal"
+			onclick={handleModalClick}
+			onkeydown={handleOverlayKeydown}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Keyboard shortcuts"
+			tabindex="-1"
+		>
 			<div class="modal-header">
 				<h3>Keyboard Shortcuts</h3>
 				<button class="close-btn" onclick={handleOverlayClick} aria-label="Close">
 					<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-						<path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
+						<path
+							d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -98,8 +110,12 @@
 	}
 
 	@keyframes fadeIn {
-		from { opacity: 0; }
-		to { opacity: 1; }
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 
 	.modal {

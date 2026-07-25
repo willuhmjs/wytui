@@ -1,73 +1,79 @@
 /* wytui download button injected on YouTube */
 #wytui-download-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  margin-right: 8px;
-  background: #7c3aed;
-  color: #fff;
-  border: none;
-  border-radius: 18px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  cursor: pointer;
-  transition: background 150ms ease, opacity 150ms ease;
-  vertical-align: middle;
-  line-height: 1;
-  white-space: nowrap;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 14px;
+	margin-right: 8px;
+	background: #7c3aed;
+	color: #fff;
+	border: none;
+	border-radius: 18px;
+	font-size: 13px;
+	font-weight: 500;
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	cursor: pointer;
+	transition:
+		background 150ms ease,
+		opacity 150ms ease;
+	vertical-align: middle;
+	line-height: 1;
+	white-space: nowrap;
 }
 
 #wytui-download-btn:hover {
-  background: #2563eb;
+	background: #2563eb;
 }
 
 #wytui-download-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 #wytui-download-btn.wytui-loading {
-  opacity: 0.5;
+	opacity: 0.5;
 }
 
 #wytui-download-btn svg {
-  flex-shrink: 0;
+	flex-shrink: 0;
 }
 
 /* Toast notification */
 #wytui-toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  z-index: 99999;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 250ms ease, transform 250ms ease;
-  max-width: 360px;
-  word-wrap: break-word;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+	position: fixed;
+	bottom: 24px;
+	right: 24px;
+	padding: 10px 16px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 500;
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	z-index: 99999;
+	opacity: 0;
+	transform: translateY(10px);
+	transition:
+		opacity 250ms ease,
+		transform 250ms ease;
+	max-width: 360px;
+	word-wrap: break-word;
+	box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
 }
 
 #wytui-toast.wytui-toast-visible {
-  opacity: 1;
-  transform: translateY(0);
+	opacity: 1;
+	transform: translateY(0);
 }
 
 #wytui-toast.wytui-toast-success {
-  background: #141414;
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+	background: #141414;
+	color: #10b981;
+	border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 #wytui-toast.wytui-toast-error {
-  background: #141414;
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+	background: #141414;
+	color: #ef4444;
+	border: 1px solid rgba(239, 68, 68, 0.25);
 }

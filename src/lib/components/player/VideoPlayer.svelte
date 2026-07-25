@@ -49,7 +49,9 @@
 
 	// -- Loop --
 	let loopEnabled = $state(false);
-	$effect(() => { if (videoEl) videoEl.loop = loopEnabled; });
+	$effect(() => {
+		if (videoEl) videoEl.loop = loopEnabled;
+	});
 
 	// -- Context menu --
 	let contextMenu = $state<{ x: number; y: number } | null>(null);
@@ -57,7 +59,8 @@
 	function openContextMenu(e: MouseEvent) {
 		e.preventDefault();
 		// Clamp so menu doesn't overflow viewport
-		const menuW = 240, menuH = 280;
+		const menuW = 240,
+			menuH = 280;
 		const x = Math.min(e.clientX, window.innerWidth - menuW - 8);
 		const y = Math.min(e.clientY, window.innerHeight - menuH - 8);
 		contextMenu = { x, y };
@@ -84,7 +87,7 @@
 		intro: '#00ffff',
 		outro: '#0202ed',
 		preview: '#008fd6',
-		music_offtopic: '#ff9900'
+		music_offtopic: '#ff9900',
 	};
 
 	const CATEGORY_LABELS: Record<string, string> = {
@@ -94,7 +97,7 @@
 		intro: 'Intro',
 		outro: 'Outro',
 		preview: 'Preview',
-		music_offtopic: 'Non-Music'
+		music_offtopic: 'Non-Music',
 	};
 
 	const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
@@ -109,10 +112,10 @@
 			'intro',
 			'outro',
 			'preview',
-			'music_offtopic'
+			'music_offtopic',
 		]);
 		fetch(
-			`https://sponsor.ajay.app/api/skipSegments?videoID=${encodeURIComponent(videoId)}&categories=${encodeURIComponent(categories)}`
+			`https://sponsor.ajay.app/api/skipSegments?videoID=${encodeURIComponent(videoId)}&categories=${encodeURIComponent(categories)}`,
 		)
 			.then((res) => {
 				if (!res.ok) return [];
@@ -300,7 +303,9 @@
 	}
 
 	$effect(() => {
-		function onPipLeave() { pipActive = false; }
+		function onPipLeave() {
+			pipActive = false;
+		}
 		videoEl?.addEventListener('leavepictureinpicture', onPipLeave);
 		return () => videoEl?.removeEventListener('leavepictureinpicture', onPipLeave);
 	});
@@ -318,7 +323,9 @@
 	function showHelpOverlay() {
 		showHelp = true;
 		if (helpTimer) clearTimeout(helpTimer);
-		helpTimer = setTimeout(() => { showHelp = false; }, 4000);
+		helpTimer = setTimeout(() => {
+			showHelp = false;
+		}, 4000);
 	}
 
 	let linkCopiedNotification = $state('');
@@ -335,7 +342,9 @@
 			linkCopiedNotification = 'Failed to copy link';
 		}
 		if (linkCopiedTimer) clearTimeout(linkCopiedTimer);
-		linkCopiedTimer = setTimeout(() => { linkCopiedNotification = ''; }, 2500);
+		linkCopiedTimer = setTimeout(() => {
+			linkCopiedNotification = '';
+		}, 2500);
 	}
 
 	$effect(() => {
@@ -387,10 +396,13 @@
 		cast.framework.CastContext.getInstance().addEventListener(
 			cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
 			(event: any) => {
-				castConnected = event.sessionState === cast.framework.SessionState.SESSION_STARTED ||
+				castConnected =
+					event.sessionState === cast.framework.SessionState.SESSION_STARTED ||
 					event.sessionState === cast.framework.SessionState.SESSION_RESUMED;
-				castSession = castConnected ? cast.framework.CastContext.getInstance().getCurrentSession() : null;
-			}
+				castSession = castConnected
+					? cast.framework.CastContext.getInstance().getCurrentSession()
+					: null;
+			},
 		);
 		castAvailable = true;
 	}
@@ -704,11 +716,19 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class="sb-segment"
-						style="left: {(seg.segment[0] / duration) * 100}%; width: {((seg.segment[1] - seg.segment[0]) / duration) * 100}%;"
+						style="left: {(seg.segment[0] / duration) * 100}%; width: {((seg.segment[1] -
+							seg.segment[0]) /
+							duration) *
+							100}%;"
 						style:background-color={SEGMENT_COLORS[seg.category] || '#888'}
-						title="{CATEGORY_LABELS[seg.category] || seg.category} ({formatTime(seg.segment[0])} - {formatTime(seg.segment[1])})"
+						title="{CATEGORY_LABELS[seg.category] || seg.category} ({formatTime(
+							seg.segment[0],
+						)} - {formatTime(seg.segment[1])})"
 						onmousedown={(e: MouseEvent) => e.stopPropagation()}
-						onclick={(e: MouseEvent) => { e.stopPropagation(); handleSegmentClick(seg); }}
+						onclick={(e: MouseEvent) => {
+							e.stopPropagation();
+							handleSegmentClick(seg);
+						}}
 					></div>
 				{/each}
 			</div>
@@ -764,18 +784,39 @@
 			<div class="volume-control" class:dragging={volumeDragging}>
 				<button class="ctrl-btn" onclick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
 					{#if volumeIcon === 'muted'}
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
 							<path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none" />
 							<line x1="23" y1="9" x2="17" y2="15" />
 							<line x1="17" y1="9" x2="23" y2="15" />
 						</svg>
 					{:else if volumeIcon === 'low'}
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
 							<path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none" />
 							<path d="M15.54 8.46a5 5 0 010 7.07" />
 						</svg>
 					{:else}
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
 							<path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none" />
 							<path d="M15.54 8.46a5 5 0 010 7.07" />
 							<path d="M19.07 4.93a10 10 0 010 14.14" />
@@ -792,19 +833,33 @@
 					aria-valuenow={Math.round((muted ? 0 : volume) * 100)}
 					aria-valuetext="{Math.round((muted ? 0 : volume) * 100)}%"
 					onkeydown={(e) => {
-						if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); changeVolume(0.05); }
-						else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); changeVolume(-0.05); }
-						else if (e.key === 'Home') { e.preventDefault(); setVolume(0); }
-						else if (e.key === 'End') { e.preventDefault(); setVolume(1); }
+						if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+							e.preventDefault();
+							changeVolume(0.05);
+						} else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+							e.preventDefault();
+							changeVolume(-0.05);
+						} else if (e.key === 'Home') {
+							e.preventDefault();
+							setVolume(0);
+						} else if (e.key === 'End') {
+							e.preventDefault();
+							setVolume(1);
+						}
 					}}
 					onmousedown={(e) => {
 						const track = e.currentTarget;
 						const rect = track.getBoundingClientRect();
-						const update = (clientX: number) => setVolume(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+						const update = (clientX: number) =>
+							setVolume(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
 						volumeDragging = true;
 						update(e.clientX);
 						const onMove = (ev: MouseEvent) => update(ev.clientX);
-						const onUp = () => { volumeDragging = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+						const onUp = () => {
+							volumeDragging = false;
+							window.removeEventListener('mousemove', onMove);
+							window.removeEventListener('mouseup', onUp);
+						};
 						window.addEventListener('mousemove', onMove);
 						window.addEventListener('mouseup', onUp);
 					}}
@@ -821,10 +876,19 @@
 					class="ctrl-btn"
 					class:subtitle-active={activeSubtitleIndex >= 0}
 					onclick={cycleSubtitle}
-					title={activeSubtitleIndex >= 0 ? `Subtitles: ${subtitles[activeSubtitleIndex]?.label}` : 'Subtitles off'}
+					title={activeSubtitleIndex >= 0
+						? `Subtitles: ${subtitles[activeSubtitleIndex]?.label}`
+						: 'Subtitles off'}
 					aria-label="Toggle subtitles"
 				>
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
 						<rect x="2" y="4" width="20" height="16" rx="2" />
 						<path d="M7 15h4M15 15h2M7 11h2M13 11h4" stroke-linecap="round" />
 					</svg>
@@ -833,9 +897,23 @@
 
 			<!-- Chromecast -->
 			{#if castAvailable}
-				<button class="ctrl-btn" class:cast-active={castConnected} onclick={toggleCast} aria-label={castConnected ? 'Stop casting' : 'Cast'}>
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6" />
+				<button
+					class="ctrl-btn"
+					class:cast-active={castConnected}
+					onclick={toggleCast}
+					aria-label={castConnected ? 'Stop casting' : 'Cast'}
+				>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"
+						/>
 						<line x1="2" y1="20" x2="2.01" y2="20" />
 					</svg>
 				</button>
@@ -843,8 +921,20 @@
 
 			<!-- Picture-in-Picture -->
 			{#if typeof document !== 'undefined' && document.pictureInPictureEnabled}
-				<button class="ctrl-btn" class:pip-active={pipActive} onclick={togglePip} aria-label={pipActive ? 'Exit picture-in-picture' : 'Picture-in-picture'}>
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<button
+					class="ctrl-btn"
+					class:pip-active={pipActive}
+					onclick={togglePip}
+					aria-label={pipActive ? 'Exit picture-in-picture' : 'Picture-in-picture'}
+				>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
 						<rect x="2" y="4" width="20" height="16" rx="2" />
 						<rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor" stroke="none" />
 					</svg>
@@ -852,13 +942,32 @@
 			{/if}
 
 			<!-- Theater mode -->
-			<button class="ctrl-btn" class:theater-active={theaterMode} onclick={toggleTheaterMode} aria-label={theaterMode ? 'Exit theater mode' : 'Theater mode'}>
+			<button
+				class="ctrl-btn"
+				class:theater-active={theaterMode}
+				onclick={toggleTheaterMode}
+				aria-label={theaterMode ? 'Exit theater mode' : 'Theater mode'}
+			>
 				{#if theaterMode}
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
 						<rect x="2" y="6" width="20" height="12" rx="2" />
 					</svg>
 				{:else}
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
 						<rect x="2" y="4" width="20" height="16" rx="2" />
 						<line x1="2" y1="8" x2="22" y2="8" />
 						<line x1="2" y1="16" x2="22" y2="16" />
@@ -867,14 +976,36 @@
 			</button>
 
 			<!-- Fullscreen -->
-			<button class="ctrl-btn" onclick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+			<button
+				class="ctrl-btn"
+				onclick={toggleFullscreen}
+				aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+			>
 				{#if isFullscreen}
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"
+						/>
 					</svg>
 				{:else}
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"
+						/>
 					</svg>
 				{/if}
 			</button>
@@ -895,9 +1026,34 @@
 	{#if contextMenu}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="ctx-backdrop" onclick={closeContextMenu}></div>
-		<div class="ctx-menu" style="left: {contextMenu.x}px; top: {contextMenu.y}px;" oncontextmenu={(e) => e.preventDefault()} role="menu" tabindex="-1" aria-label="Player options">
-			<button class="ctx-item ctx-item-toggle" class:active={loopEnabled} role="menuitemcheckbox" aria-checked={loopEnabled} onclick={() => { loopEnabled = !loopEnabled; closeContextMenu(); }}>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<div
+			class="ctx-menu"
+			style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
+			oncontextmenu={(e) => e.preventDefault()}
+			role="menu"
+			tabindex="-1"
+			aria-label="Player options"
+		>
+			<button
+				class="ctx-item ctx-item-toggle"
+				class:active={loopEnabled}
+				role="menuitemcheckbox"
+				aria-checked={loopEnabled}
+				onclick={() => {
+					loopEnabled = !loopEnabled;
+					closeContextMenu();
+				}}
+			>
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<polyline points="17 1 21 5 17 9" />
 					<path d="M3 11V9a4 4 0 014-4h14" />
 					<polyline points="7 23 3 19 7 15" />
@@ -906,17 +1062,52 @@
 				Loop
 				{#if loopEnabled}<span class="ctx-check"><CheckIcon width={14} height={14} /></span>{/if}
 			</button>
-			<button class="ctx-item ctx-item-toggle" class:active={autoSkipEnabled} role="menuitemcheckbox" aria-checked={autoSkipEnabled} onclick={() => { autoSkipEnabled = !autoSkipEnabled; closeContextMenu(); }}>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<button
+				class="ctx-item ctx-item-toggle"
+				class:active={autoSkipEnabled}
+				role="menuitemcheckbox"
+				aria-checked={autoSkipEnabled}
+				onclick={() => {
+					autoSkipEnabled = !autoSkipEnabled;
+					closeContextMenu();
+				}}
+			>
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<circle cx="12" cy="12" r="10" />
 					<path d="M10 15l5-3-5-3v6z" fill="currentColor" stroke="none" />
 				</svg>
 				Skip Sponsors
-				{#if autoSkipEnabled}<span class="ctx-check"><CheckIcon width={14} height={14} /></span>{/if}
+				{#if autoSkipEnabled}<span class="ctx-check"><CheckIcon width={14} height={14} /></span
+					>{/if}
 			</button>
 			{#if downloadId}
-				<button class="ctx-item" role="menuitem" onclick={() => { copyLinkAtCurrentTime(); closeContextMenu(); }}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<button
+					class="ctx-item"
+					role="menuitem"
+					onclick={() => {
+						copyLinkAtCurrentTime();
+						closeContextMenu();
+					}}
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
 						<path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
 						<path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
 					</svg>
@@ -924,8 +1115,24 @@
 				</button>
 			{/if}
 			{#if onDownload}
-				<button class="ctx-item" role="menuitem" onclick={() => { onDownload?.(); closeContextMenu(); }}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<button
+					class="ctx-item"
+					role="menuitem"
+					onclick={() => {
+						onDownload?.();
+						closeContextMenu();
+					}}
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
 						<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
 						<polyline points="7 10 12 15 17 10" />
 						<line x1="12" y1="15" x2="12" y2="3" />
@@ -937,7 +1144,16 @@
 			<div class="ctx-label">Speed</div>
 			<div class="ctx-speeds">
 				{#each SPEED_OPTIONS as speed}
-					<button class="ctx-speed" class:active={playbackRate === speed} role="menuitemradio" aria-checked={playbackRate === speed} onclick={() => { setSpeed(speed); closeContextMenu(); }}>
+					<button
+						class="ctx-speed"
+						class:active={playbackRate === speed}
+						role="menuitemradio"
+						aria-checked={playbackRate === speed}
+						onclick={() => {
+							setSpeed(speed);
+							closeContextMenu();
+						}}
+					>
 						{speed}x
 					</button>
 				{/each}
@@ -948,7 +1164,14 @@
 	<!-- Help overlay -->
 	{#if showHelp}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="help-overlay" role="dialog" tabindex="-1" aria-label="Keyboard shortcuts" onmousedown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
+		<div
+			class="help-overlay"
+			role="dialog"
+			tabindex="-1"
+			aria-label="Keyboard shortcuts"
+			onmousedown={(e) => e.stopPropagation()}
+			onclick={(e) => e.stopPropagation()}
+		>
 			<h4>Keyboard Shortcuts</h4>
 			<div class="help-grid">
 				<span>Space</span><span>Play / Pause</span>
@@ -1014,7 +1237,9 @@
 		align-items: center;
 		justify-content: center;
 		color: white;
-		transition: transform var(--transition-fast), background var(--transition-fast);
+		transition:
+			transform var(--transition-fast),
+			background var(--transition-fast);
 	}
 
 	.big-play-overlay:hover .big-play-btn {
@@ -1219,7 +1444,9 @@
 		border-radius: var(--radius-sm);
 		min-height: unset;
 		min-width: unset;
-		transition: background var(--transition-fast), color var(--transition-fast);
+		transition:
+			background var(--transition-fast),
+			color var(--transition-fast);
 	}
 
 	.speed-option:hover {
@@ -1264,7 +1491,9 @@
 		border-radius: 2px;
 		cursor: pointer;
 		overflow: visible;
-		transition: width var(--transition-snappy), margin var(--transition-snappy);
+		transition:
+			width var(--transition-snappy),
+			margin var(--transition-snappy);
 		margin: 0;
 	}
 
@@ -1352,7 +1581,7 @@
 	}
 
 	.help-grid span:nth-child(even) {
-		color: rgba(255,255,255,0.8);
+		color: rgba(255, 255, 255, 0.8);
 	}
 
 	/* Context menu — matches the app's elevated dropdown/menu styling */
@@ -1444,7 +1673,9 @@
 		font: inherit;
 		font-size: var(--font-size-xs);
 		cursor: pointer;
-		transition: background var(--transition-fast), color var(--transition-fast);
+		transition:
+			background var(--transition-fast),
+			color var(--transition-fast);
 		min-height: unset;
 		min-width: unset;
 	}

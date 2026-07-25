@@ -22,7 +22,11 @@
 		libraryConfigured = false,
 		onToggleSelect,
 	}: {
-		download: Download & { processingStep?: string };
+		download: Download & {
+			processingStep?: string;
+			indeterminate?: boolean;
+			stepStartedAt?: number;
+		};
 		jellyfinUrl?: string;
 		selectionMode?: boolean;
 		selected?: boolean;
@@ -34,9 +38,48 @@
 	let statusColor = $derived(getDownloadStatusColor(download.status));
 	let mediaType = $derived(download.filename?.split('.').pop()?.toUpperCase() || null);
 
+	// For indeterminate progress timer
+	let elapsedTime = $state(0);
+	let timerInterval = $state<number | null>(null);
+
+	function formatElapsed(ms: number): string {
+		const totalSeconds = Math.floor(ms / 1000);
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		return `${minutes}:${String(seconds).padStart(2, '0')}`;
+	}
+
+	$effect(() => {
+		if (download.status === 'PROCESSING' && download.indeterminate && download.stepStartedAt) {
+			// Start timer
+			if (!timerInterval) {
+				elapsedTime = Date.now() - download.stepStartedAt;
+				timerInterval = window.setInterval(() => {
+					if (download.stepStartedAt) {
+						elapsedTime = Date.now() - download.stepStartedAt;
+					}
+				}, 1000);
+			}
+		} else {
+			// Stop timer
+			if (timerInterval) {
+				clearInterval(timerInterval);
+				timerInterval = null;
+				elapsedTime = 0;
+			}
+		}
+
+		return () => {
+			if (timerInterval) {
+				clearInterval(timerInterval);
+				timerInterval = null;
+			}
+		};
+	});
+
 	const VIDEO_EXTENSIONS = new Set(['MP4', 'WEBM', 'MKV', 'FLV', 'MOV', 'AVI']);
 	let isPreviewable = $derived(
-		download.status === 'COMPLETED' && mediaType !== null && VIDEO_EXTENSIONS.has(mediaType)
+		download.status === 'COMPLETED' && mediaType !== null && VIDEO_EXTENSIONS.has(mediaType),
 	);
 	let showPreview = $state(false);
 	let videoEl = $state<HTMLVideoElement | null>(null);
@@ -122,7 +165,9 @@
 	function handleProgressMouseUp(e: MouseEvent) {
 		isDragging = false;
 		justDragged = true;
-		requestAnimationFrame(() => { justDragged = false; });
+		requestAnimationFrame(() => {
+			justDragged = false;
+		});
 		window.removeEventListener('mousemove', handleProgressMouseMove);
 		window.removeEventListener('mouseup', handleProgressMouseUp);
 		if (progressBarEl) {
@@ -154,14 +199,14 @@
 	let jellyfinQuery = $derived(
 		download.artist
 			? `${download.artist} ${download.title?.split(' - ').pop()?.trim() || download.title || ''}`
-			: download.title || ''
+			: download.title || '',
 	);
 
 	async function cancelDownload() {
 		const confirmed = await showConfirm(
 			'Cancel Download',
 			'Are you sure you want to cancel this download?',
-			'Cancel Download'
+			'Cancel Download',
 		);
 		if (!confirmed) return;
 
@@ -176,7 +221,7 @@
 		const confirmed = await showConfirm(
 			'Delete Download',
 			'Are you sure you want to delete this download?',
-			'Delete'
+			'Delete',
 		);
 		if (!confirmed) return;
 
@@ -278,7 +323,7 @@
 
 	function isMobileDevice() {
 		return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-			navigator.userAgent
+			navigator.userAgent,
 		);
 	}
 
@@ -289,41 +334,45 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="download-card" class:selecting={selectionMode} class:selected class:clickable={download.status === 'COMPLETED' && !selectionMode} onclick={handleCardClick}>
+<div
+	class="download-card"
+	class:selecting={selectionMode}
+	class:selected
+	class:clickable={download.status === 'COMPLETED' && !selectionMode}
+	onclick={handleCardClick}
+>
 	{#if selectionMode && download.status === 'COMPLETED'}
 		<button class="select-overlay" onclick={onToggleSelect}>
 			<div class="select-checkbox" class:checked={selected}>
 				{#if selected}
-					<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12"><path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2.5-2.5a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z"/></svg>
+					<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12"
+						><path
+							d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2.5-2.5a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z"
+						/></svg
+					>
 				{/if}
 			</div>
 		</button>
 	{/if}
 	{#if download.thumbnail || isPreviewable}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="thumbnail"
-			onmouseenter={handleThumbnailEnter}
-			onmouseleave={handleThumbnailLeave}
-		>
+		<div class="thumbnail" onmouseenter={handleThumbnailEnter} onmouseleave={handleThumbnailLeave}>
 			{#if download.thumbnail && !thumbnailFailed}
 				<img
 					class="thumbnail-img"
 					src={download.thumbnail}
 					alt={download.title || 'Thumbnail'}
-					onerror={() => thumbnailFailed = true}
+					onerror={() => (thumbnailFailed = true)}
 				/>
 			{:else if isPreviewable && !showPreview}
-				<video
-					class="thumbnail-img"
-					src="/api/files/{download.id}#t=0.001"
-					preload="metadata"
-					muted
+				<video class="thumbnail-img" src="/api/files/{download.id}#t=0.001" preload="metadata" muted
 				></video>
 			{/if}
 			{#if !showPreview && download.status === 'COMPLETED'}
 				<div class="play-overlay">
-					<svg viewBox="0 0 24 24" fill="white" width="36" height="36"><path d="M8 5v14l11-7z"/></svg>
+					<svg viewBox="0 0 24 24" fill="white" width="36" height="36"
+						><path d="M8 5v14l11-7z" /></svg
+					>
 				</div>
 			{/if}
 			{#if showPreview}
@@ -342,16 +391,51 @@
 				{/if}
 				<button
 					class="mute-btn"
-					onclick={(e) => { e.stopPropagation(); isMuted = !isMuted; }}
+					onclick={(e) => {
+						e.stopPropagation();
+						isMuted = !isMuted;
+					}}
 				>
 					{#if isMuted}
-						<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="white"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							width="16"
+							height="16"
+							><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line
+								x1="23"
+								y1="9"
+								x2="17"
+								y2="15"
+							/><line x1="17" y1="9" x2="23" y2="15" /></svg
+						>
 					{:else}
-						<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="white"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							width="16"
+							height="16"
+							><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path
+								d="M19.07 4.93a10 10 0 0 1 0 14.14"
+							/><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg
+						>
 					{/if}
 				</button>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="video-progress-bar" class:dragging={isDragging} bind:this={progressBarEl} onmousedown={handleProgressMouseDown}>
+				<div
+					class="video-progress-bar"
+					class:dragging={isDragging}
+					bind:this={progressBarEl}
+					onmousedown={handleProgressMouseDown}
+				>
 					<div class="progress-fill" style="width: {videoProgress * 100}%"></div>
 				</div>
 			{/if}
@@ -369,9 +453,21 @@
 					title={copied ? 'Copied!' : 'Copy source URL'}
 				>
 					{#if copied}
-						<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"
+							><path
+								fill-rule="evenodd"
+								d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else}
-						<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm4.03-.78a.75.75 0 011.06 0L15 10.38V7.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 010-1.5h2.63L8.28 5.78a.75.75 0 010-1.06z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"
+							><path
+								fill-rule="evenodd"
+								d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm4.03-.78a.75.75 0 011.06 0L15 10.38V7.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75h-4.5a.75.75 0 010-1.5h2.63L8.28 5.78a.75.75 0 010-1.06z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{/if}
 				</button>
 				{#if mediaType}
@@ -384,21 +480,79 @@
 				{/if}
 				<span class="status-icon" title={getDownloadStatusLabel(download.status)}>
 					{#if download.status === 'COMPLETED'}
-						<svg viewBox="0 0 20 20" fill="var(--color-status-success)" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-status-success)" width="18" height="18"
+							><path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'FAILED'}
-						<svg viewBox="0 0 20 20" fill="var(--color-status-error)" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-status-error)" width="18" height="18"
+							><path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'CANCELLED'}
-						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM6.75 9.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"
+							><path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zM6.75 9.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'DOWNLOADING'}
-						<svg viewBox="0 0 20 20" fill="var(--color-accent-primary)" width="18" height="18"><path d="M10 2a.75.75 0 01.75.75v5.59l1.95-2.1a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0L6.2 7.26a.75.75 0 011.1-1.02l1.95 2.1V2.75A.75.75 0 0110 2z" /><path d="M5.273 4.5a1.25 1.25 0 00-1.205.918l-1.523 5.52c-.006.02-.01.041-.015.062H6a1.25 1.25 0 011.173.82l.243.693a.25.25 0 00.235.164h4.698a.25.25 0 00.234-.164l.244-.693A1.25 1.25 0 0114 11h3.47a1.318 1.318 0 00-.015-.062l-1.523-5.52a1.25 1.25 0 00-1.205-.918h-.558a.75.75 0 010-1.5h.558a2.75 2.75 0 012.651 2.019l1.523 5.52c.066.239.099.485.099.733V15a2 2 0 01-2 2H3a2 2 0 01-2-2v-3.228c0-.248.033-.494.099-.733l1.523-5.52A2.75 2.75 0 015.273 3.5h.558a.75.75 0 010 1.5h-.558z" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-accent-primary)" width="18" height="18"
+							><path
+								d="M10 2a.75.75 0 01.75.75v5.59l1.95-2.1a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0L6.2 7.26a.75.75 0 011.1-1.02l1.95 2.1V2.75A.75.75 0 0110 2z"
+							/><path
+								d="M5.273 4.5a1.25 1.25 0 00-1.205.918l-1.523 5.52c-.006.02-.01.041-.015.062H6a1.25 1.25 0 011.173.82l.243.693a.25.25 0 00.235.164h4.698a.25.25 0 00.234-.164l.244-.693A1.25 1.25 0 0114 11h3.47a1.318 1.318 0 00-.015-.062l-1.523-5.52a1.25 1.25 0 00-1.205-.918h-.558a.75.75 0 010-1.5h.558a2.75 2.75 0 012.651 2.019l1.523 5.52c.066.239.099.485.099.733V15a2 2 0 01-2 2H3a2 2 0 01-2-2v-3.228c0-.248.033-.494.099-.733l1.523-5.52A2.75 2.75 0 015.273 3.5h.558a.75.75 0 010 1.5h-.558z"
+							/></svg
+						>
 					{:else if download.status === 'PROCESSING'}
-						<svg viewBox="0 0 20 20" fill="var(--color-status-warning)" width="18" height="18" class="spin"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.28a.75.75 0 00-.75.75v3.955a.75.75 0 001.5 0v-2.173l.207.208a7 7 0 0011.675-3.143.75.75 0 00-1.6-.252zm-1.699-7.339a7 7 0 00-11.675 3.143.75.75 0 001.6.252 5.5 5.5 0 019.201-2.466l.312.311H10.62a.75.75 0 100 1.5h3.953a.75.75 0 00.75-.75V2.12a.75.75 0 00-1.5 0v2.173l-.208-.208z" clip-rule="evenodd" /></svg>
+						<svg
+							viewBox="0 0 20 20"
+							fill="var(--color-status-warning)"
+							width="18"
+							height="18"
+							class="spin"
+							><path
+								fill-rule="evenodd"
+								d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.28a.75.75 0 00-.75.75v3.955a.75.75 0 001.5 0v-2.173l.207.208a7 7 0 0011.675-3.143.75.75 0 00-1.6-.252zm-1.699-7.339a7 7 0 00-11.675 3.143.75.75 0 001.6.252 5.5 5.5 0 019.201-2.466l.312.311H10.62a.75.75 0 100 1.5h3.953a.75.75 0 00.75-.75V2.12a.75.75 0 00-1.5 0v2.173l-.208-.208z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'FETCHING_INFO'}
-						<svg viewBox="0 0 20 20" fill="var(--color-status-info)" width="18" height="18" class="spin"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.28a.75.75 0 00-.75.75v3.955a.75.75 0 001.5 0v-2.173l.207.208a7 7 0 0011.675-3.143.75.75 0 00-1.6-.252zm-1.699-7.339a7 7 0 00-11.675 3.143.75.75 0 001.6.252 5.5 5.5 0 019.201-2.466l.312.311H10.62a.75.75 0 100 1.5h3.953a.75.75 0 00.75-.75V2.12a.75.75 0 00-1.5 0v2.173l-.208-.208z" clip-rule="evenodd" /></svg>
+						<svg
+							viewBox="0 0 20 20"
+							fill="var(--color-status-info)"
+							width="18"
+							height="18"
+							class="spin"
+							><path
+								fill-rule="evenodd"
+								d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.28a.75.75 0 00-.75.75v3.955a.75.75 0 001.5 0v-2.173l.207.208a7 7 0 0011.675-3.143.75.75 0 00-1.6-.252zm-1.699-7.339a7 7 0 00-11.675 3.143.75.75 0 001.6.252 5.5 5.5 0 019.201-2.466l.312.311H10.62a.75.75 0 100 1.5h3.953a.75.75 0 00.75-.75V2.12a.75.75 0 00-1.5 0v2.173l-.208-.208z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'PENDING'}
-						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"
+							><path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{:else if download.status === 'DELETED'}
-						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>
+						<svg viewBox="0 0 20 20" fill="var(--color-text-tertiary)" width="18" height="18"
+							><path
+								fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+								clip-rule="evenodd"
+							/></svg
+						>
 					{/if}
 				</span>
 			</div>
@@ -445,10 +599,24 @@
 
 		{#if download.status === 'PROCESSING'}
 			<div class="progress">
-				<div class="progress-bar indeterminate processing"></div>
+				{#if download.indeterminate}
+					<div class="progress-bar indeterminate processing" aria-busy="true"></div>
+				{:else}
+					<div class="progress-bar processing" style="width: {progressPercent}%"></div>
+				{/if}
 			</div>
 			<div class="progress-info">
-				<span>{download.processingStep || 'Processing...'}</span>
+				{#if download.indeterminate && download.stepStartedAt}
+					<span>{download.processingStep || 'Processing...'} · {formatElapsed(elapsedTime)}</span>
+				{:else if download.indeterminate}
+					<span>{download.processingStep || 'Processing...'}</span>
+				{:else if download.processingStep && download.processingStep.includes('%')}
+					<!-- processingStep already has percent embedded (e.g. "Merging (45% · 2MB/s)") -->
+					<span>{download.processingStep}</span>
+				{:else}
+					<!-- processingStep has no percent, show progress separately -->
+					<span>{download.processingStep || 'Processing...'} {progressPercent}%</span>
+				{/if}
 			</div>
 		{/if}
 
@@ -463,14 +631,17 @@
 		{/if}
 
 		{#if download.status === 'DELETED'}
-			<div class="deleted-info">
-				Watched by all users — file removed
-			</div>
+			<div class="deleted-info">Watched by all users — file removed</div>
 		{/if}
 
 		<div class="actions">
 			{#if download.status === 'DOWNLOADING' || download.status === 'PENDING' || download.status === 'FETCHING_INFO' || download.status === 'PROCESSING'}
-				<button class="btn btn-sm btn-danger" onclick={cancelDownload} title="Cancel download" aria-label="Cancel download">
+				<button
+					class="btn btn-sm btn-danger"
+					onclick={cancelDownload}
+					title="Cancel download"
+					aria-label="Cancel download"
+				>
 					<XIcon width={14} height={14} />
 					Cancel
 				</button>
@@ -486,7 +657,13 @@
 				/>
 				<AddToPlaylistMenu downloadId={download.id} storagePool={download.storagePool} />
 				{#if download.storagePool === 'cache' && libraryConfigured}
-					<button class="btn btn-sm btn-accent" onclick={promoteToLibrary} disabled={promoting} title="Save to library" aria-label="Save to library">
+					<button
+						class="btn btn-sm btn-accent"
+						onclick={promoteToLibrary}
+						disabled={promoting}
+						title="Save to library"
+						aria-label="Save to library"
+					>
 						<FolderDownIcon width={14} height={14} />
 						{promoting ? 'Saving...' : 'Save to Library'}
 					</button>
@@ -507,21 +684,37 @@
 			{/if}
 
 			{#if download.status === 'DELETED'}
-				<button class="btn btn-sm btn-primary" onclick={redownload} disabled={redownloading} title="Redownload" aria-label="Redownload">
+				<button
+					class="btn btn-sm btn-primary"
+					onclick={redownload}
+					disabled={redownloading}
+					title="Redownload"
+					aria-label="Redownload"
+				>
 					<DownloadIcon width={14} height={14} />
 					{redownloading ? 'Redownloading...' : 'Redownload'}
 				</button>
 			{/if}
 
 			{#if download.status === 'FAILED' || download.status === 'CANCELLED'}
-				<button class="btn btn-sm btn-primary" onclick={retryDownload} title="Retry download" aria-label="Retry download">
+				<button
+					class="btn btn-sm btn-primary"
+					onclick={retryDownload}
+					title="Retry download"
+					aria-label="Retry download"
+				>
 					<RefreshIcon width={14} height={14} />
 					Retry
 				</button>
 			{/if}
 
 			{#if download.status === 'COMPLETED' || download.status === 'FAILED' || download.status === 'CANCELLED' || download.status === 'DELETED'}
-				<button class="btn btn-sm btn-secondary" onclick={deleteDownload} title="Delete download" aria-label="Delete download">
+				<button
+					class="btn btn-sm btn-secondary"
+					onclick={deleteDownload}
+					title="Delete download"
+					aria-label="Delete download"
+				>
 					<TrashIcon width={14} height={14} />
 					Delete
 				</button>
@@ -536,7 +729,9 @@
 		border: 1px solid var(--color-border-default);
 		border-radius: var(--radius-lg);
 		overflow: hidden;
-		transition: transform var(--transition-normal), box-shadow var(--transition-normal),
+		transition:
+			transform var(--transition-normal),
+			box-shadow var(--transition-normal),
 			border-color var(--transition-normal);
 		flex-shrink: 0;
 		position: relative;
@@ -547,7 +742,9 @@
 	.download-card:hover {
 		border-color: var(--color-border-translucent-hover);
 		transform: translateY(-3px);
-		box-shadow: var(--shadow-lg), 0 0 0 1px rgba(59, 130, 246, 0.05);
+		box-shadow:
+			var(--shadow-lg),
+			0 0 0 1px rgba(59, 130, 246, 0.05);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -690,7 +887,9 @@
 		justify-content: center;
 		cursor: pointer;
 		opacity: 0.8;
-		transition: opacity var(--transition-fast), background var(--transition-fast);
+		transition:
+			opacity var(--transition-fast),
+			background var(--transition-fast);
 	}
 
 	.mute-btn:hover {
@@ -898,12 +1097,7 @@
 		left: 0;
 		bottom: 0;
 		right: 0;
-		background: linear-gradient(
-			90deg,
-			transparent,
-			var(--color-overlay-white-30),
-			transparent
-		);
+		background: linear-gradient(90deg, transparent, var(--color-overlay-white-30), transparent);
 		animation: shimmer 2s infinite;
 	}
 
@@ -931,6 +1125,10 @@
 
 	.progress-bar.indeterminate::after {
 		display: none;
+	}
+
+	.progress-bar.processing {
+		background: var(--color-status-warning);
 	}
 
 	.progress-bar.indeterminate.processing {
@@ -997,5 +1195,4 @@
 			min-width: 0;
 		}
 	}
-
 </style>

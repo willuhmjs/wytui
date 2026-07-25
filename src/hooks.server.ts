@@ -1,10 +1,16 @@
-import { hasUsers, verifySessionToken, resolveApiKey, issueSessionCookie, hashPassword } from '$lib/server/auth';
+import {
+	hasUsers,
+	verifySessionToken,
+	resolveApiKey,
+	issueSessionCookie,
+	hashPassword,
+} from '$lib/server/auth';
 import { jobScheduler } from '$lib/server/jobs/scheduler';
 import { ensureDefaults } from '$lib/server/init';
 import { redirect, type Handle, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { randomBytes } from 'crypto';
-import { isCsrfExempt, validateCsrfToken } from '$lib/server/csrf';
+import { isCsrfExempt, validateCsrfToken, isExtensionAllowedPath } from '$lib/server/csrf';
 import { rateLimiter, RATE_LIMITS, getClientIdentifier } from '$lib/server/rate-limit';
 
 // Initialise database defaults and start background jobs on server startup
@@ -23,19 +29,34 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (isApiPath) {
 		const clientId = getClientIdentifier(event);
 		let rateLimitConfig = RATE_LIMITS.general;
+		let bucketName = 'general';
 
 		// Apply stricter limits for specific endpoints
 		if (event.url.pathname.startsWith('/api/auth') || event.url.pathname.startsWith('/api/setup')) {
 			rateLimitConfig = RATE_LIMITS.auth;
+			bucketName = 'auth';
 		} else if (event.url.pathname.startsWith('/api/downloads')) {
 			rateLimitConfig = RATE_LIMITS.downloads;
+			bucketName = 'downloads';
 		} else if (event.url.pathname.startsWith('/api/settings')) {
 			rateLimitConfig = RATE_LIMITS.settings;
+			bucketName = 'settings';
+		} else if (event.url.pathname.startsWith('/api/youtube/search')) {
+			rateLimitConfig = RATE_LIMITS.youtubeSearch;
+			bucketName = 'youtubeSearch';
+		} else if (
+			event.url.pathname.startsWith('/api/youtube/') &&
+			event.url.pathname !== '/api/youtube/link' &&
+			event.url.pathname !== '/api/youtube/subscriptions/export'
+		) {
+			rateLimitConfig = RATE_LIMITS.youtubeScrape;
+			bucketName = 'youtubeScrape';
 		}
 
-		const isExceeded = rateLimiter.check(clientId, rateLimitConfig);
+		const rateLimitKey = `${bucketName}:${clientId}`;
+		const isExceeded = rateLimiter.check(rateLimitKey, rateLimitConfig);
 		if (isExceeded) {
-			const info = rateLimiter.getInfo(clientId, rateLimitConfig);
+			const info = rateLimiter.getInfo(rateLimitKey, rateLimitConfig);
 			const resetInSeconds = Math.ceil((info.reset - Date.now()) / 1000);
 			throw error(429, `Too many requests. Try again in ${resetInSeconds} seconds.`);
 		}
@@ -125,7 +146,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 				console.warn(`[Security] Proxy auth attempt from untrusted IP: ${clientIp}`);
 			} else {
 				if (trustedProxyIps.length === 0) {
-					console.warn('[Security] TRUSTED_PROXY_IPS not set. Proxy authentication is accepting headers from any IP. This is insecure!');
+					console.warn(
+						'[Security] TRUSTED_PROXY_IPS not set. Proxy authentication is accepting headers from any IP. This is insecure!',
+					);
 				}
 
 				const headerName = settings.proxyAuthHeader || 'X-Forwarded-User';
@@ -138,47 +161,47 @@ export const handle: Handle = async ({ event, resolve }) => {
 					// Treat header value as username/email — look up or auto-create
 					const identifier = proxyUser.trim();
 					if (identifier) {
-					// Normalise to email-like if no @ present
-					const email = identifier.includes('@') ? identifier : `${identifier}@proxy.local`;
+						// Normalise to email-like if no @ present
+						const email = identifier.includes('@') ? identifier : `${identifier}@proxy.local`;
 
-					let user = await prisma.user.findUnique({ where: { email } });
+						let user = await prisma.user.findUnique({ where: { email } });
 
-					if (!user) {
-						// Auto-create with a random password (they authenticate via proxy)
-						const randomPassword = randomBytes(32).toString('hex');
-						const hashedPassword = await hashPassword(randomPassword);
-						const isFirstUser = (await prisma.user.count()) === 0;
-						user = await prisma.user.create({
-							data: {
-								email,
-								password: hashedPassword,
-								name: identifier.includes('@') ? identifier.split('@')[0] : identifier,
-								isAdmin: isFirstUser,
-								emailVerified: new Date(),
+						if (!user) {
+							// Auto-create with a random password (they authenticate via proxy)
+							const randomPassword = randomBytes(32).toString('hex');
+							const hashedPassword = await hashPassword(randomPassword);
+							const isFirstUser = (await prisma.user.count()) === 0;
+							user = await prisma.user.create({
+								data: {
+									email,
+									password: hashedPassword,
+									name: identifier.includes('@') ? identifier.split('@')[0] : identifier,
+									isAdmin: isFirstUser,
+									emailVerified: new Date(),
+								},
+							});
+						}
+
+						event.locals.session = {
+							user: {
+								id: user.id,
+								email: user.email,
+								name: user.name ?? undefined,
+								isAdmin: user.isAdmin,
 							},
-						});
-					}
+						};
+						event.locals.authMethod = 'proxy';
 
-					event.locals.session = {
-						user: {
+						// Issue a session cookie so subsequent requests don't re-query
+						issueSessionCookie(event.cookies, {
 							id: user.id,
 							email: user.email,
-							name: user.name ?? undefined,
 							isAdmin: user.isAdmin,
-						},
-					};
-					event.locals.authMethod = 'proxy';
-
-					// Issue a session cookie so subsequent requests don't re-query
-					issueSessionCookie(event.cookies, {
-						id: user.id,
-						email: user.email,
-						isAdmin: user.isAdmin,
-						passwordChangedAt: user.passwordChangedAt,
-					});
+							passwordChangedAt: user.passwordChangedAt,
+						});
+					}
 				}
 			}
-		}
 		}
 	}
 
@@ -189,7 +212,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const isPublicPath = publicPaths.some((path) => event.url.pathname.startsWith(path));
 
 	// If no users exist yet, redirect to setup (except setup pages and OIDC callback for first-user signup)
-	const isSetupPath = event.url.pathname.startsWith('/setup') || event.url.pathname.startsWith('/api/setup');
+	const isSetupPath =
+		event.url.pathname.startsWith('/setup') || event.url.pathname.startsWith('/api/setup');
 	const isOidcFlow = event.url.pathname.startsWith('/auth/oidc');
 	if (!isSetupPath && !isOidcFlow) {
 		const usersExist = await hasUsers();
@@ -208,8 +232,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Handle CORS for browser extension requests to the API
 	if (isApiPath) {
 		const origin = event.request.headers.get('origin');
-		// Allow browser extension origins (chrome-extension://, moz-extension://, etc.)
-		const isExtensionOrigin = origin && /^(chrome-extension|moz-extension|safari-web-extension):\/\//.test(origin);
+		// Allow browser extension origins (chrome-extension://, moz-extension://, etc.),
+		// but only on the routes the extension actually calls — see
+		// isExtensionAllowedPath for why the origin itself can't be pinned to a
+		// specific extension.
+		const isExtensionOrigin =
+			!!origin &&
+			/^(chrome-extension|moz-extension|safari-web-extension):\/\//.test(origin) &&
+			isExtensionAllowedPath(event.url.pathname);
 
 		if (event.request.method === 'OPTIONS') {
 			const headers: Record<string, string> = {
@@ -272,7 +302,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set(
 		'Content-Security-Policy',
-		"default-src 'self'; img-src 'self' https://*.ytimg.com https://*.ggpht.com https://i.ytimg.com data:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://www.gstatic.com; connect-src 'self' https://sponsor.ajay.app https://returnyoutubedislikeapi.com; media-src 'self'; frame-ancestors 'none'"
+		"default-src 'self'; img-src 'self' https://*.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://www.gstatic.com; connect-src 'self' https://sponsor.ajay.app https://returnyoutubedislikeapi.com; media-src 'self'; frame-ancestors 'none'",
 	);
 
 	return response;

@@ -4,16 +4,26 @@
 	import DownloadListRow from '$lib/components/download/DownloadListRow.svelte';
 	let { data }: { data: any } = $props();
 	let viewMode = $state<'grid' | 'list'>('grid');
-	let sortOption = $state<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest'>('newest');
+	let sortOption = $state<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest'>(
+		'newest',
+	);
 
 	let sortedDownloads = $derived.by(() => {
 		const sorted = [...data.downloads];
 		switch (sortOption) {
 			case 'oldest':
-				sorted.sort((a, b) => new Date(a.completedAt || a.createdAt).getTime() - new Date(b.completedAt || b.createdAt).getTime());
+				sorted.sort(
+					(a, b) =>
+						new Date(a.completedAt || a.createdAt).getTime() -
+						new Date(b.completedAt || b.createdAt).getTime(),
+				);
 				break;
 			case 'newest':
-				sorted.sort((a, b) => new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime());
+				sorted.sort(
+					(a, b) =>
+						new Date(b.completedAt || b.createdAt).getTime() -
+						new Date(a.completedAt || a.createdAt).getTime(),
+				);
 				break;
 			case 'largest':
 				sorted.sort((a, b) => Number(b.filesize || 0) - Number(a.filesize || 0));
@@ -39,7 +49,13 @@
 <div class="page">
 	<a href="/channels" class="back-link">
 		<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-			<path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+			<path
+				d="M10 3L5 8L10 13"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
 		</svg>
 		Back to Channels
 	</a>
@@ -56,7 +72,9 @@
 		</div>
 		<div class="channel-info">
 			<h1>{data.channelName}</h1>
-			<p class="channel-count">{data.downloads.length} video{data.downloads.length !== 1 ? 's' : ''}</p>
+			<p class="channel-count">
+				{data.downloads.length} video{data.downloads.length !== 1 ? 's' : ''}
+			</p>
 		</div>
 	</div>
 
@@ -91,7 +109,10 @@
 				{#each sortedDownloads as download (download.id)}
 					<DownloadListRow
 						{download}
-						onclick={() => { if (download.status === 'COMPLETED') window.location.href = `/downloads/${download.id}`; }}
+						onclick={() => {
+							if (download.status === 'COMPLETED')
+								window.location.href = `/downloads/${download.id}`;
+						}}
 					/>
 				{/each}
 			</div>

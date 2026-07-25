@@ -47,9 +47,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const access = libraryAccessStatus(owner, settings ?? { libraryAccessMode: 'free' });
 	const libraryConfigured = !!settings?.libraryPath;
 	let libraryAction: 'save' | 'request' | 'none' =
-		access === 'allowed' && libraryConfigured ? 'save'
-		: access === 'request' && libraryConfigured ? 'request'
-		: 'none';
+		access === 'allowed' && libraryConfigured
+			? 'save'
+			: access === 'request' && libraryConfigured
+				? 'request'
+				: 'none';
 	const existingRequest = await prisma.libraryRequest.findUnique({
 		where: { downloadId: params.id },
 		select: { status: true },
@@ -87,7 +89,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 					playlistId,
 					playlistName: playlist.name,
 					prevDownloadId: idx > 0 ? playlist.items[idx - 1].downloadId : null,
-					nextDownloadId: idx < playlist.items.length - 1 ? playlist.items[idx + 1].downloadId : null,
+					nextDownloadId:
+						idx < playlist.items.length - 1 ? playlist.items[idx + 1].downloadId : null,
 					currentPosition: idx + 1,
 					totalItems: playlist.items.length,
 				};
@@ -96,7 +99,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	}
 
 	// Similar videos — same uploader, exclude current, max 6
-	let similar: { id: string; title: string | null; thumbnail: string | null; uploader: string | null; duration: number | null }[] = [];
+	let similar: {
+		id: string;
+		title: string | null;
+		thumbnail: string | null;
+		uploader: string | null;
+		duration: number | null;
+	}[] = [];
 	if (download.uploader) {
 		const rows = await prisma.download.findMany({
 			where: {
@@ -124,6 +133,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		libraryRequestStatus,
 		playlistContext,
 		similar,
-		startTimeParam: startTimeParam !== null && isFinite(startTimeParam) && startTimeParam > 0 ? startTimeParam : null,
+		startTimeParam:
+			startTimeParam !== null && isFinite(startTimeParam) && startTimeParam > 0
+				? startTimeParam
+				: null,
 	};
 };

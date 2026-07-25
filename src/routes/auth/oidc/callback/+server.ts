@@ -6,7 +6,7 @@ import { prisma } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
-	if (!isOidcConfigured()) {
+	if (!(await isOidcConfigured())) {
 		throw redirect(303, '/auth/signin');
 	}
 
@@ -45,16 +45,12 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	}
 
 	let email = claims.email as string | undefined;
-	let name = (claims.name as string | undefined) ||
-		(claims.preferred_username as string | undefined);
+	let name =
+		(claims.name as string | undefined) || (claims.preferred_username as string | undefined);
 
 	if (!email && tokenResponse.access_token) {
 		try {
-			const userInfo = await client.fetchUserInfo(
-				config,
-				tokenResponse.access_token,
-				claims.sub,
-			);
+			const userInfo = await client.fetchUserInfo(config, tokenResponse.access_token, claims.sub);
 			email = userInfo.email as string | undefined;
 			name = name || (userInfo.name as string | undefined);
 		} catch {

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { DownloadProfile } from "$lib/types";
+	import type { DownloadProfile } from '$lib/types';
 
 	let {
 		profiles = [],
-		selectedProfileId = "",
+		selectedProfileId = '',
 		saveToLibrary = false,
 		options = { sponsorblock: false, subtitles: false, metadata: false },
 		libraryConfigured = false,
@@ -55,16 +55,12 @@
 <div class="subscription-config">
 	<div class="form-group">
 		<label for="sub-profile"
-			>Download Profile <span
-				class="required-asterisk"
-				aria-label="required">*</span
-			></label
+			>Download Profile <span class="required-asterisk" aria-label="required">*</span></label
 		>
 		<select
 			id="sub-profile"
 			value={selectedProfileId}
-			onchange={(e) =>
-				updateProfileId((e.target as HTMLSelectElement).value)}
+			onchange={(e) => updateProfileId((e.target as HTMLSelectElement).value)}
 			required
 		>
 			{#each profiles as profile}
@@ -79,16 +75,12 @@
 				<input
 					type="checkbox"
 					checked={saveToLibrary}
-					onchange={(e) =>
-						updateSaveToLibrary(
-							(e.target as HTMLInputElement).checked,
-						)}
+					onchange={(e) => updateSaveToLibrary((e.target as HTMLInputElement).checked)}
 				/>
 				Save to Library
 			</label>
 			<p class="help-text">
-				Automatically save downloads to your library (requires library
-				path configured)
+				Automatically save downloads to your library (requires library path configured)
 			</p>
 		</div>
 	{/if}
@@ -100,7 +92,7 @@
 				type="button"
 				class="option-chip"
 				class:active={options.sponsorblock}
-				onclick={() => toggleOption("sponsorblock")}
+				onclick={() => toggleOption('sponsorblock')}
 			>
 				SponsorBlock
 			</button>
@@ -108,7 +100,7 @@
 				type="button"
 				class="option-chip"
 				class:active={options.subtitles}
-				onclick={() => toggleOption("subtitles")}
+				onclick={() => toggleOption('subtitles')}
 			>
 				Subtitles
 			</button>
@@ -116,14 +108,13 @@
 				type="button"
 				class="option-chip"
 				class:active={options.metadata}
-				onclick={() => toggleOption("metadata")}
+				onclick={() => toggleOption('metadata')}
 			>
 				Metadata
 			</button>
 		</div>
 		<p class="help-text">
-			Additional download options to apply to all videos from this
-			subscription
+			Additional download options to apply to all videos from this subscription
 		</p>
 	</div>
 </div>

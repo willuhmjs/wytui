@@ -47,7 +47,7 @@ class ChannelOverrideService {
 			autoDeleteDays?: number | null;
 			sponsorblock?: boolean;
 			customFlags?: string[];
-		}
+		},
 	) {
 		return prisma.channelOverride.update({
 			where: { id },
@@ -83,7 +83,7 @@ class ChannelOverrideService {
 	 */
 	async getEffectiveFlags(
 		channelUrl: string,
-		baseFlags: string[]
+		baseFlags: string[],
 	): Promise<{ flags: string[]; sponsorblock: boolean }> {
 		const override = await this.getByChannelUrl(channelUrl);
 

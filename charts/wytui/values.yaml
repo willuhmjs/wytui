@@ -18,7 +18,7 @@ ingress:
 secret:
   existing: false
   name: wytui-secret
-  authSecret: ""
+  authSecret: ''
   authSecretKey: AUTH_SECRET
 
 oidc:
@@ -29,9 +29,9 @@ oidc:
     name: wytui-oidc-secret
     clientId: wytui
     clientIdKey: OIDC_CLIENT_ID
-    clientSecret: ""
+    clientSecret: ''
     clientSecretKey: OIDC_CLIENT_SECRET
-    issuer: ""
+    issuer: ''
     issuerKey: OIDC_ISSUER_URL
 
 postgresql:
@@ -41,35 +41,35 @@ postgresql:
   secret:
     existing: false
     name: wytui-postgresql-secret
-    url: ""
+    url: ''
     urlKey: DATABASE_URL
     username: wytui
     usernameKey: POSTGRES_USER
-    password: ""
+    password: ''
     passwordKey: POSTGRES_PASSWORD
   persistent:
-    existingClaim: ""
-    subPath: ""
+    existingClaim: ''
+    subPath: ''
     size: 5Gi
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
 
 downloads:
   persistent:
-    existingClaim: ""
-    subPath: ""
+    existingClaim: ''
+    subPath: ''
     size: 5Gi
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
 
 library:
   persistent:
-    existingClaim: ""
-    subPath: ""
+    existingClaim: ''
+    subPath: ''
     size: 10Gi
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
 

@@ -39,11 +39,29 @@
 			<li class="step status-{status}">
 				<span class="step-marker" aria-hidden="true">
 					{#if status === 'completed'}
-						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+						<svg
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="3"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
 							<polyline points="20 6 9 17 4 12"></polyline>
 						</svg>
 					{:else if status === 'failed'}
-						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+						<svg
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="3"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
 							<line x1="18" y1="6" x2="6" y2="18"></line>
 							<line x1="6" y1="6" x2="18" y2="18"></line>
 						</svg>
@@ -56,7 +74,14 @@
 		{/each}
 	</ol>
 {:else}
-	<div class="progress-wrapper" role="progressbar" aria-valuemin="0" aria-valuemax={total || 100} aria-valuenow={current} aria-label={label ?? 'Progress'}>
+	<div
+		class="progress-wrapper"
+		role="progressbar"
+		aria-valuemin="0"
+		aria-valuemax={total || 100}
+		aria-valuenow={current}
+		aria-label={label ?? 'Progress'}
+	>
 		{#if label || total > 0}
 			<div class="progress-meta">
 				{#if label}<span class="progress-label">{label}</span>{/if}

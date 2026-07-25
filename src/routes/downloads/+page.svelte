@@ -1,34 +1,24 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { page } from "$app/stores";
-	import { goto } from "$app/navigation";
-	import {
-		csrfFetch,
-		safeFetchJson,
-		isFetchError,
-		type FetchError,
-	} from "$lib/utils/fetch";
-	import DownloadForm from "$lib/components/download/DownloadForm.svelte";
-	import DownloadCard from "$lib/components/download/DownloadCard.svelte";
-	import DownloadListRow from "$lib/components/download/DownloadListRow.svelte";
-	import Skeleton from "$lib/components/ui/Skeleton.svelte";
-	import EmptyState from "$lib/components/ui/EmptyState.svelte";
-	import ErrorMessage from "$lib/components/ui/ErrorMessage.svelte";
-	import ViewToggle from "$lib/components/ui/ViewToggle.svelte";
-	import { getSSEState, onSSEEvent } from "$lib/stores/sse.svelte";
-	import { showConfirm } from "$lib/stores/modal.svelte";
-	import {
-		addToast,
-		addStickyToast,
-		updateToast,
-		resolveToast,
-	} from "$lib/stores/toast.svelte";
-	import { formatBytes, formatTimestamp } from "$lib/utils/format";
-	import { focusOnMount } from "$lib/utils/a11y";
-	import CheckSquareIcon from "$lib/components/icons/CheckSquareIcon.svelte";
-	import FolderDownIcon from "$lib/components/icons/FolderDownIcon.svelte";
-	import TrashIcon from "$lib/components/icons/TrashIcon.svelte";
-	import ListPlusIcon from "$lib/components/icons/ListPlusIcon.svelte";
+	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
+	import { csrfFetch, safeFetchJson, isFetchError, type FetchError } from '$lib/utils/fetch';
+	import DownloadForm from '$lib/components/download/DownloadForm.svelte';
+	import DownloadCard from '$lib/components/download/DownloadCard.svelte';
+	import DownloadListRow from '$lib/components/download/DownloadListRow.svelte';
+	import Skeleton from '$lib/components/ui/Skeleton.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
+	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
+	import { getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
+	import { showConfirm } from '$lib/stores/modal.svelte';
+	import { addToast, addStickyToast, updateToast, resolveToast } from '$lib/stores/toast.svelte';
+	import { formatBytes, formatTimestamp } from '$lib/utils/format';
+	import { focusOnMount } from '$lib/utils/a11y';
+	import CheckSquareIcon from '$lib/components/icons/CheckSquareIcon.svelte';
+	import FolderDownIcon from '$lib/components/icons/FolderDownIcon.svelte';
+	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
+	import ListPlusIcon from '$lib/components/icons/ListPlusIcon.svelte';
 
 	let sseState = getSSEState();
 
@@ -38,29 +28,21 @@
 	let completedOffset = $state(0);
 	let hasMoreDownloads = $state(false);
 	let loadingMoreDownloads = $state(false);
-	let completedFilter = $state<"all" | "cache" | "library">("all");
-	let watchStateFilter = $state<
-		"all" | "watched" | "unwatched" | "in_progress"
-	>("all");
-	let channelFilter = $state<string>("all");
-	let channelSearch = $state("");
+	let completedFilter = $state<'all' | 'cache' | 'library'>('all');
+	let watchStateFilter = $state<'all' | 'watched' | 'unwatched' | 'in_progress'>('all');
+	let channelFilter = $state<string>('all');
+	let channelSearch = $state('');
 	let channelDropdownOpen = $state(false);
 	let sortOption = $state<
-		| "newest"
-		| "oldest"
-		| "largest"
-		| "smallest"
-		| "longest"
-		| "shortest"
-		| "uploader"
-	>("newest");
+		'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'uploader'
+	>('newest');
 	let sortDropdownOpen = $state(false);
-	let resolutionFilter = $state<string>("all");
+	let resolutionFilter = $state<string>('all');
 	let resolutionDropdownOpen = $state(false);
 	let watchStateDropdownOpen = $state(false);
-	let dateFrom = $state("");
-	let dateTo = $state("");
-	let searchQuery = $state("");
+	let dateFrom = $state('');
+	let dateTo = $state('');
+	let searchQuery = $state('');
 	let searchResults = $state<any[]>([]);
 	let searchTotal = $state(0);
 	let searchOffset = $state(0);
@@ -71,7 +53,7 @@
 	let subtitleMatches = $state<any[]>([]);
 	let subtitleTotal = $state(0);
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	let viewMode = $state<"grid" | "list">("grid");
+	let viewMode = $state<'grid' | 'list'>('grid');
 	let selectionMode = $state(false);
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkActing = $state(false);
@@ -86,7 +68,7 @@
 		}, 900);
 	}
 
-	let jellyfinUrl = $state("");
+	let jellyfinUrl = $state('');
 	let libraryConfigured = $state(false);
 	let cacheUsage = $state<{
 		usedBytes: string;
@@ -105,30 +87,35 @@
 		availableBytes: string;
 	} | null>(null);
 
+	let diskUsedBytes = $derived(
+		diskInfo ? String(Number(diskInfo.totalBytes) - Number(diskInfo.availableBytes)) : '0',
+	);
+	let diskPercent = $derived(
+		diskInfo && Number(diskInfo.totalBytes) > 0
+			? ((Number(diskInfo.totalBytes) - Number(diskInfo.availableBytes)) /
+					Number(diskInfo.totalBytes)) *
+					100
+			: 0,
+	);
+
 	let poolFilteredDownloads = $derived(
-		completedFilter === "all"
+		completedFilter === 'all'
 			? completedDownloads
-			: completedDownloads.filter(
-					(d) => d.storagePool === completedFilter,
-				),
+			: completedDownloads.filter((d) => d.storagePool === completedFilter),
 	);
 
 	let availableChannels = $derived(
-		[
-			...new Set(
-				poolFilteredDownloads.map((d) => d.uploader).filter(Boolean),
-			),
-		].sort() as string[],
+		[...new Set(poolFilteredDownloads.map((d) => d.uploader).filter(Boolean))].sort() as string[],
 	);
 
 	$effect(() => {
 		if (
 			!completedLoading &&
-			channelFilter !== "all" &&
+			channelFilter !== 'all' &&
 			completedDownloads.length > 0 &&
 			!availableChannels.includes(channelFilter)
 		) {
-			channelFilter = "all";
+			channelFilter = 'all';
 		}
 	});
 
@@ -144,9 +131,7 @@
 
 	let filteredChannelOptions = $derived(
 		channelSearch
-			? availableChannels.filter((c) =>
-					c.toLowerCase().includes(channelSearch.toLowerCase()),
-				)
+			? availableChannels.filter((c) => c.toLowerCase().includes(channelSearch.toLowerCase()))
 			: availableChannels,
 	);
 
@@ -178,14 +163,14 @@
 			limit: String(DOWNLOADS_PAGE_SIZE),
 			offset: String(offset),
 		});
-		if (sp !== "all") params.set("storagePool", sp);
-		if (uf !== "all") params.set("uploader", uf);
-		if (ws !== "all") params.set("watchState", ws);
+		if (sp !== 'all') params.set('storagePool', sp);
+		if (uf !== 'all') params.set('uploader', uf);
+		if (ws !== 'all') params.set('watchState', ws);
 		const heightRange = getHeightRange(rf);
-		if (heightRange.min) params.set("minHeight", String(heightRange.min));
-		if (heightRange.max) params.set("maxHeight", String(heightRange.max));
-		if (df) params.set("dateFrom", df);
-		if (dt) params.set("dateTo", dt);
+		if (heightRange.min) params.set('minHeight', String(heightRange.min));
+		if (heightRange.max) params.set('maxHeight', String(heightRange.max));
+		if (df) params.set('dateFrom', df);
+		if (dt) params.set('dateTo', dt);
 		return params;
 	}
 
@@ -220,8 +205,8 @@
 			searchError = isFetchError(e)
 				? e
 				: {
-						type: "unknown",
-						message: "Search failed. Please try again.",
+						type: 'unknown',
+						message: 'Search failed. Please try again.',
 						canRetry: true,
 					};
 		} finally {
@@ -249,7 +234,7 @@
 			searchOffset += results.length;
 			hasMoreSearch = results.length === DOWNLOADS_PAGE_SIZE;
 		} catch (e) {
-			console.error("Failed to load more search results:", e);
+			console.error('Failed to load more search results:', e);
 		} finally {
 			loadingMoreSearch = false;
 		}
@@ -292,10 +277,7 @@
 		}
 
 		searchLoading = true;
-		searchDebounceTimer = setTimeout(
-			() => runSearch(q, sp, uf, ws, rf, df, dt),
-			300,
-		);
+		searchDebounceTimer = setTimeout(() => runSearch(q, sp, uf, ws, rf, df, dt), 300);
 	});
 
 	let filteredCompletedDownloads = $derived.by(() => {
@@ -306,48 +288,40 @@
 
 		// Otherwise use normal filtering
 		let filtered =
-			channelFilter === "all"
+			channelFilter === 'all'
 				? poolFilteredDownloads
-				: poolFilteredDownloads.filter(
-						(d) => d.uploader === channelFilter,
-					);
+				: poolFilteredDownloads.filter((d) => d.uploader === channelFilter);
 
 		const sorted = [...filtered];
 		switch (sortOption) {
-			case "oldest":
+			case 'oldest':
 				sorted.sort(
 					(a, b) =>
 						new Date(a.completedAt || a.createdAt).getTime() -
 						new Date(b.completedAt || b.createdAt).getTime(),
 				);
 				break;
-			case "newest":
+			case 'newest':
 				sorted.sort(
 					(a, b) =>
 						new Date(b.completedAt || b.createdAt).getTime() -
 						new Date(a.completedAt || a.createdAt).getTime(),
 				);
 				break;
-			case "largest":
-				sorted.sort(
-					(a, b) => Number(b.filesize || 0) - Number(a.filesize || 0),
-				);
+			case 'largest':
+				sorted.sort((a, b) => Number(b.filesize || 0) - Number(a.filesize || 0));
 				break;
-			case "smallest":
-				sorted.sort(
-					(a, b) => Number(a.filesize || 0) - Number(b.filesize || 0),
-				);
+			case 'smallest':
+				sorted.sort((a, b) => Number(a.filesize || 0) - Number(b.filesize || 0));
 				break;
-			case "longest":
+			case 'longest':
 				sorted.sort((a, b) => (b.duration || 0) - (a.duration || 0));
 				break;
-			case "shortest":
+			case 'shortest':
 				sorted.sort((a, b) => (a.duration || 0) - (b.duration || 0));
 				break;
-			case "uploader":
-				sorted.sort((a, b) =>
-					(a.uploader || "").localeCompare(b.uploader || ""),
-				);
+			case 'uploader':
+				sorted.sort((a, b) => (a.uploader || '').localeCompare(b.uploader || ''));
 				break;
 		}
 		return sorted;
@@ -355,7 +329,7 @@
 
 	onMount(() => {
 		// Pre-apply uploader filter from URL (e.g. from /channels page)
-		const uploaderParam = $page.url.searchParams.get("uploader");
+		const uploaderParam = $page.url.searchParams.get('uploader');
 		if (uploaderParam) channelFilter = uploaderParam;
 
 		loadSettings();
@@ -366,26 +340,21 @@
 		loadCacheUsage();
 		loadDiskInfo();
 
-		const unsubComplete = onSSEEvent(
-			"download:complete",
-			({ download }) => {
-				const exists = completedDownloads.find(
-					(d) => d.id === download.id,
-				);
-				if (!exists) {
-					completedDownloads = [download, ...completedDownloads];
-				}
-				loadCacheUsage();
-			},
-		);
-		const unsubDeleted = onSSEEvent("download:deleted", ({ id }) => {
+		const unsubComplete = onSSEEvent('download:complete', ({ download }) => {
+			const exists = completedDownloads.find((d) => d.id === download.id);
+			if (!exists) {
+				completedDownloads = [download, ...completedDownloads];
+			}
+			loadCacheUsage();
+		});
+		const unsubDeleted = onSSEEvent('download:deleted', ({ id }) => {
 			completedDownloads = completedDownloads.filter((d) => d.id !== id);
 			failedDownloads = failedDownloads.filter((d) => d.id !== id);
 			loadCacheUsage();
 		});
 		// download:failed only carries { id, error }, so refetch the failed
 		// list to pick up the full record and show it live.
-		const unsubFailed = onSSEEvent("download:failed", () => {
+		const unsubFailed = onSSEEvent('download:failed', () => {
 			loadFailedDownloads();
 		});
 
@@ -398,32 +367,31 @@
 
 	async function loadSettings() {
 		try {
-			const res = await fetch("/api/settings");
+			const res = await fetch('/api/settings');
 			if (res.ok) {
 				const settings = await res.json();
 				libraryConfigured = !!settings.libraryPath;
-				jellyfinUrl =
-					settings.jellyfinExternalUrl || settings.jellyfinUrl || "";
+				jellyfinUrl = settings.jellyfinExternalUrl || settings.jellyfinUrl || '';
 			}
 		} catch (e) {
-			console.error("Failed to load settings:", e);
+			console.error('Failed to load settings:', e);
 		}
 	}
 
 	function buildCompletedParams(offset: number) {
 		const params = new URLSearchParams({
-			status: "COMPLETED",
+			status: 'COMPLETED',
 			limit: String(DOWNLOADS_PAGE_SIZE),
 			offset: String(offset),
 		});
-		if (watchStateFilter !== "all") {
-			params.set("watchState", watchStateFilter);
+		if (watchStateFilter !== 'all') {
+			params.set('watchState', watchStateFilter);
 		}
 		const heightRange = getHeightRange(resolutionFilter);
-		if (heightRange.min) params.set("minHeight", String(heightRange.min));
-		if (heightRange.max) params.set("maxHeight", String(heightRange.max));
-		if (dateFrom) params.set("dateFrom", dateFrom);
-		if (dateTo) params.set("dateTo", dateTo);
+		if (heightRange.min) params.set('minHeight', String(heightRange.min));
+		if (heightRange.max) params.set('maxHeight', String(heightRange.max));
+		if (dateFrom) params.set('dateFrom', dateFrom);
+		if (dateTo) params.set('dateTo', dateTo);
 		return params;
 	}
 
@@ -432,9 +400,7 @@
 		completedLoading = true;
 		completedOffset = 0;
 		try {
-			const res = await fetch(
-				`/api/downloads?${buildCompletedParams(0)}`,
-			);
+			const res = await fetch(`/api/downloads?${buildCompletedParams(0)}`);
 			if (res.ok) {
 				const page: any[] = await res.json();
 				completedDownloads = page;
@@ -442,7 +408,7 @@
 				hasMoreDownloads = page.length === DOWNLOADS_PAGE_SIZE;
 			}
 		} catch (e) {
-			console.error("Failed to load completed downloads:", e);
+			console.error('Failed to load completed downloads:', e);
 		} finally {
 			completedLoading = false;
 		}
@@ -452,9 +418,7 @@
 		if (loadingMoreDownloads || !hasMoreDownloads) return;
 		loadingMoreDownloads = true;
 		try {
-			const res = await fetch(
-				`/api/downloads?${buildCompletedParams(completedOffset)}`,
-			);
+			const res = await fetch(`/api/downloads?${buildCompletedParams(completedOffset)}`);
 			if (res.ok) {
 				const page: any[] = await res.json();
 				completedDownloads = [...completedDownloads, ...page];
@@ -462,7 +426,7 @@
 				hasMoreDownloads = page.length === DOWNLOADS_PAGE_SIZE;
 			}
 		} catch (e) {
-			console.error("Failed to load more completed downloads:", e);
+			console.error('Failed to load more completed downloads:', e);
 		} finally {
 			loadingMoreDownloads = false;
 		}
@@ -470,15 +434,15 @@
 
 	function getHeightRange(filter: string): { min?: number; max?: number } {
 		switch (filter) {
-			case "4k":
+			case '4k':
 				return { min: 2160 };
-			case "1080p":
+			case '1080p':
 				return { min: 1080, max: 1080 };
-			case "720p":
+			case '720p':
 				return { min: 720, max: 720 };
-			case "480p":
+			case '480p':
 				return { min: 480, max: 480 };
-			case "other":
+			case 'other':
 				return { max: 479 };
 			default:
 				return {};
@@ -487,14 +451,14 @@
 
 	async function loadCacheUsage() {
 		try {
-			const res = await fetch("/api/library/usage");
+			const res = await fetch('/api/library/usage');
 			if (res.ok) {
 				const data = await res.json();
 				cacheUsage = data.cache;
 				libraryUsage = data.library;
 			}
 		} catch (e) {
-			console.error("Failed to load usage:", e);
+			console.error('Failed to load usage:', e);
 		}
 	}
 
@@ -502,16 +466,16 @@
 		failedLoading = true;
 		try {
 			const params = new URLSearchParams({
-				status: "FAILED",
+				status: 'FAILED',
 				limit: String(DOWNLOADS_PAGE_SIZE),
-				offset: "0",
+				offset: '0',
 			});
 			const res = await fetch(`/api/downloads?${params}`);
 			if (res.ok) {
 				failedDownloads = await res.json();
 			}
 		} catch (e) {
-			console.error("Failed to load failed downloads:", e);
+			console.error('Failed to load failed downloads:', e);
 		} finally {
 			failedLoading = false;
 		}
@@ -519,7 +483,7 @@
 
 	async function loadDiskInfo() {
 		try {
-			const res = await fetch("/api/settings/disk");
+			const res = await fetch('/api/settings/disk');
 			if (res.ok) {
 				diskInfo = await res.json();
 			}
@@ -539,19 +503,17 @@
 					url: download.url,
 					profileId: download.profileId,
 				};
-				if (download.storagePool === "library")
-					body.saveToLibrary = true;
-				if (download.customFlags?.length)
-					body.customFlags = download.customFlags;
+				if (download.storagePool === 'library') body.saveToLibrary = true;
+				if (download.customFlags?.length) body.customFlags = download.customFlags;
 
-				await csrfFetch("/api/downloads", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
+				await csrfFetch('/api/downloads', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify(body),
 				});
 				// Delete the old FAILED record so it doesn't reappear on reload.
 				await csrfFetch(`/api/downloads/${download.id}`, {
-					method: "DELETE",
+					method: 'DELETE',
 				});
 			} catch (e) {
 				console.error(`Failed to retry ${download.id}:`, e);
@@ -562,18 +524,18 @@
 
 	async function clearCache() {
 		const confirmed = await showConfirm(
-			"Clear Cache",
-			"This will delete all cached downloads. Library downloads will not be affected.",
-			"Clear Cache",
+			'Clear Cache',
+			'This will delete all cached downloads. Library downloads will not be affected.',
+			'Clear Cache',
 		);
 		if (!confirmed) return;
 
 		clearingCache = true;
 		try {
-			await csrfFetch("/api/library/clear", { method: "POST" });
+			await csrfFetch('/api/library/clear', { method: 'POST' });
 			await Promise.all([loadCompletedDownloads(), loadCacheUsage()]);
 		} catch (e) {
-			console.error("Failed to clear cache:", e);
+			console.error('Failed to clear cache:', e);
 		} finally {
 			clearingCache = false;
 		}
@@ -615,11 +577,7 @@
 	): Promise<BulkItemResult[]> {
 		const total = ids.length;
 		const results: BulkItemResult[] = [];
-		const toastId = addStickyToast(
-			"info",
-			`${verbPresent} 0 of ${total}…`,
-			0,
-		);
+		const toastId = addStickyToast('info', `${verbPresent} 0 of ${total}…`, 0);
 
 		let completed = 0;
 		let cursor = 0;
@@ -632,8 +590,7 @@
 					await runOne(id);
 					results.push({ id, ok: true });
 				} catch (err) {
-					const reason =
-						err instanceof Error ? err.message : "Unknown error";
+					const reason = err instanceof Error ? err.message : 'Unknown error';
 					results.push({ id, ok: false, reason });
 				}
 				completed += 1;
@@ -645,9 +602,7 @@
 			}
 		}
 
-		await Promise.all(
-			Array.from({ length: Math.min(concurrency, ids.length) }, worker),
-		);
+		await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
 
 		const failures = results.filter((r) => !r.ok);
 		const successes = total - failures.length;
@@ -655,32 +610,26 @@
 		if (failures.length === 0) {
 			resolveToast(
 				toastId,
-				"success",
-				`${verbPast} ${successes} item${successes !== 1 ? "s" : ""}`,
+				'success',
+				`${verbPast} ${successes} item${successes !== 1 ? 's' : ''}`,
 			);
 		} else if (successes === 0) {
 			resolveToast(
 				toastId,
-				"error",
-				`Failed to ${verbPresent.toLowerCase()} all ${total} item${total !== 1 ? "s" : ""}`,
+				'error',
+				`Failed to ${verbPresent.toLowerCase()} all ${total} item${total !== 1 ? 's' : ''}`,
 				{
-					details: failures.map(
-						(f) =>
-							`${getDownloadLabel(f.id)}: ${f.reason ?? "failed"}`,
-					),
+					details: failures.map((f) => `${getDownloadLabel(f.id)}: ${f.reason ?? 'failed'}`),
 					duration: 10000,
 				},
 			);
 		} else {
 			resolveToast(
 				toastId,
-				"info",
-				`${verbPast} ${successes} item${successes !== 1 ? "s" : ""} (${failures.length} failed)`,
+				'info',
+				`${verbPast} ${successes} item${successes !== 1 ? 's' : ''} (${failures.length} failed)`,
 				{
-					details: failures.map(
-						(f) =>
-							`${getDownloadLabel(f.id)}: ${f.reason ?? "failed"}`,
-					),
+					details: failures.map((f) => `${getDownloadLabel(f.id)}: ${f.reason ?? 'failed'}`),
 					duration: 10000,
 				},
 			);
@@ -693,25 +642,20 @@
 		const ids = [...selectedIds];
 		const count = ids.length;
 		const confirmed = await showConfirm(
-			"Delete Selected",
-			`Delete ${count} download${count !== 1 ? "s" : ""}? This cannot be undone.`,
-			"Delete",
+			'Delete Selected',
+			`Delete ${count} download${count !== 1 ? 's' : ''}? This cannot be undone.`,
+			'Delete',
 		);
 		if (!confirmed) return;
 
 		bulkActing = true;
 		try {
-			const results = await runBulkOperation(
-				ids,
-				"Deleting",
-				"Deleted",
-				async (id) => {
-					const res = await csrfFetch(`/api/downloads/${id}`, {
-						method: "DELETE",
-					});
-					if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				},
-			);
+			const results = await runBulkOperation(ids, 'Deleting', 'Deleted', async (id) => {
+				const res = await csrfFetch(`/api/downloads/${id}`, {
+					method: 'DELETE',
+				});
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			});
 			if (results.some((r) => r.ok)) {
 				flashBulkSuccess();
 				exitSelectionMode();
@@ -732,7 +676,7 @@
 		if (!bulkPlaylistOpen) return;
 		bulkPlaylistLoading = true;
 		try {
-			const res = await fetch("/api/playlists");
+			const res = await fetch('/api/playlists');
 			bulkPlaylists = res.ok ? await res.json() : [];
 		} catch {
 			bulkPlaylists = [];
@@ -745,10 +689,10 @@
 		// Only library items can be added to playlists; skip cache-only selections.
 		const ids = [...selectedIds].filter((id) => {
 			const d = completedDownloads.find((dl) => dl.id === id);
-			return d?.storagePool === "library";
+			return d?.storagePool === 'library';
 		});
 		if (ids.length === 0) {
-			addToast("info", "Only library items can be added to playlists");
+			addToast('info', 'Only library items can be added to playlists');
 			bulkPlaylistOpen = false;
 			return;
 		}
@@ -760,14 +704,11 @@
 				`Adding to "${playlistName}"`,
 				`Added to "${playlistName}"`,
 				async (id) => {
-					const res = await csrfFetch(
-						`/api/playlists/${playlistId}/items`,
-						{
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({ downloadId: id }),
-						},
-					);
+					const res = await csrfFetch(`/api/playlists/${playlistId}/items`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ downloadId: id }),
+					});
 					if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				},
 			);
@@ -782,26 +723,18 @@
 	async function bulkPromote() {
 		const ids = [...selectedIds].filter((id) => {
 			const d = completedDownloads.find((dl) => dl.id === id);
-			return d?.storagePool === "cache";
+			return d?.storagePool === 'cache';
 		});
 		if (ids.length === 0) {
-			addToast("info", "No cache downloads selected to move");
+			addToast('info', 'No cache downloads selected to move');
 			return;
 		}
 		bulkActing = true;
 		try {
-			const results = await runBulkOperation(
-				ids,
-				"Moving",
-				"Moved to library",
-				async (id) => {
-					const res = await csrfFetch(
-						`/api/downloads/${id}/promote`,
-						{ method: "POST" },
-					);
-					if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				},
-			);
+			const results = await runBulkOperation(ids, 'Moving', 'Moved to library', async (id) => {
+				const res = await csrfFetch(`/api/downloads/${id}/promote`, { method: 'POST' });
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			});
 			if (results.some((r) => r.ok)) {
 				flashBulkSuccess();
 				exitSelectionMode();
@@ -813,19 +746,19 @@
 	}
 
 	function focusUrlInput() {
-		const el = document.getElementById("url") as HTMLInputElement | null;
+		const el = document.getElementById('url') as HTMLInputElement | null;
 		if (!el) return;
-		el.scrollIntoView({ behavior: "smooth", block: "center" });
+		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		el.focus();
 	}
 
 	function clearFilters() {
-		completedFilter = "all";
-		watchStateFilter = "all";
-		channelFilter = "all";
-		dateFrom = "";
-		dateTo = "";
-		searchQuery = "";
+		completedFilter = 'all';
+		watchStateFilter = 'all';
+		channelFilter = 'all';
+		dateFrom = '';
+		dateTo = '';
+		searchQuery = '';
 	}
 </script>
 
@@ -842,128 +775,144 @@
 
 		<div class="active-section" aria-live="polite" aria-atomic="false">
 			<h2>Active ({sseState.downloads.length})</h2>
-			{#if sseState.downloads.length === 0}
-				<EmptyState
-					title="No active downloads"
-					description="Paste a video URL above and your download progress will appear here in real time."
-					size="sm"
-					variant="subtle"
-				>
-					{#snippet icon()}
-						<svg
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.75"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path
-								d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-							/>
-							<polyline points="7 10 12 15 17 10" />
-							<line x1="12" y1="15" x2="12" y2="3" />
-						</svg>
-					{/snippet}
-				</EmptyState>
-			{:else}
-				<div class="downloads-list">
-					{#each [...sseState.downloads].sort((a, b) => {
-						const active = ["FETCHING_INFO", "DOWNLOADING", "PROCESSING"];
-						const aActive = active.includes(a.status) ? 0 : 1;
-						const bActive = active.includes(b.status) ? 0 : 1;
-						if (aActive !== bActive) return aActive - bActive;
-						return sseState.downloads.indexOf(b) - sseState.downloads.indexOf(a);
-					}) as download (download.id)}
-						<DownloadCard
-							{download}
-							{jellyfinUrl}
-							{libraryConfigured}
-						/>
-					{/each}
-				</div>
-			{/if}
+			<div class="active-box" class:active={sseState.downloads.length > 0}>
+				{#if sseState.downloads.length === 0}
+					<EmptyState
+						title="No active downloads"
+						description="Paste a video URL above and your download progress will appear here in real time."
+						size="sm"
+						variant="subtle"
+					>
+						{#snippet icon()}
+							<svg
+								width="24"
+								height="24"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+								<polyline points="7 10 12 15 17 10" />
+								<line x1="12" y1="15" x2="12" y2="3" />
+							</svg>
+						{/snippet}
+					</EmptyState>
+				{:else}
+					<div class="downloads-list">
+						{#each [...sseState.downloads].sort((a, b) => {
+							const active = ['FETCHING_INFO', 'DOWNLOADING', 'PROCESSING'];
+							const aActive = active.includes(a.status) ? 0 : 1;
+							const bActive = active.includes(b.status) ? 0 : 1;
+							if (aActive !== bActive) return aActive - bActive;
+							return sseState.downloads.indexOf(b) - sseState.downloads.indexOf(a);
+						}) as download (download.id)}
+							<DownloadCard {download} {jellyfinUrl} {libraryConfigured} />
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
 	{#if cacheUsage || libraryUsage}
 		<div class="storage-row">
 			{#if cacheUsage}
-				<div class="storage-box">
-					<div class="cache-usage-header">
-						<div class="cache-usage-left">
-							<span class="cache-usage-label">Cache</span>
-							<span
-								class="cache-usage-tooltip"
-								data-tooltip="Downloads are stored in a temporary cache. When the cache fills up, the oldest downloads are automatically removed to free space. Save to Library to keep downloads permanently."
-								>?</span
-							>
-						</div>
-						<div class="cache-usage-right">
-							<span class="cache-usage-value"
-								>{formatBytes(cacheUsage.usedBytes)} / {formatBytes(
-									cacheUsage.quotaBytes,
-								)}</span
-							>
-							{#if Number(cacheUsage.usedBytes) > 0}
-								<button
-									class="btn btn-sm btn-secondary cache-clear-btn"
-									onclick={clearCache}
-									disabled={clearingCache}
-									aria-label="Clear cache"
-									title="Clear cache"
-								>
-									{#if clearingCache}
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											class="spin"
-											><path
-												d="M21 12a9 9 0 1 1-6.219-8.56"
-											/></svg
+				<div class="storage-box cache-box">
+					<div class="cache-disk-row">
+						<div class="cache-disk-col">
+							<div class="cache-usage-header">
+								<div class="cache-usage-left">
+									<span class="cache-usage-label">Cache</span>
+									<span
+										class="cache-usage-tooltip"
+										data-tooltip="Downloads are stored in a temporary cache. When the cache fills up, the oldest downloads are automatically removed to free space. Save to Library to keep downloads permanently."
+										>?</span
+									>
+								</div>
+								<div class="cache-usage-right">
+									<span class="cache-usage-value"
+										>{formatBytes(cacheUsage.usedBytes)} / {formatBytes(
+											cacheUsage.quotaBytes,
+										)}</span
+									>
+									{#if Number(cacheUsage.usedBytes) > 0}
+										<button
+											class="btn btn-sm btn-secondary cache-clear-btn"
+											onclick={clearCache}
+											disabled={clearingCache}
+											aria-label="Clear cache"
+											title="Clear cache"
 										>
-									{:else}
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											><polyline
-												points="3 6 5 6 21 6"
-											/><path
-												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-											/></svg
-										>
+											{#if clearingCache}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg
+												>
+											{:else}
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="16"
+													height="16"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													><polyline points="3 6 5 6 21 6" /><path
+														d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+													/></svg
+												>
+											{/if}
+										</button>
 									{/if}
-								</button>
-							{/if}
+								</div>
+							</div>
+							<div class="cache-usage-bar">
+								<div
+									class="cache-usage-fill"
+									class:warning={cacheUsage.percentage > 80}
+									class:critical={cacheUsage.percentage > 95}
+									style="width: max({cacheUsage.percentage}%, {cacheUsage.percentage > 0
+										? '4px'
+										: '0px'})"
+								></div>
+							</div>
 						</div>
-					</div>
-					<div class="cache-usage-bar">
-						<div
-							class="cache-usage-fill"
-							class:warning={cacheUsage.percentage > 80}
-							class:critical={cacheUsage.percentage > 95}
-							style="width: max({cacheUsage.percentage}%, {cacheUsage.percentage >
-							0
-								? '4px'
-								: '0px'})"
-						></div>
+						{#if diskInfo}
+							<div class="cache-disk-col">
+								<div class="cache-usage-header">
+									<div class="cache-usage-left">
+										<span class="cache-usage-label">Disk</span>
+									</div>
+									<div class="cache-usage-right">
+										<span class="cache-usage-value"
+											>{formatBytes(diskUsedBytes)} / {formatBytes(diskInfo.totalBytes)}</span
+										>
+									</div>
+								</div>
+								<div class="cache-usage-bar">
+									<div
+										class="cache-usage-fill"
+										class:warning={diskPercent > 80}
+										class:critical={diskPercent > 95}
+										style="width: max({diskPercent}%, {diskPercent > 0 ? '4px' : '0px'})"
+									></div>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -974,16 +923,9 @@
 							<span class="cache-usage-label">Video Library</span>
 						</div>
 						<div class="cache-usage-right">
-							<span class="cache-usage-value"
-								>{formatBytes(
-									libraryUsage.video.usedBytes,
-								)}</span
-							>
+							<span class="cache-usage-value">{formatBytes(libraryUsage.video.usedBytes)}</span>
 							<span class="storage-count"
-								>{libraryUsage.video.count} file{libraryUsage
-									.video.count !== 1
-									? "s"
-									: ""}</span
+								>{libraryUsage.video.count} file{libraryUsage.video.count !== 1 ? 's' : ''}</span
 							>
 						</div>
 					</div>
@@ -996,16 +938,9 @@
 							<span class="cache-usage-label">Music Library</span>
 						</div>
 						<div class="cache-usage-right">
-							<span class="cache-usage-value"
-								>{formatBytes(
-									libraryUsage.music.usedBytes,
-								)}</span
-							>
+							<span class="cache-usage-value">{formatBytes(libraryUsage.music.usedBytes)}</span>
 							<span class="storage-count"
-								>{libraryUsage.music.count} file{libraryUsage
-									.music.count !== 1
-									? "s"
-									: ""}</span
+								>{libraryUsage.music.count} file{libraryUsage.music.count !== 1 ? 's' : ''}</span
 							>
 						</div>
 					</div>
@@ -1037,9 +972,9 @@
 				<div class="warning-text">
 					<span class="warning-label">Warning: Disk space low</span>
 					<span class="warning-message"
-						>Your disk is over 80% full. Available: {formatBytes(
-							diskInfo.availableBytes,
-						)} / Total: {formatBytes(diskInfo.totalBytes)}</span
+						>Your disk is over 80% full. Available: {formatBytes(diskInfo.availableBytes)} / Total: {formatBytes(
+							diskInfo.totalBytes,
+						)}</span
 					>
 				</div>
 			</div>
@@ -1051,11 +986,7 @@
 			<div class="section-header">
 				<h2>Failed ({failedDownloads.length})</h2>
 				{#if failedDownloads.length > 0}
-					<button
-						class="btn btn-sm btn-primary"
-						onclick={retryAllFailed}
-						disabled={failedLoading}
-					>
+					<button class="btn btn-sm btn-primary" onclick={retryAllFailed} disabled={failedLoading}>
 						Retry All
 					</button>
 				{/if}
@@ -1066,119 +997,10 @@
 			{:else}
 				<div class="downloads-grid">
 					{#each failedDownloads as download (download.id)}
-						<DownloadCard
-							{download}
-							{jellyfinUrl}
-							{libraryConfigured}
-						/>
+						<DownloadCard {download} {jellyfinUrl} {libraryConfigured} />
 					{/each}
 				</div>
 			{/if}
-		</div>
-	{/if}
-
-	<div class="section">
-		<div class="search-bar-section">
-			<div class="search-bar-wrapper">
-				<svg
-					class="search-icon"
-					width="20"
-					height="20"
-					viewBox="0 0 16 16"
-					fill="none"
-				>
-					<circle
-						cx="7"
-						cy="7"
-						r="5"
-						stroke="currentColor"
-						stroke-width="1.5"
-					/>
-					<path
-						d="M11 11l3 3"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-					/>
-				</svg>
-				<input
-					type="text"
-					class="search-input-main"
-					placeholder="Search by title, description, uploader, or subtitle text..."
-					bind:value={searchQuery}
-				/>
-				{#if searchQuery}
-					<button
-						class="search-clear-btn"
-						aria-label="Clear search"
-						onclick={() => (searchQuery = "")}
-					>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							><path
-								d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-							/></svg
-						>
-					</button>
-				{/if}
-			</div>
-			{#if searchError}
-				<div class="search-error-wrapper">
-					<ErrorMessage
-						error={searchError}
-						onRetry={retrySearch}
-						onDismiss={() => (searchError = null)}
-					/>
-				</div>
-			{/if}
-		</div>
-	</div>
-
-	{#if searchQuery.trim() && subtitleMatches.length > 0}
-		<div class="section subtitle-results-section">
-			<h3 class="subtitle-results-heading">
-				<svg
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path
-						d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-					/>
-				</svg>
-				Found in subtitles ({subtitleTotal})
-			</h3>
-			<div class="subtitle-matches">
-				{#each subtitleMatches as match (match.id)}
-					<a
-						class="subtitle-match"
-						href="/downloads/{match.downloadId}?t={Math.floor(
-							match.startTime,
-						)}"
-					>
-						<div class="subtitle-match-time">
-							{formatTimestamp(match.startTime)}
-						</div>
-						<div class="subtitle-match-content">
-							<div class="subtitle-match-text">{match.text}</div>
-							<div class="subtitle-match-video">
-								{match.download.title || "Untitled"}{match
-									.download.uploader
-									? ` - ${match.download.uploader}`
-									: ""}
-							</div>
-						</div>
-					</a>
-				{/each}
-			</div>
 		</div>
 	{/if}
 
@@ -1186,9 +1008,7 @@
 		<div class="section-header">
 			<div class="section-header-left">
 				<h2>
-					Completed ({searchQuery
-						? searchTotal
-						: filteredCompletedDownloads.length})
+					Completed ({searchQuery ? searchTotal : filteredCompletedDownloads.length})
 				</h2>
 				<ViewToggle bind:view={viewMode} />
 				<button
@@ -1200,33 +1020,33 @@
 						else selectionMode = true;
 					}}
 				>
-					{selectionMode ? "Cancel" : "Select"}
+					{selectionMode ? 'Cancel' : 'Select'}
 				</button>
 			</div>
 			<div class="section-header-right">
 				<div class="tabs completed-filter">
 					<button
 						class="tab"
-						class:active={completedFilter === "all"}
+						class:active={completedFilter === 'all'}
 						onclick={(e) => {
 							e.stopPropagation();
-							completedFilter = "all";
+							completedFilter = 'all';
 						}}>All</button
 					>
 					<button
 						class="tab"
-						class:active={completedFilter === "cache"}
+						class:active={completedFilter === 'cache'}
 						onclick={(e) => {
 							e.stopPropagation();
-							completedFilter = "cache";
+							completedFilter = 'cache';
 						}}>Cache</button
 					>
 					<button
 						class="tab"
-						class:active={completedFilter === "library"}
+						class:active={completedFilter === 'library'}
 						onclick={(e) => {
 							e.stopPropagation();
-							completedFilter = "library";
+							completedFilter = 'library';
 						}}>Library</button
 					>
 				</div>
@@ -1235,7 +1055,7 @@
 					<div
 						class="channel-dropdown"
 						onkeydown={(e) => {
-							if (e.key === "Escape") channelDropdownOpen = false;
+							if (e.key === 'Escape') channelDropdownOpen = false;
 						}}
 					>
 						<button
@@ -1249,13 +1069,11 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								channelDropdownOpen = !channelDropdownOpen;
-								channelSearch = "";
+								channelSearch = '';
 							}}
 						>
 							<span class="channel-dropdown-label"
-								>{channelFilter === "all"
-									? "All channels"
-									: channelFilter}</span
+								>{channelFilter === 'all' ? 'All channels' : channelFilter}</span
 							>
 							<svg
 								width="12"
@@ -1297,12 +1115,12 @@
 									<button
 										type="button"
 										role="option"
-										aria-selected={channelFilter === "all"}
+										aria-selected={channelFilter === 'all'}
 										class="channel-dropdown-option"
-										class:selected={channelFilter === "all"}
+										class:selected={channelFilter === 'all'}
 										onclick={(e) => {
 											e.stopPropagation();
-											channelFilter = "all";
+											channelFilter = 'all';
 											channelDropdownOpen = false;
 										}}>All channels</button
 									>
@@ -1310,11 +1128,9 @@
 										<button
 											type="button"
 											role="option"
-											aria-selected={channelFilter ===
-												channel}
+											aria-selected={channelFilter === channel}
 											class="channel-dropdown-option"
-											class:selected={channelFilter ===
-												channel}
+											class:selected={channelFilter === channel}
 											onclick={(e) => {
 												e.stopPropagation();
 												channelFilter = channel;
@@ -1323,9 +1139,7 @@
 										>
 									{/each}
 									{#if filteredChannelOptions.length === 0}
-										<div class="channel-dropdown-empty">
-											No channels found
-										</div>
+										<div class="channel-dropdown-empty">No channels found</div>
 									{/if}
 								</div>
 							</div>
@@ -1342,7 +1156,7 @@
 				<div
 					class="sort-dropdown"
 					onkeydown={(e) => {
-						if (e.key === "Escape") sortDropdownOpen = false;
+						if (e.key === 'Escape') sortDropdownOpen = false;
 					}}
 				>
 					<button
@@ -1358,13 +1172,7 @@
 							sortDropdownOpen = !sortDropdownOpen;
 						}}
 					>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden="true"
-						>
+						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<path
 								d="M2 4h10M4 7h6M6 10h2"
 								stroke="currentColor"
@@ -1375,13 +1183,13 @@
 						<span class="channel-dropdown-label"
 							>{(
 								{
-									newest: "Newest",
-									oldest: "Oldest",
-									largest: "Largest",
-									smallest: "Smallest",
-									longest: "Longest",
-									shortest: "Shortest",
-									uploader: "Uploader",
+									newest: 'Newest',
+									oldest: 'Oldest',
+									largest: 'Largest',
+									smallest: 'Smallest',
+									longest: 'Longest',
+									shortest: 'Shortest',
+									uploader: 'Uploader',
 								} as Record<string, string>
 							)[sortOption]}</span
 						>
@@ -1414,7 +1222,7 @@
 							onclick={(e) => e.stopPropagation()}
 						>
 							<div class="channel-dropdown-options">
-								{#each [["newest", "Newest first"], ["oldest", "Oldest first"], ["largest", "Largest first"], ["smallest", "Smallest first"], ["longest", "Longest first"], ["shortest", "Shortest first"], ["uploader", "Uploader A–Z"]] as [value, label]}
+								{#each [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['largest', 'Largest first'], ['smallest', 'Smallest first'], ['longest', 'Longest first'], ['shortest', 'Shortest first'], ['uploader', 'Uploader A–Z']] as [value, label]}
 									<button
 										type="button"
 										role="option"
@@ -1423,8 +1231,7 @@
 										class:selected={sortOption === value}
 										onclick={(e) => {
 											e.stopPropagation();
-											sortOption =
-												value as typeof sortOption;
+											sortOption = value as typeof sortOption;
 											sortDropdownOpen = false;
 										}}>{label}</button
 									>
@@ -1433,10 +1240,7 @@
 						</div>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							class="channel-dropdown-backdrop"
-							onclick={() => (sortDropdownOpen = false)}
-						></div>
+						<div class="channel-dropdown-backdrop" onclick={() => (sortDropdownOpen = false)}></div>
 					{/if}
 				</div>
 			</div>
@@ -1445,7 +1249,7 @@
 				<div
 					class="sort-dropdown"
 					onkeydown={(e) => {
-						if (e.key === "Escape") watchStateDropdownOpen = false;
+						if (e.key === 'Escape') watchStateDropdownOpen = false;
 					}}
 				>
 					<button
@@ -1461,33 +1265,17 @@
 							watchStateDropdownOpen = !watchStateDropdownOpen;
 						}}
 					>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden="true"
-						>
-							<circle
-								cx="7"
-								cy="7"
-								r="5"
-								stroke="currentColor"
-								stroke-width="1.3"
-								fill="none"
-							/>
-							<path
-								d="M5.5 5.5L9 7L5.5 8.5z"
-								fill="currentColor"
-							/>
+						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+							<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3" fill="none" />
+							<path d="M5.5 5.5L9 7L5.5 8.5z" fill="currentColor" />
 						</svg>
 						<span class="channel-dropdown-label"
 							>{(
 								{
-									all: "All states",
-									unwatched: "Unwatched",
-									in_progress: "In progress",
-									watched: "Watched",
+									all: 'All states',
+									unwatched: 'Unwatched',
+									in_progress: 'In progress',
+									watched: 'Watched',
 								} as Record<string, string>
 							)[watchStateFilter]}</span
 						>
@@ -1520,19 +1308,16 @@
 							onclick={(e) => e.stopPropagation()}
 						>
 							<div class="channel-dropdown-options">
-								{#each [["all", "All states"], ["unwatched", "Unwatched"], ["in_progress", "In progress"], ["watched", "Watched"]] as [value, label]}
+								{#each [['all', 'All states'], ['unwatched', 'Unwatched'], ['in_progress', 'In progress'], ['watched', 'Watched']] as [value, label]}
 									<button
 										type="button"
 										role="option"
-										aria-selected={watchStateFilter ===
-											value}
+										aria-selected={watchStateFilter === value}
 										class="channel-dropdown-option"
-										class:selected={watchStateFilter ===
-											value}
+										class:selected={watchStateFilter === value}
 										onclick={(e) => {
 											e.stopPropagation();
-											watchStateFilter =
-												value as typeof watchStateFilter;
+											watchStateFilter = value as typeof watchStateFilter;
 											watchStateDropdownOpen = false;
 										}}>{label}</button
 									>
@@ -1551,7 +1336,7 @@
 				<div
 					class="sort-dropdown"
 					onkeydown={(e) => {
-						if (e.key === "Escape") resolutionDropdownOpen = false;
+						if (e.key === 'Escape') resolutionDropdownOpen = false;
 					}}
 				>
 					<button
@@ -1567,13 +1352,7 @@
 							resolutionDropdownOpen = !resolutionDropdownOpen;
 						}}
 					>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden="true"
-						>
+						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<rect
 								x="2"
 								y="3"
@@ -1584,22 +1363,17 @@
 								stroke-width="1.3"
 								fill="none"
 							/>
-							<path
-								d="M5 7h4"
-								stroke="currentColor"
-								stroke-width="1.3"
-								stroke-linecap="round"
-							/>
+							<path d="M5 7h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
 						</svg>
 						<span class="channel-dropdown-label"
 							>{(
 								{
-									all: "All res",
-									"4k": "4K+",
-									"1080p": "1080p",
-									"720p": "720p",
-									"480p": "480p",
-									other: "Other",
+									all: 'All res',
+									'4k': '4K+',
+									'1080p': '1080p',
+									'720p': '720p',
+									'480p': '480p',
+									other: 'Other',
 								} as Record<string, string>
 							)[resolutionFilter]}</span
 						>
@@ -1632,15 +1406,13 @@
 							onclick={(e) => e.stopPropagation()}
 						>
 							<div class="channel-dropdown-options">
-								{#each [["all", "All resolutions"], ["4k", "4K+ (2160p+)"], ["1080p", "1080p"], ["720p", "720p"], ["480p", "480p"], ["other", "Below 480p"]] as [value, label]}
+								{#each [['all', 'All resolutions'], ['4k', '4K+ (2160p+)'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p'], ['other', 'Below 480p']] as [value, label]}
 									<button
 										type="button"
 										role="option"
-										aria-selected={resolutionFilter ===
-											value}
+										aria-selected={resolutionFilter === value}
 										class="channel-dropdown-option"
-										class:selected={resolutionFilter ===
-											value}
+										class:selected={resolutionFilter === value}
 										onclick={(e) => {
 											e.stopPropagation();
 											resolutionFilter = value;
@@ -1680,15 +1452,11 @@
 							aria-label="Clear dates"
 							title="Clear date filter"
 							onclick={() => {
-								dateFrom = "";
-								dateTo = "";
+								dateFrom = '';
+								dateTo = '';
 							}}
 						>
-							<svg
-								width="12"
-								height="12"
-								viewBox="0 0 20 20"
-								fill="currentColor"
+							<svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"
 								><path
 									d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
 								/></svg
@@ -1698,18 +1466,95 @@
 				</div>
 			</div>
 		</div>
+		<div class="completed-search">
+			<div class="search-bar-wrapper">
+				<svg class="search-icon" width="20" height="20" viewBox="0 0 16 16" fill="none">
+					<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" />
+					<path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+				</svg>
+				<input
+					type="text"
+					class="search-input-main"
+					placeholder="Search by title, description, uploader, or subtitle text..."
+					aria-label="Search downloads"
+					bind:value={searchQuery}
+				/>
+				{#if searchQuery}
+					<button
+						class="search-clear-btn"
+						aria-label="Clear search"
+						onclick={() => (searchQuery = '')}
+					>
+						<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"
+							><path
+								d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+							/></svg
+						>
+					</button>
+				{/if}
+			</div>
+			{#if searchError}
+				<div class="search-error-wrapper">
+					<ErrorMessage
+						error={searchError}
+						onRetry={retrySearch}
+						onDismiss={() => (searchError = null)}
+					/>
+				</div>
+			{/if}
+		</div>
+
+		{#if searchQuery.trim() && subtitleMatches.length > 0}
+			<div class="completed-subtitles">
+				<h3 class="subtitle-results-heading">
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+					</svg>
+					Found in subtitles ({subtitleTotal})
+				</h3>
+				<div class="subtitle-matches">
+					{#each subtitleMatches as match (match.id)}
+						<a
+							class="subtitle-match"
+							href="/downloads/{match.downloadId}?t={Math.floor(match.startTime)}"
+						>
+							<div class="subtitle-match-time">
+								{formatTimestamp(match.startTime)}
+							</div>
+							<div class="subtitle-match-content">
+								<div class="subtitle-match-text">{match.text}</div>
+								<div class="subtitle-match-video">
+									{match.download.title || 'Untitled'}{match.download.uploader
+										? ` - ${match.download.uploader}`
+										: ''}
+								</div>
+							</div>
+						</a>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		<div class="completed-body">
 			{#if completedLoading}
-				{#if viewMode === "grid"}
+				{#if viewMode === 'grid'}
 					<Skeleton count={6} variant="card" />
 				{:else}
 					<Skeleton count={8} variant="table-row" columns={4} />
 				{/if}
 			{:else if filteredCompletedDownloads.length === 0}
 				{@const noFilters =
-					completedFilter === "all" &&
-					watchStateFilter === "all" &&
-					channelFilter === "all" &&
+					completedFilter === 'all' &&
+					watchStateFilter === 'all' &&
+					channelFilter === 'all' &&
 					!dateFrom &&
 					!dateTo &&
 					!searchQuery}
@@ -1732,18 +1577,8 @@
 								stroke-linejoin="round"
 								aria-hidden="true"
 							>
-								<rect
-									x="2"
-									y="3"
-									width="20"
-									height="14"
-									rx="2"
-								/>
-								<path
-									d="M10 8l5 3-5 3V8z"
-									fill="currentColor"
-									stroke="none"
-								/>
+								<rect x="2" y="3" width="20" height="14" rx="2" />
+								<path d="M10 8l5 3-5 3V8z" fill="currentColor" stroke="none" />
 								<line x1="8" y1="21" x2="16" y2="21" />
 								<line x1="12" y1="17" x2="12" y2="21" />
 							</svg>
@@ -1751,11 +1586,11 @@
 					</EmptyState>
 				{:else}
 					<EmptyState
-						title={watchStateFilter !== "all"
-							? `No ${watchStateFilter.replace("_", " ")} downloads`
-							: completedFilter !== "all"
+						title={watchStateFilter !== 'all'
+							? `No ${watchStateFilter.replace('_', ' ')} downloads`
+							: completedFilter !== 'all'
 								? `No ${completedFilter} downloads`
-								: "No downloads match your filters"}
+								: 'No downloads match your filters'}
 						description="Try adjusting or clearing your filters to see more results."
 						actionLabel="Clear filters"
 						onAction={clearFilters}
@@ -1772,14 +1607,12 @@
 								stroke-linejoin="round"
 								aria-hidden="true"
 							>
-								<polygon
-									points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
-								/>
+								<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
 							</svg>
 						{/snippet}
 					</EmptyState>
 				{/if}
-			{:else if viewMode === "grid"}
+			{:else if viewMode === 'grid'}
 				<div class="downloads-grid">
 					{#each filteredCompletedDownloads as download (download.id)}
 						<DownloadCard
@@ -1798,8 +1631,7 @@
 						<DownloadListRow
 							{download}
 							onclick={() => {
-								if (download.status === "COMPLETED")
-									goto(`/downloads/${download.id}`);
+								if (download.status === 'COMPLETED') goto(`/downloads/${download.id}`);
 							}}
 						/>
 					{/each}
@@ -1809,12 +1641,8 @@
 			{#if searchQuery.trim()}
 				{#if hasMoreSearch}
 					<div class="load-more-row">
-						<button
-							class="btn btn-secondary"
-							onclick={loadMoreSearch}
-							disabled={loadingMoreSearch}
-						>
-							{loadingMoreSearch ? "Loading…" : "Load More"}
+						<button class="btn btn-secondary" onclick={loadMoreSearch} disabled={loadingMoreSearch}>
+							{loadingMoreSearch ? 'Loading…' : 'Load More'}
 						</button>
 					</div>
 				{/if}
@@ -1825,7 +1653,7 @@
 						onclick={loadMoreCompletedDownloads}
 						disabled={loadingMoreDownloads}
 					>
-						{loadingMoreDownloads ? "Loading…" : "Load More"}
+						{loadingMoreDownloads ? 'Loading…' : 'Load More'}
 					</button>
 				</div>
 			{/if}
@@ -1837,20 +1665,15 @@
 						<button
 							class="btn btn-sm btn-secondary"
 							onclick={() => {
-								selectedIds.size ===
-								filteredCompletedDownloads.length
+								selectedIds.size === filteredCompletedDownloads.length
 									? deselectAll()
 									: selectAll();
 							}}
 						>
-							<CheckSquareIcon
-								checked={selectedIds.size ===
-									filteredCompletedDownloads.length}
-							/>
-							{selectedIds.size ===
-							filteredCompletedDownloads.length
-								? "Deselect all"
-								: "Select all"}
+							<CheckSquareIcon checked={selectedIds.size === filteredCompletedDownloads.length} />
+							{selectedIds.size === filteredCompletedDownloads.length
+								? 'Deselect all'
+								: 'Select all'}
 						</button>
 						<div class="bulk-playlist-wrap">
 							<button
@@ -1870,22 +1693,14 @@
 								></div>
 								<div class="bulk-playlist-menu">
 									{#if bulkPlaylistLoading}
-										<p class="bulk-playlist-empty">
-											Loading…
-										</p>
+										<p class="bulk-playlist-empty">Loading…</p>
 									{:else if bulkPlaylists.length === 0}
-										<p class="bulk-playlist-empty">
-											No playlists yet
-										</p>
+										<p class="bulk-playlist-empty">No playlists yet</p>
 									{:else}
 										{#each bulkPlaylists as pl}
 											<button
 												class="bulk-playlist-option"
-												onclick={() =>
-													bulkAddToPlaylist(
-														pl.id,
-														pl.name,
-													)}
+												onclick={() => bulkAddToPlaylist(pl.id, pl.name)}
 												disabled={bulkPlaylistAdding}
 											>
 												{pl.name}
@@ -1895,19 +1710,11 @@
 								</div>
 							{/if}
 						</div>
-						<button
-							class="btn btn-sm btn-accent"
-							onclick={bulkPromote}
-							disabled={bulkActing}
-						>
+						<button class="btn btn-sm btn-accent" onclick={bulkPromote} disabled={bulkActing}>
 							<FolderDownIcon />
 							Move to Library
 						</button>
-						<button
-							class="btn btn-sm btn-danger"
-							onclick={bulkDelete}
-							disabled={bulkActing}
-						>
+						<button class="btn btn-sm btn-danger" onclick={bulkDelete} disabled={bulkActing}>
 							<TrashIcon />
 							Delete
 						</button>
@@ -1930,7 +1737,7 @@
 		grid-template-columns: 1fr 1fr;
 		gap: var(--spacing-xl);
 		align-items: start;
-		margin-bottom: var(--spacing-2xl);
+		margin-bottom: var(--spacing-lg);
 	}
 
 	.form-section {
@@ -1942,11 +1749,51 @@
 	.active-section {
 		min-width: 0;
 		align-self: stretch;
-		border-left: 1px solid var(--border);
-		padding-left: var(--spacing-xl);
+		display: flex;
+		flex-direction: column;
 	}
 	.active-section h2 {
 		margin-bottom: var(--spacing-lg);
+	}
+
+	/* Matches the download panel's size (radius + padding) and fills the column
+	   height, but with no interior fill. The border is drawn by a masked
+	   pseudo-element so only the ring is painted and the inside stays
+	   transparent. */
+	.active-box {
+		position: relative;
+		flex: 1;
+		padding: var(--spacing-xl);
+		border-radius: var(--radius-lg);
+		background: none;
+	}
+	.active-box::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		padding: 2px;
+		/* Idle: neutral grey diagonal stripes (grey dashes over the dark page). */
+		background: repeating-linear-gradient(
+			45deg,
+			var(--color-border-default) 0,
+			var(--color-border-default) 8px,
+			transparent 8px,
+			transparent 16px
+		);
+		-webkit-mask:
+			linear-gradient(#000 0 0) content-box,
+			linear-gradient(#000 0 0);
+		-webkit-mask-composite: xor;
+		mask:
+			linear-gradient(#000 0 0) content-box,
+			linear-gradient(#000 0 0);
+		mask-composite: exclude;
+		pointer-events: none;
+	}
+	/* Active downloads: no border at all. */
+	.active-box.active::before {
+		display: none;
 	}
 
 	.downloads-list {
@@ -1963,7 +1810,7 @@
 	}
 
 	.section {
-		margin-bottom: var(--spacing-xl);
+		margin-bottom: var(--spacing-lg);
 		width: 100%;
 	}
 
@@ -2002,15 +1849,15 @@
 	}
 
 	.completed-card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border-default);
 		border-radius: var(--radius-lg);
 	}
 	.completed-card .section-header {
 		margin-bottom: 0;
 		padding: var(--spacing-lg);
-		background: var(--bg-tertiary);
-		border-bottom: 1px solid var(--border);
+		background: var(--color-bg-tertiary);
+		border-bottom: 1px solid var(--color-border-default);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 	}
 	.completed-body {
@@ -2194,10 +2041,7 @@
 
 	.downloads-grid {
 		display: grid;
-		grid-template-columns: repeat(
-			auto-fill,
-			minmax(var(--grid-card-min-width), 1fr)
-		);
+		grid-template-columns: repeat(auto-fill, minmax(var(--grid-card-min-width), 1fr));
 		gap: var(--spacing-lg);
 		width: 100%;
 	}
@@ -2341,6 +2185,24 @@
 		padding: var(--spacing-md) var(--spacing-lg);
 		flex: 1;
 		min-width: 0;
+	}
+	/* Cache island holds the cache + disk bars side by side. */
+	.cache-box {
+		flex: 1 1 360px;
+	}
+	.cache-disk-row {
+		display: flex;
+		gap: var(--spacing-lg);
+	}
+	.cache-disk-col {
+		flex: 1 1 0;
+		min-width: 0;
+	}
+	@media (max-width: 640px) {
+		.cache-disk-row {
+			flex-direction: column;
+			gap: var(--spacing-md);
+		}
 	}
 	.storage-count {
 		font-size: 0.75rem;
@@ -2496,8 +2358,9 @@
 		color: var(--color-text-primary);
 	}
 
-	.search-bar-section {
-		margin-bottom: var(--spacing-xl);
+	.completed-search {
+		padding: var(--spacing-lg);
+		border-bottom: 1px solid var(--color-border-default);
 		display: flex;
 		gap: var(--spacing-md);
 		flex-wrap: wrap;
@@ -2527,13 +2390,12 @@
 
 	.search-input-main {
 		width: 100%;
-		padding: var(--spacing-md) var(--spacing-lg) var(--spacing-md)
-			calc(var(--spacing-lg) + 28px);
+		padding: var(--spacing-md) var(--spacing-lg) var(--spacing-md) calc(var(--spacing-lg) + 28px);
 		background: var(--color-bg-secondary);
 		border: 1px solid var(--color-border-default);
 		border-radius: var(--radius-lg);
 		color: var(--color-text-primary);
-		font-size: 1.0625rem;
+		font-size: var(--font-size-sm);
 		transition: border-color var(--transition-fast);
 	}
 
@@ -2570,8 +2432,9 @@
 		position: relative;
 	}
 
-	.subtitle-results-section {
-		margin-bottom: var(--spacing-xl);
+	.completed-subtitles {
+		padding: var(--spacing-lg);
+		border-bottom: 1px solid var(--color-border-default);
 	}
 
 	.subtitle-results-heading {
@@ -2712,14 +2575,13 @@
 			grid-template-columns: 1fr;
 			gap: var(--spacing-lg);
 		}
-		.active-section {
-			border-left: none;
-			padding-left: 0;
+		.active-box {
+			padding: var(--spacing-md);
 		}
 		.downloads-grid {
 			grid-template-columns: 1fr;
 		}
-		.search-bar-section {
+		.completed-search {
 			flex-direction: column;
 		}
 		.search-bar-wrapper {

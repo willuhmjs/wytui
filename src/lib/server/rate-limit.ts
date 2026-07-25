@@ -56,7 +56,10 @@ class RateLimiter {
 	/**
 	 * Get rate limit info for response headers
 	 */
-	getInfo(identifier: string, config: RateLimitConfig): {
+	getInfo(
+		identifier: string,
+		config: RateLimitConfig,
+	): {
 		limit: number;
 		remaining: number;
 		reset: number;
@@ -102,6 +105,21 @@ export const RATE_LIMITS: Record<string, RateLimitConfig> = {
 		windowMs: 60 * 1000,
 		maxRequests: 100,
 	},
+	// Each uncached search spawns a yt-dlp process. Cache hits count against
+	// this too (the hook runs before the handler and cannot tell), so the
+	// budget has to accommodate filter-fiddling, which is mostly cache hits.
+	youtubeSearch: {
+		windowMs: 60 * 1000,
+		maxRequests: 120,
+	},
+	// Playlist/subscription/history/watch-later routes each spawn one or more
+	// yt-dlp processes per request (playlist sync fans out to one call per
+	// selected playlist), and some support a cache-bypassing `refresh` flag.
+	// Kept far below `general` so this can't be used to hammer yt-dlp/YouTube.
+	youtubeScrape: {
+		windowMs: 60 * 1000,
+		maxRequests: 30,
+	},
 	general: {
 		windowMs: 60 * 1000,
 		maxRequests: 500,
@@ -125,13 +143,15 @@ export function getClientIdentifier(event: RequestEvent): string {
 export function checkRateLimit(
 	event: RequestEvent,
 	config: RateLimitConfig,
-	identifier?: string
+	identifier?: string,
 ): void {
 	const clientId = identifier || getClientIdentifier(event);
 	const isExceeded = rateLimiter.check(clientId, config);
 
 	if (isExceeded) {
 		const info = rateLimiter.getInfo(clientId, config);
-		throw new Error(`Rate limit exceeded. Try again in ${Math.ceil((info.reset - Date.now()) / 1000)} seconds.`);
+		throw new Error(
+			`Rate limit exceeded. Try again in ${Math.ceil((info.reset - Date.now()) / 1000)} seconds.`,
+		);
 	}
 }

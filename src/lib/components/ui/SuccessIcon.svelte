@@ -58,7 +58,8 @@
 	.success-check {
 		stroke-dasharray: var(--check-dash);
 		stroke-dashoffset: var(--check-dash);
-		animation: success-check-draw 0.3s ease-out 0.3s forwards,
+		animation:
+			success-check-draw 0.3s ease-out 0.3s forwards,
 			success-pop 0.4s ease-out 0.55s;
 	}
 

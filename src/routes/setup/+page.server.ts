@@ -9,8 +9,9 @@ export const load: PageServerLoad = async () => {
 		throw redirect(303, '/');
 	}
 
+	const oidcConfigured = await isOidcConfigured();
 	return {
-		oidcConfigured: isOidcConfigured(),
-		oidcDisplayName: isOidcConfigured() ? getOidcDisplayName() : null,
+		oidcConfigured,
+		oidcDisplayName: oidcConfigured ? await getOidcDisplayName() : null,
 	};
 };

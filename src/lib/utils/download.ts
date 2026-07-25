@@ -1,9 +1,7 @@
 import { addToast, addStickyToast, removeToast } from '$lib/stores/toast.svelte';
 
 export function isMobileDevice(): boolean {
-	return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-		navigator.userAgent
-	);
+	return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
 // MIME type → file extension. iOS decides whether to offer "Save Video"/"Save to

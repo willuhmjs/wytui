@@ -21,8 +21,9 @@ RUN npm prune --production
 
 FROM node:24-alpine3.23
 
-RUN apk add --no-cache ffmpeg curl python3 \
-    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+ARG YTDLP_VERSION=2025.06.09
+RUN apk add --no-cache ffmpeg curl python3 aria2 \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp -o /usr/local/bin/yt-dlp \
     && chmod a+rx /usr/local/bin/yt-dlp
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001

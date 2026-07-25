@@ -10,6 +10,7 @@ datasource db {
 model User {
   id                String    @id @default(cuid())
   email             String    @unique
+  username          String?   @unique // optional login handle; login accepts email OR username
   password          String?
   name              String?
   emailVerified     DateTime?
@@ -32,6 +33,7 @@ model User {
   watchProgress WatchProgress[]
   playlists     Playlist[]
   libraryRequests LibraryRequest[]
+  youtubeLink   YouTubeLink?
 
   @@map("users")
 }
@@ -340,6 +342,14 @@ model Settings {
   // Kill a download if it makes no progress for this many seconds (0 = disabled)
   downloadStallTimeoutSeconds Int @default(600)
 
+  // Download speed tuning
+  concurrentFragments Int     @default(4)   // yt-dlp --concurrent-fragments (0/1 = off)
+  useAria2c           Boolean @default(false) // use aria2c external downloader when present
+  httpChunkSize       String? // e.g. "10M" -> --http-chunk-size (null = omit)
+
+  // Jellyfin artwork
+  generateJellyfinPosters Boolean @default(true) // build 2:3 poster.jpg + 16:9 backdrop.jpg
+
   // yt-dlp settings
   ytdlpPath   String    @default("/usr/local/bin/yt-dlp")
   ytdlpVersion String?
@@ -356,6 +366,13 @@ model Settings {
 
   // Authentication
   authMode    String    @default("password") // "password" | "oidc" | "both"
+
+  // OIDC (SSO). May instead be configured via env vars, which take precedence.
+  oidcEnabled      Boolean @default(false)
+  oidcIssuerUrl    String?
+  oidcClientId     String?
+  oidcClientSecret String? // encrypted at rest via crypto-box
+  oidcDisplayName  String? // button label, e.g. "Company SSO" (defaults to "SSO")
 
   // Library & cache
   libraryPath     String?
@@ -514,14 +531,24 @@ model Playlist {
 model PlaylistItem {
   id         String   @id @default(cuid())
   playlistId String
-  downloadId String
+  // Null until the item is actually downloaded. Items synced from YouTube start
+  // as "pending" — the video reference lives in the snapshot fields below, and
+  // downloadId is filled in once a Download is created for it.
+  downloadId String?
   position   Int
-  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-  download   Download @relation(fields: [downloadId], references: [id], onDelete: Cascade)
-  addedAt    DateTime @default(now())
+  playlist   Playlist  @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  download   Download? @relation(fields: [downloadId], references: [id], onDelete: Cascade)
+  addedAt    DateTime  @default(now())
+
+  // Snapshot of the source video for pending (not-yet-downloaded) items.
+  videoId   String?
+  title     String?
+  thumbnail String?
+  sourceUrl String?
 
   @@unique([playlistId, downloadId])
   @@index([playlistId])
+  @@index([playlistId, videoId])
   @@map("playlist_items")
 }
 
@@ -566,4 +593,31 @@ model ScheduledJobRun {
   @@index([jobName])
   @@index([startedAt])
   @@map("scheduled_job_runs")
+}
+
+model YouTubeLink {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cookiesEnc      String   @db.Text        // AES-256-GCM, format iv:tag:ciphertext (base64)
+  cookieUpdatedAt DateTime
+
+  channelName     String?
+  channelHandle   String?
+  channelId       String?
+
+  syncWatchedToYouTube Boolean @default(false)
+  syncHistoryToWytui   Boolean @default(false)
+  syncWatchLater       Boolean @default(false)
+  useFeedForNewVideos  Boolean @default(false)
+
+  lastFeedCheck   DateTime?
+  lastHistorySync DateTime?
+  lastError       String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("youtube_links")
 }

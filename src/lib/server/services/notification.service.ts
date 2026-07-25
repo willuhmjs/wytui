@@ -1,7 +1,11 @@
 import { prisma } from '../db';
 
 class NotificationService {
-	async send(title: string, body: string, type: 'info' | 'success' | 'warning' | 'failure' = 'info') {
+	async send(
+		title: string,
+		body: string,
+		type: 'info' | 'success' | 'warning' | 'failure' = 'info',
+	) {
 		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
 		if (!settings?.appriseUrl) return;
 

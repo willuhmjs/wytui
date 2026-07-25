@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { getExtensionStoreUrl, REPO_URL } from '$lib/extension-links';
 
 	interface Props {
 		isAdmin: boolean;
@@ -12,7 +13,15 @@
 		collapsed?: boolean;
 	}
 
-	let { isAdmin, statsVisible = true, connected, userEmail, onHealthClick, onSignout, collapsed = $bindable(false) }: Props = $props();
+	let {
+		isAdmin,
+		statsVisible = true,
+		connected,
+		userEmail,
+		onHealthClick,
+		onSignout,
+		collapsed = $bindable(false),
+	}: Props = $props();
 
 	type NavItem = {
 		label: string;
@@ -22,10 +31,11 @@
 
 	const libraryItems: NavItem[] = [
 		{ label: 'Downloads', href: '/downloads', icon: 'download' },
+		{ label: 'Search', href: '/search', icon: 'search' },
 		{ label: 'Channels', href: '/channels', icon: 'channel' },
 		{ label: 'Subscriptions', href: '/subscriptions', icon: 'broadcast' },
 		{ label: 'Monitors', href: '/monitors', icon: 'eye' },
-		{ label: 'Playlists', href: '/playlists', icon: 'playlist' }
+		{ label: 'Playlists', href: '/playlists', icon: 'playlist' },
 	];
 
 	// Settings is available to ALL users (Account tab: password + API keys).
@@ -33,7 +43,7 @@
 	const settingsItem: NavItem = { label: 'Settings', href: '/settings', icon: 'gear' };
 	const adminItems: NavItem[] = [
 		{ label: 'Analytics', href: '/analytics', icon: 'chart' },
-		{ label: 'Scheduler', href: '/scheduler', icon: 'clock' }
+		{ label: 'Scheduler', href: '/scheduler', icon: 'clock' },
 	];
 	let systemItems = $derived(isAdmin ? [settingsItem, ...adminItems] : [settingsItem]);
 
@@ -46,7 +56,7 @@
 		{ label: 'Downloads', href: '/downloads', icon: 'download' },
 		{ label: 'Subs', href: '/subscriptions', icon: 'broadcast' },
 		{ label: 'Playlists', href: '/playlists', icon: 'playlist' },
-		{ label: 'Settings', href: '/settings', icon: 'gear' }
+		{ label: 'Settings', href: '/settings', icon: 'gear' },
 	];
 
 	let mobileMenuOpen = $state(false);
@@ -55,7 +65,11 @@
 	let updateAvailable = $state(false);
 	let commitsUrl = $state('');
 
+	// Browser-aware extension store URL; re-resolved client-side in onMount.
+	let extensionStoreUrl = $state(getExtensionStoreUrl());
+
 	onMount(async () => {
+		extensionStoreUrl = getExtensionStoreUrl();
 		try {
 			const res = await fetch('/api/version');
 			if (res.ok) {
@@ -77,8 +91,23 @@
 				<div class="logo-row">
 					<h1>wytui</h1>
 					{#if updateAvailable}
-						<a href={commitsUrl} target="_blank" rel="noopener noreferrer" class="update-badge" title="New commits available — pull the latest image">
-							<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<a
+							href={commitsUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="update-badge"
+							title="New commits available — pull the latest image"
+						>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 20 20"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
 								<path d="M10 3v10M6 9l4 4 4-4" />
 								<path d="M4 15h12" />
 							</svg>
@@ -94,8 +123,21 @@
 				</div>
 			{/if}
 		</a>
-		<button class="collapse-btn" onclick={() => collapsed = !collapsed} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-			<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+		<button
+			class="collapse-btn"
+			onclick={() => (collapsed = !collapsed)}
+			title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+		>
+			<svg
+				width="16"
+				height="16"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			>
 				<rect x="2" y="3" width="12" height="10" rx="1.5" />
 				<path d="M6 3v10" />
 			</svg>
@@ -112,7 +154,17 @@
 					class:active={isActive(item.href)}
 					title={collapsed ? item.label : undefined}
 				>
-					<svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<svg
+						class="nav-icon"
+						width="20"
+						height="20"
+						viewBox="0 0 20 20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
 						{#if item.icon === 'download'}
 							<path d="M10 3v10M6 9l4 4 4-4" />
 							<path d="M4 15h12" />
@@ -148,32 +200,93 @@
 		</div>
 
 		<div class="nav-group">
-				{#if !collapsed}<span class="nav-label">System</span>{/if}
-				{#each systemItems as item}
-					<a
-						href={item.href}
-						class="nav-item"
-						class:active={isActive(item.href)}
-						title={collapsed ? item.label : undefined}
+			{#if !collapsed}<span class="nav-label">System</span>{/if}
+			{#each systemItems as item}
+				<a
+					href={item.href}
+					class="nav-item"
+					class:active={isActive(item.href)}
+					title={collapsed ? item.label : undefined}
+				>
+					<svg
+						class="nav-icon"
+						width="20"
+						height="20"
+						viewBox="0 0 20 20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
 					>
-						<svg class="nav-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							{#if item.icon === 'gear'}
-								<circle cx="10" cy="10" r="3" />
-								<path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4" />
-							{:else if item.icon === 'chart'}
-								<path d="M4 16V10" />
-								<path d="M8 16V6" />
-								<path d="M12 16V8" />
-								<path d="M16 16V4" />
-							{:else if item.icon === 'clock'}
-								<circle cx="10" cy="10" r="7" />
-								<path d="M10 6v4l3 2" />
-							{/if}
-						</svg>
-						{#if !collapsed}<span class="nav-text">{item.label}</span>{/if}
-					</a>
-				{/each}
-			</div>
+						{#if item.icon === 'gear'}
+							<circle cx="10" cy="10" r="3" />
+							<path
+								d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"
+							/>
+						{:else if item.icon === 'chart'}
+							<path d="M4 16V10" />
+							<path d="M8 16V6" />
+							<path d="M12 16V8" />
+							<path d="M16 16V4" />
+						{:else if item.icon === 'clock'}
+							<circle cx="10" cy="10" r="7" />
+							<path d="M10 6v4l3 2" />
+						{/if}
+					</svg>
+					{#if !collapsed}<span class="nav-text">{item.label}</span>{/if}
+				</a>
+			{/each}
+		</div>
+
+		<div class="nav-group">
+			{#if !collapsed}<span class="nav-label">Links</span>{/if}
+			<a
+				href={extensionStoreUrl}
+				class="nav-item"
+				target="_blank"
+				rel="noopener noreferrer"
+				title={collapsed ? 'Browser extension' : undefined}
+			>
+				<svg
+					class="nav-icon"
+					width="20"
+					height="20"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path
+						d="M7 3.5a1.5 1.5 0 0 1 3 0V5h2.5A1.5 1.5 0 0 1 14 6.5V9h1.5a1.5 1.5 0 0 1 0 3H14v2.5a1.5 1.5 0 0 1-1.5 1.5H10v-1.5a1.5 1.5 0 0 0-3 0V16H4.5A1.5 1.5 0 0 1 3 14.5V12h1.5a1.5 1.5 0 0 0 0-3H3V6.5A1.5 1.5 0 0 1 4.5 5H7V3.5z"
+					/>
+				</svg>
+				{#if !collapsed}<span class="nav-text">Extension</span>{/if}
+			</a>
+			<a
+				href={REPO_URL}
+				class="nav-item"
+				target="_blank"
+				rel="noopener noreferrer"
+				title={collapsed ? 'GitHub repository' : undefined}
+			>
+				<svg
+					class="nav-icon"
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					stroke="none"
+				>
+					<path
+						d="M12 1.5a10.5 10.5 0 0 0-3.32 20.47c.53.1.72-.23.72-.5v-1.8c-2.92.63-3.54-1.4-3.54-1.4-.48-1.21-1.17-1.53-1.17-1.53-.95-.65.07-.64.07-.64 1.06.08 1.61 1.09 1.61 1.09.94 1.6 2.46 1.14 3.06.87.1-.68.37-1.14.67-1.4-2.33-.27-4.78-1.17-4.78-5.19 0-1.15.41-2.08 1.09-2.82-.11-.27-.47-1.34.1-2.79 0 0 .88-.28 2.88 1.08a10 10 0 0 1 5.24 0c2-1.36 2.88-1.08 2.88-1.08.57 1.45.21 2.52.1 2.79.68.74 1.09 1.67 1.09 2.82 0 4.03-2.46 4.91-4.8 5.17.38.33.71.97.71 1.96v2.9c0 .28.19.61.73.5A10.5 10.5 0 0 0 12 1.5z"
+					/>
+				</svg>
+				{#if !collapsed}<span class="nav-text">GitHub</span>{/if}
+			</a>
+		</div>
 	</nav>
 
 	<div class="sidebar-footer">
@@ -198,16 +311,34 @@
 				{#if !collapsed}
 					<span class="user-email">{userEmail}</span>
 					<button class="signout-btn" onclick={onSignout} title="Sign out">
-						<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M9 3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/>
-							<path d="M16 10H9M16 10l-3-3M16 10l-3 3"/>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M9 3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+							<path d="M16 10H9M16 10l-3-3M16 10l-3 3" />
 						</svg>
 					</button>
 				{:else}
 					<button class="signout-btn signout-btn-collapsed" onclick={onSignout} title="Sign out">
-						<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M9 3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/>
-							<path d="M16 10H9M16 10l-3-3M16 10l-3 3"/>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M9 3H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+							<path d="M16 10H9M16 10l-3-3M16 10l-3 3" />
 						</svg>
 					</button>
 				{/if}
@@ -219,12 +350,18 @@
 <!-- Mobile bottom tab bar -->
 <nav class="mobile-tabbar">
 	{#each mobileItems as item}
-		<a
-			href={item.href}
-			class="mobile-tab"
-			class:active={isActive(item.href)}
-		>
-			<svg class="mobile-tab-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+		<a href={item.href} class="mobile-tab" class:active={isActive(item.href)}>
+			<svg
+				class="mobile-tab-icon"
+				width="20"
+				height="20"
+				viewBox="0 0 20 20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			>
 				{#if item.icon === 'download'}
 					<path d="M10 3v10M6 9l4 4 4-4" />
 					<path d="M4 15h12" />
@@ -239,7 +376,9 @@
 					<path d="M14 10v6l4-3-4-3z" />
 				{:else if item.icon === 'gear'}
 					<circle cx="10" cy="10" r="3" />
-					<path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4" />
+					<path
+						d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"
+					/>
 				{/if}
 			</svg>
 			<span class="mobile-tab-label">{item.label}</span>
@@ -251,7 +390,17 @@
 		class:active={mobileMenuOpen}
 		onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
 	>
-		<svg class="mobile-tab-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+		<svg
+			class="mobile-tab-icon"
+			width="20"
+			height="20"
+			viewBox="0 0 20 20"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
 			<path d="M3 5h14M3 10h14M3 15h14" />
 		</svg>
 		<span class="mobile-tab-label">More</span>
@@ -261,8 +410,22 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mobile-menu-backdrop" onclick={() => (mobileMenuOpen = false)}></div>
 		<div class="mobile-menu">
-			<a href="/channels" class="mobile-menu-item" class:active={isActive('/channels')} onclick={() => (mobileMenuOpen = false)}>
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+			<a
+				href="/channels"
+				class="mobile-menu-item"
+				class:active={isActive('/channels')}
+				onclick={() => (mobileMenuOpen = false)}
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<path d="M3 5h14" />
 					<path d="M3 10h14" />
 					<path d="M3 15h14" />
@@ -272,15 +435,43 @@
 				</svg>
 				<span>Channels</span>
 			</a>
-			<a href="/monitors" class="mobile-menu-item" class:active={isActive('/monitors')} onclick={() => (mobileMenuOpen = false)}>
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+			<a
+				href="/monitors"
+				class="mobile-menu-item"
+				class:active={isActive('/monitors')}
+				onclick={() => (mobileMenuOpen = false)}
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z" />
 					<circle cx="10" cy="10" r="3" />
 				</svg>
 				<span>Monitors</span>
 			</a>
-			<a href="/playlists" class="mobile-menu-item" class:active={isActive('/playlists')} onclick={() => (mobileMenuOpen = false)}>
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+			<a
+				href="/playlists"
+				class="mobile-menu-item"
+				class:active={isActive('/playlists')}
+				onclick={() => (mobileMenuOpen = false)}
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<path d="M3 5h10" />
 					<path d="M3 10h6" />
 					<path d="M3 15h4" />
@@ -289,8 +480,22 @@
 				<span>Playlists</span>
 			</a>
 			{#if isAdmin}
-				<a href="/scheduler" class="mobile-menu-item" class:active={isActive('/scheduler')} onclick={() => (mobileMenuOpen = false)}>
-					<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<a
+					href="/scheduler"
+					class="mobile-menu-item"
+					class:active={isActive('/scheduler')}
+					onclick={() => (mobileMenuOpen = false)}
+				>
+					<svg
+						width="20"
+						height="20"
+						viewBox="0 0 20 20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
 						<circle cx="10" cy="10" r="7" />
 						<path d="M10 6v4l3 2" />
 					</svg>
@@ -315,6 +520,9 @@
 		flex-direction: column;
 		z-index: 100;
 		overflow-y: auto;
+		/* Keep the wheel inside the sidebar: without this, scrolling over the
+		   sidebar chains to the document and scrolls the main content instead. */
+		overscroll-behavior: contain;
 		transition: width 0.2s ease;
 	}
 
@@ -427,6 +635,7 @@
 		flex-direction: column;
 		gap: var(--spacing-lg);
 		overflow-y: auto;
+		overscroll-behavior: contain;
 	}
 
 	.nav-group {
@@ -531,8 +740,13 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
 	}
 
 	.status-label {

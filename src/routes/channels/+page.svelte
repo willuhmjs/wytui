@@ -50,7 +50,10 @@
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		try {
-			const params = new URLSearchParams({ limit: String(CHANNELS_PAGE_SIZE), offset: String(offset) });
+			const params = new URLSearchParams({
+				limit: String(CHANNELS_PAGE_SIZE),
+				offset: String(offset),
+			});
 			if (search) params.set('q', search);
 			const res = await fetch(`/api/channels?${params}`);
 			if (res.ok) {
@@ -100,9 +103,7 @@
 	{:else if error}
 		<ErrorMessage {error} onRetry={() => loadChannels()} />
 	{:else if channels.length === 0}
-		<EmptyState
-			title={search ? 'No channels match your search' : 'No completed downloads yet'}
-		/>
+		<EmptyState title={search ? 'No channels match your search' : 'No completed downloads yet'} />
 	{:else if viewMode === 'list'}
 		<div class="channels-list">
 			{#each channels as channel}
@@ -117,7 +118,9 @@
 						{/if}
 					</div>
 					<span class="channel-list-name">{channel.name}</span>
-					<span class="channel-list-count">{channel.count} video{channel.count !== 1 ? 's' : ''}</span>
+					<span class="channel-list-count"
+						>{channel.count} video{channel.count !== 1 ? 's' : ''}</span
+					>
 				</button>
 			{/each}
 		</div>
@@ -259,8 +262,11 @@
 		border-radius: var(--radius-lg);
 		cursor: pointer;
 		text-align: center;
-		transition: transform var(--transition-normal), box-shadow var(--transition-normal),
-			border-color var(--transition-normal), background var(--transition-normal);
+		transition:
+			transform var(--transition-normal),
+			box-shadow var(--transition-normal),
+			border-color var(--transition-normal),
+			background var(--transition-normal);
 		min-height: unset;
 		min-width: unset;
 		color: inherit;
@@ -271,7 +277,9 @@
 		border-color: var(--color-border-translucent-hover);
 		background: var(--color-bg-tertiary);
 		transform: translateY(-3px);
-		box-shadow: var(--shadow-lg), 0 0 0 1px rgba(59, 130, 246, 0.06);
+		box-shadow:
+			var(--shadow-lg),
+			0 0 0 1px rgba(59, 130, 246, 0.06);
 	}
 
 	.channel-avatar {

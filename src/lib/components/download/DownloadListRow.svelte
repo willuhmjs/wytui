@@ -21,7 +21,7 @@
 	const VIDEO_EXTENSIONS = new Set(['MP4', 'WEBM', 'MKV', 'FLV', 'MOV', 'AVI']);
 	let mediaType = $derived(download.filename?.split('.').pop()?.toUpperCase() || null);
 	let isVideoCompleted = $derived(
-		download.status === 'COMPLETED' && mediaType !== null && VIDEO_EXTENSIONS.has(mediaType)
+		download.status === 'COMPLETED' && mediaType !== null && VIDEO_EXTENSIONS.has(mediaType),
 	);
 
 	let formattedSize = $derived(download.filesize ? formatBytes(download.filesize) : null);
@@ -33,16 +33,9 @@
 		const d = new Date(date);
 		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 	});
-
 </script>
 
-<div
-	class="list-row"
-	role="button"
-	tabindex="0"
-	{onclick}
-	onkeydown={clickOnEnterOrSpace(onclick)}
->
+<div class="list-row" role="button" tabindex="0" {onclick} onkeydown={clickOnEnterOrSpace(onclick)}>
 	<div class="thumbnail">
 		{#if download.thumbnail && !thumbnailFailed}
 			<img
@@ -51,11 +44,7 @@
 				onerror={() => (thumbnailFailed = true)}
 			/>
 		{:else if isVideoCompleted}
-			<video
-				src="/api/files/{download.id}#t=0.001"
-				preload="metadata"
-				muted
-			></video>
+			<video src="/api/files/{download.id}#t=0.001" preload="metadata" muted></video>
 		{:else}
 			<div class="thumbnail-placeholder"></div>
 		{/if}

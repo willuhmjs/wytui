@@ -57,12 +57,7 @@ class MonitorService {
 	private async startYouTubeMonitor(monitor: any): Promise<void> {
 		ytdlpService.validateUrl(monitor.url);
 
-		const args = [
-			'--wait-for-video', '30',
-			'--simulate',
-			'--no-warnings',
-			monitor.url,
-		];
+		const args = ['--wait-for-video', '30', '--simulate', '--no-warnings', monitor.url];
 
 		const proc = spawn(ytdlpService.getPath(), args, {
 			detached: true,
@@ -162,7 +157,7 @@ class MonitorService {
 				undefined,
 				undefined,
 				false,
-				monitor.customFlags?.length ? monitor.customFlags : undefined
+				monitor.customFlags?.length ? monitor.customFlags : undefined,
 			);
 			console.log(`[Monitor ${monitor.name}] Started download`);
 		}
@@ -279,7 +274,9 @@ class MonitorService {
 		this.restartCounts.set(monitorId, count);
 
 		if (count > MonitorService.MAX_RESTARTS) {
-			console.error(`[Monitor ${monitor.name}] Max restarts (${MonitorService.MAX_RESTARTS}) exceeded, disabling`);
+			console.error(
+				`[Monitor ${monitor.name}] Max restarts (${MonitorService.MAX_RESTARTS}) exceeded, disabling`,
+			);
 			await prisma.monitor.update({
 				where: { id: monitorId },
 				data: { enabled: false },
@@ -289,7 +286,9 @@ class MonitorService {
 		}
 
 		const delay = Math.min(5000 * Math.pow(2, count - 1), MonitorService.MAX_BACKOFF_MS);
-		console.log(`[Monitor ${monitor.name}] Restarting in ${Math.round(delay / 1000)}s (attempt ${count}/${MonitorService.MAX_RESTARTS})`);
+		console.log(
+			`[Monitor ${monitor.name}] Restarting in ${Math.round(delay / 1000)}s (attempt ${count}/${MonitorService.MAX_RESTARTS})`,
+		);
 		setTimeout(() => {
 			this.startMonitor(monitor);
 		}, delay);

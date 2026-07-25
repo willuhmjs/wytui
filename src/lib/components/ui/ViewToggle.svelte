@@ -46,7 +46,15 @@
 		aria-checked={view === 'list'}
 		role="radio"
 	>
-		<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 16 16"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+		>
 			<path d="M2 3h12" />
 			<path d="M2 8h12" />
 			<path d="M2 13h12" />

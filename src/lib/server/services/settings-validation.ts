@@ -1,6 +1,9 @@
 import { error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { queueService } from '$lib/server/services/queue.service';
+import { isOidcManagedByEnv } from '$lib/server/oidc';
+import { isLdapManagedByEnv } from '$lib/server/ldap';
+import { encryptSecret } from '$lib/server/utils/crypto-box';
 import { resolve, normalize } from 'path';
 import { statfs } from 'fs/promises';
 
@@ -41,6 +44,11 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'ldapBindPassword',
 	'ldapSearchBase',
 	'ldapSearchFilter',
+	'oidcEnabled',
+	'oidcIssuerUrl',
+	'oidcClientId',
+	'oidcClientSecret',
+	'oidcDisplayName',
 	'rateLimit',
 	'sleepInterval',
 	'proxyAuthEnabled',
@@ -50,7 +58,55 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'libraryAccessMode',
 	'statsVisibleToNonAdmins',
 	'showTotalSizeToNonAdmins',
+	'concurrentFragments',
+	'useAria2c',
+	'httpChunkSize',
+	'generateJellyfinPosters',
 ]);
+
+/**
+ * Fields returned as '***SET***' rather than their value. A client echoing the
+ * mask back must not overwrite the stored secret with the literal mask.
+ */
+export const SECRET_SETTINGS_FIELDS = new Set([
+	'jellyfinApiKey',
+	'plexToken',
+	'ldapBindPassword',
+	'appriseUrl',
+	'oidcClientSecret',
+]);
+
+/** Secrets stored encrypted at rest (see crypto-box). */
+export const ENCRYPTED_SETTINGS_FIELDS = ['oidcClientSecret', 'ldapBindPassword'] as const;
+
+const OIDC_FIELDS = [
+	'oidcEnabled',
+	'oidcIssuerUrl',
+	'oidcClientId',
+	'oidcClientSecret',
+	'oidcDisplayName',
+];
+
+const LDAP_FIELDS = [
+	'ldapEnabled',
+	'ldapUrl',
+	'ldapBindDn',
+	'ldapBindPassword',
+	'ldapSearchBase',
+	'ldapSearchFilter',
+];
+
+/**
+ * Settings fields currently governed by environment variables and therefore
+ * read-only. A config export always carries every field, so import strips these
+ * rather than failing the whole file; PATCH rejects them outright.
+ */
+export async function envManagedSettingsFields(): Promise<string[]> {
+	const locked: string[] = [];
+	if (await isOidcManagedByEnv()) locked.push(...OIDC_FIELDS);
+	if (await isLdapManagedByEnv()) locked.push(...LDAP_FIELDS);
+	return locked;
+}
 
 /**
  * Validate and normalize a settings update payload against ALLOWED_SETTINGS_FIELDS.
@@ -58,13 +114,33 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
  * validation only — no side effects (e.g. live queue concurrency changes) belong
  * here, since import previews call this without writing anything.
  */
-export async function validateSettingsUpdate(body: Record<string, any>): Promise<Record<string, any>> {
+export async function validateSettingsUpdate(
+	body: Record<string, any>,
+): Promise<Record<string, any>> {
 	const updates: Record<string, any> = {};
 	for (const key of Object.keys(body)) {
 		if (!ALLOWED_SETTINGS_FIELDS.has(key)) {
 			throw error(400, `Unknown setting: ${key}`);
 		}
+		if (SECRET_SETTINGS_FIELDS.has(key) && body[key] === '***SET***') {
+			continue; // unchanged masked secret — leave existing value untouched
+		}
 		updates[key] = body[key];
+	}
+
+	// OIDC/LDAP fields are read-only when governed by environment variables.
+	if (OIDC_FIELDS.some((f) => f in updates) && (await isOidcManagedByEnv())) {
+		throw error(400, 'OIDC is managed by environment variables and cannot be edited here');
+	}
+	if (LDAP_FIELDS.some((f) => f in updates) && (await isLdapManagedByEnv())) {
+		throw error(400, 'LDAP is managed by environment variables and cannot be edited here');
+	}
+
+	// Encrypt secrets at rest. Empty string clears the secret (store null).
+	for (const field of ENCRYPTED_SETTINGS_FIELDS) {
+		if (updates[field] !== undefined) {
+			updates[field] = updates[field] ? encryptSecret(String(updates[field])) : null;
+		}
 	}
 
 	if (updates.downloadPath !== undefined) {
@@ -96,7 +172,10 @@ export async function validateSettingsUpdate(body: Record<string, any>): Promise
 				},
 			});
 			if (!adminWithPassword) {
-				throw error(400, 'Cannot switch to password-only authentication: no admin accounts have a password set. Create a password for an admin account first.');
+				throw error(
+					400,
+					'Cannot switch to password-only authentication: no admin accounts have a password set. Create a password for an admin account first.',
+				);
 			}
 		}
 	}
@@ -195,14 +274,20 @@ export async function validateSettingsUpdate(body: Record<string, any>): Promise
 	}
 
 	if (updates.cleanupUserIds !== undefined) {
-		if (!Array.isArray(updates.cleanupUserIds) || !updates.cleanupUserIds.every((id: unknown) => typeof id === 'string' && id.length > 0)) {
+		if (
+			!Array.isArray(updates.cleanupUserIds) ||
+			!updates.cleanupUserIds.every((id: unknown) => typeof id === 'string' && id.length > 0)
+		) {
 			throw error(400, 'cleanupUserIds must be an array of non-empty strings');
 		}
 	}
 
 	if (updates.cleanupProfileTypes !== undefined) {
 		const allowed = ['video', 'music'];
-		if (!Array.isArray(updates.cleanupProfileTypes) || !updates.cleanupProfileTypes.every((t: unknown) => allowed.includes(t as string))) {
+		if (
+			!Array.isArray(updates.cleanupProfileTypes) ||
+			!updates.cleanupProfileTypes.every((t: unknown) => allowed.includes(t as string))
+		) {
 			throw error(400, 'cleanupProfileTypes must only contain "video" or "music"');
 		}
 	}
@@ -224,9 +309,50 @@ export async function validateSettingsUpdate(body: Record<string, any>): Promise
 	if (updates.proxyAuthHeader !== undefined) {
 		const header = String(updates.proxyAuthHeader).trim();
 		if (!header || !/^[a-zA-Z0-9-]+$/.test(header)) {
-			throw error(400, 'proxyAuthHeader must be a valid HTTP header name (letters, digits, hyphens)');
+			throw error(
+				400,
+				'proxyAuthHeader must be a valid HTTP header name (letters, digits, hyphens)',
+			);
 		}
 		updates.proxyAuthHeader = header;
+	}
+
+	if (updates.concurrentFragments !== undefined) {
+		const val = Number(updates.concurrentFragments);
+		if (!Number.isInteger(val) || val < 0 || val > 16) {
+			throw error(400, 'concurrentFragments must be an integer between 0 and 16');
+		}
+	}
+
+	if (updates.useAria2c !== undefined) {
+		if (typeof updates.useAria2c !== 'boolean') {
+			throw error(400, 'useAria2c must be a boolean');
+		}
+	}
+
+	if (updates.httpChunkSize !== undefined) {
+		// Allow null or empty string → coerce to null
+		if (updates.httpChunkSize === null || updates.httpChunkSize === '') {
+			updates.httpChunkSize = null;
+		} else {
+			if (typeof updates.httpChunkSize !== 'string') {
+				throw error(400, 'httpChunkSize must be a string or null');
+			}
+			// Validate format: bare number or number with K/M/G suffix (e.g. "10M", "1.5G", "500K")
+			const chunkSizePattern = /^\d+(\.\d+)?[KMGkmg]?$/;
+			if (!chunkSizePattern.test(updates.httpChunkSize)) {
+				throw error(
+					400,
+					'httpChunkSize must be a number optionally followed by K, M, or G (e.g. "10M", "1.5G", "500K")',
+				);
+			}
+		}
+	}
+
+	if (updates.generateJellyfinPosters !== undefined) {
+		if (typeof updates.generateJellyfinPosters !== 'boolean') {
+			throw error(400, 'generateJellyfinPosters must be a boolean');
+		}
 	}
 
 	return updates;
@@ -251,10 +377,21 @@ export async function applySettingsSideEffects(updates: Record<string, any>): Pr
 	}
 }
 
-/** Shape a raw Settings row for JSON responses (stringify BigInt fields). */
-export function serializeSettingsResponse(settings: { cacheQuotaBytes: bigint; totalCacheQuotaBytes: bigint | null; [key: string]: any }) {
+/**
+ * Shape a raw Settings row for JSON responses: stringify BigInt fields and
+ * redact secrets down to a '***SET***' marker so values never leave the server.
+ */
+export function serializeSettingsResponse(settings: {
+	cacheQuotaBytes: bigint;
+	totalCacheQuotaBytes: bigint | null;
+	[key: string]: any;
+}) {
+	const redacted: Record<string, any> = { ...settings };
+	for (const field of SECRET_SETTINGS_FIELDS) {
+		redacted[field] = redacted[field] ? '***SET***' : null;
+	}
 	return {
-		...settings,
+		...redacted,
 		cacheQuotaBytes: settings.cacheQuotaBytes.toString(),
 		totalCacheQuotaBytes: settings.totalCacheQuotaBytes?.toString() ?? null,
 	};

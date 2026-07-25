@@ -20,9 +20,24 @@
 </script>
 
 {#if error}
-	<div class="error-message" class:compact role="alert" aria-live="polite" data-error-type={errorType}>
+	<div
+		class="error-message"
+		class:compact
+		role="alert"
+		aria-live="polite"
+		data-error-type={errorType}
+	>
 		<span class="icon" aria-hidden="true">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+			<svg
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				width="20"
+				height="20"
+			>
 				<circle cx="12" cy="12" r="10" />
 				<line x1="12" y1="8" x2="12" y2="12" />
 				<line x1="12" y1="16" x2="12.01" y2="16" />
@@ -31,7 +46,17 @@
 		<span class="text">{message}</span>
 		{#if canRetry}
 			<button type="button" class="retry-btn" onclick={onRetry}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+				<svg
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					width="14"
+					height="14"
+					aria-hidden="true"
+				>
 					<polyline points="23 4 23 10 17 10" />
 					<polyline points="1 20 1 14 7 14" />
 					<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -103,7 +128,9 @@
 		font-size: var(--font-size-xs);
 		font-weight: var(--font-weight-medium);
 		cursor: pointer;
-		transition: background var(--transition-fast), color var(--transition-fast);
+		transition:
+			background var(--transition-fast),
+			color var(--transition-fast);
 		flex-shrink: 0;
 	}
 
@@ -128,7 +155,9 @@
 		cursor: pointer;
 		border-radius: var(--radius-sm);
 		flex-shrink: 0;
-		transition: color var(--transition-fast), background var(--transition-fast);
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast);
 	}
 
 	.dismiss-btn:hover {
