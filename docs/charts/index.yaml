@@ -1,2 +1,14 @@
 apiVersion: v1
-entries: {}
+entries:
+  wytui:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2026-07-25T22:54:05.270676567Z"
+    description: Self-hosted web UI for yt-dlp
+    digest: 37bba96076b7ee659904b8281b6b1a1e3c2985ebd53943b9f45e87e456b00a89
+    name: wytui
+    type: application
+    urls:
+    - https://charts.wytui.willuhmjs.com/wytui-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-07-25T22:54:05.270137729Z"
