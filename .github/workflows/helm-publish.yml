@@ -9,9 +9,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Classic Helm chart repository served from docs/charts via GitHub Pages
-  # (same site as wytui.willuhmjs.com, just a subpath — see docs/index.html).
-  CHART_REPO_URL: https://wytui.willuhmjs.com/charts
+  # Classic Helm chart repository. docs/charts is deployed as its own
+  # Cloudflare Pages project at this subdomain — see cloudflare-pages.yml.
+  CHART_REPO_URL: https://charts.wytui.willuhmjs.com
 
 jobs:
   helm:
