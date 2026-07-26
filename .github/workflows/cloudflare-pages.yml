@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
     paths: [docs/**]
+  # helm-publish.yml commits docs/charts using the default GITHUB_TOKEN, and
+  # GitHub doesn't let GITHUB_TOKEN-authored pushes trigger other `push`
+  # workflows (anti-loop protection) — so catch it here instead.
+  workflow_run:
+    workflows: ['Package and Publish Helm Chart']
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -12,7 +19,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.repository == 'willuhmjs/wytui'
+    if: |
+      github.repository == 'willuhmjs/wytui' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
