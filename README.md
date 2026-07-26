@@ -54,6 +54,14 @@ With custom values:
 helm install wytui oci://ghcr.io/willuhmjs/wytui -f values.yaml
 ```
 
+Or via the classic chart repository, if you prefer `helm repo add`/`helm search`:
+
+```bash
+helm repo add wytui https://wytui.willuhmjs.com/charts
+helm repo update
+helm install wytui wytui/wytui
+```
+
 The chart includes a bundled PostgreSQL by default. To use an external database:
 
 ```yaml

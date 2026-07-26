@@ -507,10 +507,9 @@ docker compose up -d</code></pre>
 helm install wytui \
   oci://ghcr.io/willuhmjs/wytui
 
-<span style="color: #606060;"># Or with custom values</span>
-helm install wytui \
-  oci://ghcr.io/willuhmjs/wytui \
-  -f values.yaml</code></pre>
+<span style="color: #606060;"># Or via the classic chart repository</span>
+helm repo add wytui https://wytui.willuhmjs.com/charts
+helm install wytui wytui/wytui</code></pre>
 					</div>
 				</div>
 			</div>
