@@ -8,6 +8,8 @@ A self-hosted web UI for [yt-dlp](https://github.com/yt-dlp/yt-dlp), built with 
 - **Two-tier storage** — Temporary cache with configurable quota + permanent library organized by uploader
 - **Jellyfin integration** — Auto library scan, thumbnail artwork, and deep-link to Jellyfin search
 - **Subscriptions** — Monitor channels/playlists, auto-download new content on a schedule; backfill by date or download entire channels
+- **YouTube channel & playlist sync** — Link your YouTube account via the browser extension to import your real subscriptions as monitors (with OPML/CSV export) and sync your playlists, including Watch Later and Liked videos
+- **YouTube search** — Search YouTube directly from wytui, filter by type/sort/date/duration, and download results in one click
 - **Livestream monitors** — Watch livestreams, auto-download when live
 - **File reconciliation** — Automatically detects and removes DB records for files deleted externally (e.g. via Jellyfin)
 - **Real-time progress** — Server-Sent Events for live download status
