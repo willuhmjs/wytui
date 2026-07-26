@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>wytui Helm chart repository</title>
+		<link rel="icon" type="image/svg+xml" href="https://wytui.willuhmjs.com/favicon.svg" />
+		<style>
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			:root {
+				--bg: #0a0a0a;
+				--bg-code: #1e1e1e;
+				--text: #ffffff;
+				--text-dim: #a0a0a0;
+				--accent: #3b82f6;
+				--border: #2a2a2a;
+			}
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				line-height: 1.6;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-height: 100vh;
+			}
+			a {
+				color: var(--accent);
+			}
+			.container {
+				max-width: 560px;
+				padding: 2rem 1.5rem;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin-bottom: 0.5rem;
+			}
+			p {
+				color: var(--text-dim);
+				margin-bottom: 1.25rem;
+			}
+			pre {
+				background: var(--bg-code);
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 1rem;
+				overflow-x: auto;
+				font-size: 0.875rem;
+			}
+			code {
+				font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>wytui Helm chart repository</h1>
+			<p>
+				This is a classic Helm chart repository (<a href="index.yaml">index.yaml</a>), not a
+				browsable site. Add it with:
+			</p>
+			<pre><code>helm repo add wytui https://charts.wytui.willuhmjs.com
+helm repo update
+helm install wytui wytui/wytui</code></pre>
+			<p style="margin-top: 1.25rem; margin-bottom: 0">
+				See <a href="https://wytui.willuhmjs.com/">wytui.willuhmjs.com</a> or the
+				<a href="https://github.com/willuhmjs/wytui">GitHub repo</a> for full docs.
+			</p>
+		</div>
+	</body>
+</html>
