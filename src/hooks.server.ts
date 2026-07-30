@@ -297,12 +297,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		response.headers.set('Vary', 'Origin');
 	}
 
-	response.headers.set('X-Frame-Options', 'DENY');
+	// Allow embedding from anywhere (removed X-Frame-Options, set frame-ancestors to *)
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set(
 		'Content-Security-Policy',
-		"default-src 'self'; img-src 'self' https://*.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://www.gstatic.com; connect-src 'self' https://sponsor.ajay.app https://returnyoutubedislikeapi.com; media-src 'self'; frame-ancestors 'none'",
+		"default-src 'self'; img-src 'self' https://*.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://i.ytimg.com data:; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://www.gstatic.com; connect-src 'self' https://sponsor.ajay.app https://returnyoutubedislikeapi.com; media-src 'self'; frame-ancestors *",
 	);
 
 	return response;
