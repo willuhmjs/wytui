@@ -448,7 +448,7 @@
 				{/if}
 				{#if download.uploadDate}
 					<div class="meta-item">
-						<span class="meta-label">Upload Date</span>
+						<span class="meta-label">Released</span>
 						<span class="meta-value">{formatDate(download.uploadDate)}</span>
 					</div>
 				{/if}

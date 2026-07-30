@@ -2,7 +2,12 @@
 	import { goto } from '$app/navigation';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
-	import { getDownloadStatusColor, getDownloadStatusLabel } from '$lib/utils/format';
+	import {
+		formatDateTime,
+		formatShortDate,
+		getDownloadStatusColor,
+		getDownloadStatusLabel,
+	} from '$lib/utils/format';
 	import { downloadOrShare } from '$lib/utils/download';
 	import type { Download } from '$lib/types';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
@@ -196,6 +201,12 @@
 		if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
 		return `${(bytes / 1024).toFixed(0)} KB`;
 	});
+	// When the file landed in wytui vs. when the video was originally published.
+	let downloadedAt = $derived(download.completedAt || download.createdAt);
+	let downloadedDate = $derived(formatShortDate(downloadedAt));
+	let downloadedExact = $derived(formatDateTime(downloadedAt));
+	let releasedDate = $derived(formatShortDate(download.uploadDate));
+
 	let jellyfinQuery = $derived(
 		download.artist
 			? `${download.artist} ${download.title?.split(' - ').pop()?.trim() || download.title || ''}`
@@ -569,6 +580,23 @@
 				{/if}
 				{#if formattedSize}
 					<span class="meta-badge">{formattedSize}</span>
+				{/if}
+			</div>
+		{/if}
+
+		{#if releasedDate || downloadedDate}
+			<div class="card-dates">
+				{#if releasedDate}
+					<span class="card-date">
+						<span class="card-date-tag">Released</span>
+						{releasedDate}
+					</span>
+				{/if}
+				{#if downloadedDate}
+					<span class="card-date" title="Downloaded {downloadedExact}">
+						<span class="card-date-tag">Downloaded</span>
+						{downloadedDate}
+					</span>
 				{/if}
 			</div>
 		{/if}
@@ -1072,6 +1100,28 @@
 		color: var(--color-text-secondary);
 		font-family: var(--font-family-mono);
 		letter-spacing: 0.02em;
+	}
+
+	.card-dates {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		margin-bottom: var(--spacing-md);
+		font-size: 0.625rem;
+		color: var(--color-text-tertiary);
+	}
+
+	.card-date {
+		display: flex;
+		align-items: baseline;
+		gap: var(--spacing-xs);
+		white-space: nowrap;
+	}
+
+	.card-date-tag {
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.65;
 	}
 
 	.progress {

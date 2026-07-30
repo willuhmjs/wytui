@@ -12,10 +12,13 @@
 	import SubscriptionConfig from '$lib/components/download/SubscriptionConfig.svelte';
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
+	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
 
 	// Shared state
 	let profiles = $state<any[]>([]);
 	let libraryConfigured = $state(false);
+	let youtubeLinked = $state(false);
+	let showImportModal = $state(false);
 
 	// Subscriptions state
 	const SUBS_PAGE_SIZE = 50;
@@ -145,9 +148,22 @@
 		return `${months}mo ago`;
 	}
 
+	async function checkYoutubeLink() {
+		try {
+			const res = await fetch('/api/youtube/link');
+			if (res.ok) {
+				const data = await res.json();
+				youtubeLinked = !!data.linked;
+			}
+		} catch {
+			youtubeLinked = false;
+		}
+	}
+
 	onMount(() => {
 		loadProfiles();
 		loadSubscriptions();
+		checkYoutubeLink();
 
 		const unsubChecked = onSSEEvent('subscription:checked', ({ id, name, newVideos }) => {
 			const safetyTimeout = checkTimeouts.get(id);
@@ -458,9 +474,16 @@
 					<h2>Subscriptions ({subscriptions.length})</h2>
 					<p class="text-muted">Monitor channels and auto-download new videos</p>
 				</div>
-				<button class="btn btn-primary" onclick={() => (showSubsForm = !showSubsForm)}>
-					{showSubsForm ? 'Cancel' : 'Add Subscription'}
-				</button>
+				<div class="section-header-actions">
+					{#if youtubeLinked}
+						<button class="btn btn-secondary" onclick={() => (showImportModal = true)}>
+							Sync with YouTube
+						</button>
+					{/if}
+					<button class="btn btn-primary" onclick={() => (showSubsForm = !showSubsForm)}>
+						{showSubsForm ? 'Cancel' : 'Add Subscription'}
+					</button>
+				</div>
 			</div>
 			<div class="subs-body">
 				{#if showSubsForm}
@@ -890,6 +913,8 @@
 	</div>
 </div>
 
+<ImportSubscriptionsModal bind:open={showImportModal} onImported={() => loadSubscriptions()} />
+
 <style>
 	.page {
 		max-width: 1400px;
@@ -918,6 +943,13 @@
 		background: var(--color-bg-tertiary);
 		border-bottom: 1px solid var(--color-border-default);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+	}
+
+	.section-header-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		flex-shrink: 0;
 	}
 
 	.section-header-left h2 {
@@ -1217,6 +1249,12 @@
 		.section-header {
 			flex-direction: column;
 			gap: var(--spacing-md);
+		}
+
+		.section-header-actions {
+			width: 100%;
+			flex-direction: column;
+			align-items: stretch;
 		}
 
 		.section-header .btn {

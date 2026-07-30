@@ -62,6 +62,22 @@ export function getDownloadStatusLabel(status: string): string {
 	return DOWNLOAD_STATUS_LABELS[status] || status;
 }
 
+/** Short calendar date — "Jul 29, 2026". Null for missing/unparseable input. */
+export function formatShortDate(date: string | Date | null | undefined): string | null {
+	if (!date) return null;
+	const d = new Date(date);
+	if (Number.isNaN(d.getTime())) return null;
+	return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Full date + time, for tooltips where the exact moment matters. */
+export function formatDateTime(date: string | Date | null | undefined): string | null {
+	if (!date) return null;
+	const d = new Date(date);
+	if (Number.isNaN(d.getTime())) return null;
+	return d.toLocaleString();
+}
+
 export function formatUptime(ms: number): string {
 	const seconds = Math.floor(ms / 1000);
 	const days = Math.floor(seconds / 86400);

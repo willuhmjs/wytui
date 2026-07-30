@@ -158,9 +158,10 @@ export const GET = apiRoute(
 				downloadsByDate.set(date, (downloadsByDate.get(date) || 0) + 1);
 			}
 
+			// Oldest first, so the chart reads left-to-right chronologically.
 			const downloadsPerDay = Array.from(downloadsByDate.entries())
 				.map(([date, count]) => ({ date, count }))
-				.sort((a, b) => b.date.localeCompare(a.date));
+				.sort((a, b) => a.date.localeCompare(b.date));
 
 			// Top uploaders
 			const topUploaders = await prisma.download.groupBy({

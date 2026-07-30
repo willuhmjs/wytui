@@ -54,7 +54,7 @@
 	let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 	let isAdmin = $derived(data.session?.user?.isAdmin ?? false);
 	let activeTab = $state<'account' | 'app' | 'users'>('account');
-	let activeSection = $state<string>('storage');
+	let activeSection = $state<string>('account');
 
 	// Settings sections grouped into labeled categories. The flat list of
 	// section ids (derived below) is used for scroll-spy / IntersectionObserver.
@@ -98,8 +98,52 @@
 		},
 	];
 
-	// Flat list of section ids (used by the scroll-spy observer).
-	const settingsSections = settingsGroups.flatMap((g) => g.sections);
+	// The Account and Users tabs get the same grouped quick-nav as App Settings.
+	const accountGroups = [
+		{
+			label: 'Profile',
+			sections: [
+				{ id: 'account', label: 'Account' },
+				{ id: 'api-keys', label: 'API Keys' },
+			],
+		},
+		{
+			label: 'Integrations',
+			sections: [{ id: 'youtube', label: 'YouTube' }],
+		},
+	];
+
+	const usersGroups = [
+		{
+			label: 'People',
+			sections: [
+				{ id: 'user-management', label: 'User Management' },
+				{ id: 'library-requests', label: 'Library Requests' },
+			],
+		},
+		{
+			label: 'Maintenance',
+			sections: [{ id: 'danger-zone', label: 'Danger Zone' }],
+		},
+	];
+
+	// Quick-nav groups for whichever tab is showing.
+	const navGroups = $derived(
+		activeTab === 'account' ? accountGroups : activeTab === 'users' ? usersGroups : settingsGroups,
+	);
+
+	// Flat list of section ids for the current tab (used by the scroll-spy observer).
+	const settingsSections = $derived(navGroups.flatMap((g) => g.sections));
+
+	// Switching tabs swaps the quick-nav out, so point the scroll-spy at the new
+	// tab's first section rather than leaving it on a section that is gone.
+	function selectTab(tab: 'account' | 'app' | 'users') {
+		if (activeTab === tab) return;
+		activeTab = tab;
+		const groups =
+			tab === 'account' ? accountGroups : tab === 'users' ? usersGroups : settingsGroups;
+		activeSection = groups[0].sections[0].id;
+	}
 
 	// Scroll-spy suppression: while a nav link is being clicked we smooth-scroll
 	// and pin the active section so the observer doesn't flash through
@@ -291,10 +335,13 @@
 		observer = null;
 	}
 
-	// (Re)attach the scroll-spy whenever the App Settings tab is shown and its
-	// sections have been rendered.
+	// (Re)attach the scroll-spy whenever a tab is shown and its sections have been
+	// rendered. Every tab has a quick-nav, so this re-runs on each tab switch.
 	$effect(() => {
-		if (isAdmin && activeTab === 'app' && settings) {
+		const ready =
+			activeTab === 'account' ||
+			(isAdmin && !loading && (activeTab === 'users' || (activeTab === 'app' && !!settings)));
+		if (ready) {
 			// Wait for the sections to be in the DOM before observing.
 			requestAnimationFrame(() => setupScrollSpy());
 			return () => teardownScrollSpy();
@@ -1403,119 +1450,82 @@
 			<button
 				class="tab"
 				class:active={activeTab === 'account'}
-				onclick={() => (activeTab = 'account')}
+				onclick={() => selectTab('account')}
 			>
 				Account
 			</button>
 			{#if isAdmin}
-				<button class="tab" class:active={activeTab === 'app'} onclick={() => (activeTab = 'app')}>
+				<button class="tab" class:active={activeTab === 'app'} onclick={() => selectTab('app')}>
 					App Settings
 				</button>
-				<button
-					class="tab"
-					class:active={activeTab === 'users'}
-					onclick={() => (activeTab = 'users')}
-				>
+				<button class="tab" class:active={activeTab === 'users'} onclick={() => selectTab('users')}>
 					Admin
 				</button>
 			{/if}
 		</div>
 	</div>
 
+	{#snippet quickNav()}
+		<nav class="settings-nav">
+			<div class="settings-nav-inner">
+				<h3>Quick Navigation</h3>
+				{#each navGroups as group}
+					<div class="nav-group">
+						<span class="nav-group-label">{group.label}</span>
+						<ul>
+							{#each group.sections as section}
+								<li>
+									<button
+										class="nav-link"
+										class:active={activeSection === section.id}
+										onclick={() => scrollToSection(section.id)}
+									>
+										{section.label}
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
+			</div>
+		</nav>
+	{/snippet}
+
 	{#if activeTab === 'account'}
-		<div class="settings-section">
-			<h2>Account</h2>
-			<p class="text-muted">Manage your account password.</p>
-			<button
-				class="btn btn-primary"
-				onclick={() => openPasswordChange(data.session?.user?.id || '')}
-			>
-				Change Password
-			</button>
-		</div>
-
-		<div class="settings-section api-keys-section">
-			<h2>API Keys</h2>
-			<p class="text-muted">
-				Create keys for programmatic access. Use as <code>Authorization: Bearer &lt;key&gt;</code>
-			</p>
-
-			{#if newKeyResult}
-				<div class="info-box warning-box">
-					<strong>Copy your key now — it won't be shown again:</strong>
-					<code class="api-key-display">{newKeyResult}</code>
+		<div class="settings-container">
+			{@render quickNav()}
+			<div class="general-settings">
+				<div class="settings-section" id="account">
+					<h2>Account</h2>
+					<p class="text-muted">Manage your account password.</p>
 					<button
-						class="btn btn-secondary btn-sm btn-icon"
-						onclick={() => {
-							navigator.clipboard.writeText(newKeyResult!);
-							addToast('success', 'Copied');
-						}}
-						aria-label="Copy key"
-						title="Copy key"
+						class="btn btn-primary"
+						onclick={() => openPasswordChange(data.session?.user?.id || '')}
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path
-								d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-							/></svg
-						>
-					</button>
-					<button
-						class="btn btn-secondary btn-sm btn-icon"
-						onclick={() => (newKeyResult = null)}
-						aria-label="Dismiss"
-						title="Dismiss"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
-						>
+						Change Password
 					</button>
 				</div>
-			{/if}
 
-			<div class="create-key-form">
-				<input type="text" bind:value={newKeyName} placeholder="Key name (e.g. CI/CD)" />
-				<button class="btn btn-primary btn-sm" onclick={createApiKey} disabled={!newKeyName.trim()}
-					>Create Key</button
-				>
-			</div>
+				<div class="settings-section api-keys-section" id="api-keys">
+					<h2>API Keys</h2>
+					<p class="text-muted">
+						Create keys for programmatic access. Use as <code
+							>Authorization: Bearer &lt;key&gt;</code
+						>
+					</p>
 
-			{#if apiKeys.length > 0}
-				<div class="api-keys-list">
-					{#each apiKeys as key}
-						<div class="api-key-item">
-							<div class="api-key-info">
-								<span class="api-key-name">{key.name}</span>
-								<code class="api-key-prefix">{key.keyPrefix}...</code>
-								<span class="api-key-meta">
-									Created {new Date(key.createdAt).toLocaleDateString()}
-									{#if key.lastUsedAt}
-										· Last used {new Date(key.lastUsedAt).toLocaleDateString()}
-									{/if}
-								</span>
-							</div>
+					{#if newKeyResult}
+						<div class="info-box warning-box">
+							<strong>Copy your key now — it won't be shown again:</strong>
+							<code class="api-key-display">{newKeyResult}</code>
 							<button
-								class="btn btn-danger btn-sm btn-icon"
-								onclick={() => revokeApiKey(key.id)}
-								aria-label="Revoke key"
-								title="Revoke key"
+								class="btn btn-secondary btn-sm btn-icon"
+								onclick={() => {
+									navigator.clipboard.writeText(newKeyResult!);
+									addToast('success', 'Copied');
+								}}
+								aria-label="Copy key"
+								title="Copy key"
 							>
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -1527,127 +1537,207 @@
 									stroke-width="2"
 									stroke-linecap="round"
 									stroke-linejoin="round"
-									><polyline points="3 6 5 6 21 6" /><path
-										d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+									><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path
+										d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
 									/></svg
 								>
 							</button>
+							<button
+								class="btn btn-secondary btn-sm btn-icon"
+								onclick={() => (newKeyResult = null)}
+								aria-label="Dismiss"
+								title="Dismiss"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
+								>
+							</button>
 						</div>
-					{/each}
-				</div>
-			{:else}
-				<p class="text-muted">No API keys yet.</p>
-			{/if}
-		</div>
+					{/if}
 
-		<div class="settings-section">
-			<h2>YouTube</h2>
-			<p class="text-muted">
-				Link your YouTube account to sync watch history, subscriptions, and playlists.
-			</p>
-
-			{#if youtubeLoading}
-				<p class="text-muted">Loading YouTube status...</p>
-			{:else if youtubeLink?.linked}
-				<div class="youtube-status">
-					<p class="youtube-link-info">
-						Linked as <strong>{youtubeLink.channelName}</strong> · updated {new Date(
-							youtubeLink.cookieUpdatedAt,
-						).toLocaleDateString()}
-					</p>
-				</div>
-
-				{#if youtubeLink.lastError}
-					<div class="info-box error-box">
-						<strong>Session problem:</strong> your YouTube cookies are expired or authentication
-						failed. Re-link your account using the wytui browser extension to keep syncing.
-						<span class="error-detail">({youtubeLink.lastError})</span>
+					<div class="create-key-form">
+						<input type="text" bind:value={newKeyName} placeholder="Key name (e.g. CI/CD)" />
+						<button
+							class="btn btn-primary btn-sm"
+							onclick={createApiKey}
+							disabled={!newKeyName.trim()}>Create Key</button
+						>
 					</div>
-				{/if}
 
-				<div class="youtube-toggles">
-					<label>
-						<input
-							type="checkbox"
-							checked={youtubeLink.toggles?.syncWatchedToYouTube ?? false}
-							onchange={(e) => updateYouTubeToggle('syncWatchedToYouTube', e.currentTarget.checked)}
-						/>
-						Sync watched status to YouTube
-					</label>
-					<label>
-						<input
-							type="checkbox"
-							checked={youtubeLink.toggles?.syncHistoryToWytui ?? false}
-							onchange={(e) => updateYouTubeToggle('syncHistoryToWytui', e.currentTarget.checked)}
-						/>
-						Sync YouTube history to wytui
-					</label>
-					<label>
-						<input
-							type="checkbox"
-							checked={youtubeLink.toggles?.syncWatchLater ?? false}
-							onchange={(e) => updateYouTubeToggle('syncWatchLater', e.currentTarget.checked)}
-						/>
-						Sync playlists
-					</label>
-					<label>
-						<input
-							type="checkbox"
-							checked={youtubeLink.toggles?.useFeedForNewVideos ?? false}
-							onchange={(e) => updateYouTubeToggle('useFeedForNewVideos', e.currentTarget.checked)}
-						/>
-						Use feed for new videos
-					</label>
+					{#if apiKeys.length > 0}
+						<div class="api-keys-list">
+							{#each apiKeys as key}
+								<div class="api-key-item">
+									<div class="api-key-info">
+										<span class="api-key-name">{key.name}</span>
+										<code class="api-key-prefix">{key.keyPrefix}...</code>
+										<span class="api-key-meta">
+											Created {new Date(key.createdAt).toLocaleDateString()}
+											{#if key.lastUsedAt}
+												· Last used {new Date(key.lastUsedAt).toLocaleDateString()}
+											{/if}
+										</span>
+									</div>
+									<button
+										class="btn btn-danger btn-sm btn-icon"
+										onclick={() => revokeApiKey(key.id)}
+										aria-label="Revoke key"
+										title="Revoke key"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><polyline points="3 6 5 6 21 6" /><path
+												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+											/></svg
+										>
+									</button>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<p class="text-muted">No API keys yet.</p>
+					{/if}
 				</div>
 
-				<div class="youtube-actions">
-					<button class="btn btn-primary" onclick={() => (showImportModal = true)}>
-						Import Subscriptions
-					</button>
-					<button
-						class="btn btn-secondary"
-						onclick={() => exportSubscriptions('opml')}
-						disabled={exportingOPML}
-					>
-						{exportingOPML ? 'Exporting…' : 'Export OPML'}
-					</button>
-					<button
-						class="btn btn-secondary"
-						onclick={() => exportSubscriptions('csv')}
-						disabled={exportingCSV}
-					>
-						{exportingCSV ? 'Exporting…' : 'Export CSV'}
-					</button>
-					<button class="btn btn-secondary" onclick={syncWatchLater} disabled={syncingWatchLater}>
-						{syncingWatchLater ? 'Syncing…' : 'Sync playlists'}
-					</button>
-					<button class="btn btn-secondary" onclick={syncHistory} disabled={syncingHistory}>
-						{syncingHistory ? 'Syncing…' : 'Sync History Now'}
-					</button>
-					<button class="btn btn-danger" onclick={unlinkYouTube}> Unlink </button>
-				</div>
-			{:else}
-				<p class="text-muted">
-					Not linked — use the wytui browser extension to link your YouTube account.
-				</p>
-			{/if}
+				<div class="settings-section" id="youtube">
+					<h2>YouTube</h2>
+					<p class="text-muted">
+						Link your YouTube account to sync watch history, subscriptions, and playlists.
+					</p>
 
-			<div class="youtube-links">
-				<h3>Links</h3>
-				<div class="link-buttons">
-					<a
-						class="btn btn-secondary"
-						href={extensionStoreUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Browser extension
-						<ExternalLinkIcon width={14} height={14} />
-					</a>
-					<a class="btn btn-secondary" href={REPO_URL} target="_blank" rel="noopener noreferrer">
-						Source code
-						<ExternalLinkIcon width={14} height={14} />
-					</a>
+					{#if youtubeLoading}
+						<p class="text-muted">Loading YouTube status...</p>
+					{:else if youtubeLink?.linked}
+						<div class="youtube-status">
+							<p class="youtube-link-info">
+								Linked as <strong>{youtubeLink.channelName}</strong> · updated {new Date(
+									youtubeLink.cookieUpdatedAt,
+								).toLocaleDateString()}
+							</p>
+						</div>
+
+						{#if youtubeLink.lastError}
+							<div class="info-box error-box">
+								<strong>Session problem:</strong> your YouTube cookies are expired or authentication
+								failed. Re-link your account using the wytui browser extension to keep syncing.
+								<span class="error-detail">({youtubeLink.lastError})</span>
+							</div>
+						{/if}
+
+						<div class="youtube-toggles">
+							<label>
+								<input
+									type="checkbox"
+									checked={youtubeLink.toggles?.syncWatchedToYouTube ?? false}
+									onchange={(e) =>
+										updateYouTubeToggle('syncWatchedToYouTube', e.currentTarget.checked)}
+								/>
+								Sync watched status to YouTube
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									checked={youtubeLink.toggles?.syncHistoryToWytui ?? false}
+									onchange={(e) =>
+										updateYouTubeToggle('syncHistoryToWytui', e.currentTarget.checked)}
+								/>
+								Sync YouTube history to wytui
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									checked={youtubeLink.toggles?.syncWatchLater ?? false}
+									onchange={(e) => updateYouTubeToggle('syncWatchLater', e.currentTarget.checked)}
+								/>
+								Sync playlists
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									checked={youtubeLink.toggles?.useFeedForNewVideos ?? false}
+									onchange={(e) =>
+										updateYouTubeToggle('useFeedForNewVideos', e.currentTarget.checked)}
+								/>
+								Use feed for new videos
+							</label>
+						</div>
+
+						<div class="youtube-actions">
+							<button class="btn btn-primary" onclick={() => (showImportModal = true)}>
+								Import Subscriptions
+							</button>
+							<button
+								class="btn btn-secondary"
+								onclick={() => exportSubscriptions('opml')}
+								disabled={exportingOPML}
+							>
+								{exportingOPML ? 'Exporting…' : 'Export OPML'}
+							</button>
+							<button
+								class="btn btn-secondary"
+								onclick={() => exportSubscriptions('csv')}
+								disabled={exportingCSV}
+							>
+								{exportingCSV ? 'Exporting…' : 'Export CSV'}
+							</button>
+							<button
+								class="btn btn-secondary"
+								onclick={syncWatchLater}
+								disabled={syncingWatchLater}
+							>
+								{syncingWatchLater ? 'Syncing…' : 'Sync playlists'}
+							</button>
+							<button class="btn btn-secondary" onclick={syncHistory} disabled={syncingHistory}>
+								{syncingHistory ? 'Syncing…' : 'Sync History Now'}
+							</button>
+							<button class="btn btn-danger" onclick={unlinkYouTube}> Unlink </button>
+						</div>
+					{:else}
+						<p class="text-muted">
+							Not linked — use the wytui browser extension to link your YouTube account.
+						</p>
+					{/if}
+
+					<div class="youtube-links">
+						<h3>Links</h3>
+						<div class="link-buttons">
+							<a
+								class="btn btn-secondary"
+								href={extensionStoreUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								Browser extension
+								<ExternalLinkIcon width={14} height={14} />
+							</a>
+							<a
+								class="btn btn-secondary"
+								href={REPO_URL}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								Source code
+								<ExternalLinkIcon width={14} height={14} />
+							</a>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -1683,29 +1773,7 @@
 			</div>
 		{:else if activeTab === 'app' && settings}
 			<div class="settings-container">
-				<nav class="settings-nav">
-					<div class="settings-nav-inner">
-						<h3>Quick Navigation</h3>
-						{#each settingsGroups as group}
-							<div class="nav-group">
-								<span class="nav-group-label">{group.label}</span>
-								<ul>
-									{#each group.sections as section}
-										<li>
-											<button
-												class="nav-link"
-												class:active={activeSection === section.id}
-												onclick={() => scrollToSection(section.id)}
-											>
-												{section.label}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/each}
-					</div>
-				</nav>
+				{@render quickNav()}
 
 				<div class="general-settings">
 					<h3 class="category-heading">Storage &amp; Library</h3>
@@ -2812,295 +2880,313 @@
 		{/if}
 
 		{#if activeTab === 'users'}
-			<div class="settings-section">
-				<div class="section-header">
-					<h2>User Management</h2>
-					<button class="btn btn-secondary" onclick={() => (showCreateUser = !showCreateUser)}>
-						{showCreateUser ? 'Cancel' : '+ Add User'}
-					</button>
-				</div>
+			<div class="settings-container">
+				{@render quickNav()}
+				<div class="general-settings">
+					<div class="settings-section" id="user-management">
+						<div class="section-header">
+							<h2>User Management</h2>
+							<button class="btn btn-secondary" onclick={() => (showCreateUser = !showCreateUser)}>
+								{showCreateUser ? 'Cancel' : '+ Add User'}
+							</button>
+						</div>
 
-				{#if showCreateUser}
-					<div class="create-user-form">
-						<h3>Create New User</h3>
+						{#if showCreateUser}
+							<div class="create-user-form">
+								<h3>Create New User</h3>
 
-						{#if createUserError}
-							<div class="error-message">{createUserError}</div>
+								{#if createUserError}
+									<div class="error-message">{createUserError}</div>
+								{/if}
+
+								<div class="form-group">
+									<label for="new-name">Name</label>
+									<input
+										type="text"
+										id="new-name"
+										bind:value={newUser.name}
+										placeholder="John Doe"
+									/>
+								</div>
+
+								<div class="form-group">
+									<label for="new-email">Email</label>
+									<input
+										type="email"
+										id="new-email"
+										bind:value={newUser.email}
+										placeholder="user@example.com"
+									/>
+								</div>
+
+								<div class="form-group">
+									<label for="new-password">Password</label>
+									<PasswordInput
+										id="new-password"
+										bind:value={newUser.password}
+										placeholder="Enter a password"
+									/>
+									{#if newUser.password.length > 0}
+										<div class="password-suggestions">
+											<span class="suggestion" class:met={newUser.password.length >= 8}
+												>8+ characters</span
+											>
+											<span class="suggestion" class:met={/[a-z]/.test(newUser.password)}
+												>lowercase</span
+											>
+											<span class="suggestion" class:met={/[A-Z]/.test(newUser.password)}
+												>uppercase</span
+											>
+											<span class="suggestion" class:met={/[0-9]/.test(newUser.password)}
+												>number</span
+											>
+											<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(newUser.password)}
+												>special character</span
+											>
+										</div>
+									{/if}
+								</div>
+
+								<div class="form-group">
+									<label>
+										<input type="checkbox" bind:checked={newUser.isAdmin} />
+										Admin privileges
+									</label>
+								</div>
+
+								<button class="btn btn-primary" onclick={createUser}>Create User</button>
+							</div>
 						{/if}
 
-						<div class="form-group">
-							<label for="new-name">Name</label>
-							<input type="text" id="new-name" bind:value={newUser.name} placeholder="John Doe" />
-						</div>
-
-						<div class="form-group">
-							<label for="new-email">Email</label>
+						<div class="users-search">
 							<input
-								type="email"
-								id="new-email"
-								bind:value={newUser.email}
-								placeholder="user@example.com"
+								type="text"
+								placeholder="Search users by email or name"
+								value={userSearch}
+								oninput={(e) => onUserSearchInput(e.currentTarget.value)}
 							/>
 						</div>
 
-						<div class="form-group">
-							<label for="new-password">Password</label>
-							<PasswordInput
-								id="new-password"
-								bind:value={newUser.password}
-								placeholder="Enter a password"
-							/>
-							{#if newUser.password.length > 0}
-								<div class="password-suggestions">
-									<span class="suggestion" class:met={newUser.password.length >= 8}
-										>8+ characters</span
-									>
-									<span class="suggestion" class:met={/[a-z]/.test(newUser.password)}
-										>lowercase</span
-									>
-									<span class="suggestion" class:met={/[A-Z]/.test(newUser.password)}
-										>uppercase</span
-									>
-									<span class="suggestion" class:met={/[0-9]/.test(newUser.password)}>number</span>
-									<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(newUser.password)}
-										>special character</span
-									>
+						<div class="users-list">
+							{#each users as user}
+								<div class="user-card">
+									<div class="user-info">
+										<div class="user-name">
+											{user.name}
+											{#if user.isAdmin}
+												<span class="badge badge-admin">Admin</span>
+											{/if}
+											{#if user.id === data.session?.user?.id}
+												<span class="badge badge-you">You</span>
+											{/if}
+										</div>
+										<div class="user-email">{user.email}</div>
+										<div class="user-stats">
+											{user._count.downloads} downloads • {user._count.subscriptions} subscriptions
+										</div>
+										<div class="user-overrides">
+											<div class="user-override">
+												<label for={`access-${user.id}`}>Library Access</label>
+												<select
+													id={`access-${user.id}`}
+													value={userAccessValue(user)}
+													onchange={(e) => updateUserLibraryAccess(user, e.currentTarget.value)}
+												>
+													<option value="default">Default</option>
+													<option value="allowed">Allowed</option>
+													<option value="denied">Denied</option>
+												</select>
+											</div>
+											<div class="user-override">
+												<label for={`quota-${user.id}`}>Cache Override (GB)</label>
+												<div class="user-quota-input">
+													<input
+														type="number"
+														id={`quota-${user.id}`}
+														min="0"
+														step="1"
+														placeholder="Default"
+														value={userQuotaDisplay(user)}
+														oninput={(e) => (userQuotaDrafts[user.id] = e.currentTarget.value)}
+													/>
+													<button
+														class="btn btn-secondary btn-sm"
+														onclick={() => saveUserQuota(user)}>Save</button
+													>
+												</div>
+											</div>
+										</div>
+									</div>
+									<div class="user-actions">
+										{#if user.id === data.session?.user?.id}
+											<button
+												class="btn btn-secondary btn-sm btn-with-icon"
+												onclick={() => openPasswordChange(user.id)}
+											>
+												<LockIcon width={14} height={14} />
+												Change Password
+											</button>
+										{:else if data.session?.user?.isAdmin && !user.isAdmin}
+											<button
+												class="btn btn-secondary btn-sm btn-with-icon"
+												onclick={() => openPasswordChange(user.id)}
+											>
+												<LockIcon width={14} height={14} />
+												Change Password
+											</button>
+										{/if}
+
+										{#if data.session?.user?.isAdmin}
+											<button
+												class="btn btn-secondary btn-sm btn-with-icon"
+												onclick={() => toggleAdmin(user)}
+											>
+												<ShieldIcon width={14} height={14} />
+												{user.isAdmin ? 'Demote' : 'Promote'}
+											</button>
+										{/if}
+
+										{#if data.session?.user?.isAdmin && user._count.downloads > 0}
+											<button
+												class="btn btn-danger btn-sm btn-with-icon"
+												onclick={() => clearUserDownloads(user)}
+											>
+												<TrashIcon width={14} height={14} />
+												Clear Downloads
+											</button>
+										{/if}
+
+										{#if data.session?.user?.isAdmin}
+											<button
+												class="btn btn-danger btn-sm btn-with-icon"
+												onclick={() => deleteUser(user)}
+											>
+												<TrashIcon width={14} height={14} />
+												Delete
+											</button>
+										{/if}
+									</div>
 								</div>
+							{/each}
+
+							{#if users.length === 0}
+								<EmptyState
+									title={userSearch.trim() ? 'No users match your search' : 'No users found'}
+									variant="subtle"
+									size="sm"
+								/>
 							{/if}
 						</div>
 
-						<div class="form-group">
-							<label>
-								<input type="checkbox" bind:checked={newUser.isAdmin} />
-								Admin privileges
-							</label>
-						</div>
-
-						<button class="btn btn-primary" onclick={createUser}>Create User</button>
+						{#if usersTotal > 0}
+							<div class="users-pagination">
+								<span class="users-pagination-info">
+									{usersOffset + 1}–{Math.min(usersOffset + USERS_PAGE_SIZE, usersTotal)} of {usersTotal}
+								</span>
+								<div class="users-pagination-controls">
+									<button
+										class="btn btn-secondary btn-sm"
+										onclick={usersPrevPage}
+										disabled={usersOffset === 0 || usersLoading}
+									>
+										Prev
+									</button>
+									<button
+										class="btn btn-secondary btn-sm"
+										onclick={usersNextPage}
+										disabled={usersOffset + USERS_PAGE_SIZE >= usersTotal || usersLoading}
+									>
+										Next
+									</button>
+								</div>
+							</div>
+						{/if}
 					</div>
-				{/if}
 
-				<div class="users-search">
-					<input
-						type="text"
-						placeholder="Search users by email or name"
-						value={userSearch}
-						oninput={(e) => onUserSearchInput(e.currentTarget.value)}
-					/>
-				</div>
+					<div class="settings-section" id="library-requests">
+						<div class="section-header">
+							<h2>Library Requests</h2>
+							<button
+								class="btn btn-secondary btn-sm btn-with-icon"
+								onclick={loadLibraryRequests}
+								disabled={loadingRequests}
+							>
+								<RefreshIcon width={14} height={14} />
+								Refresh
+							</button>
+						</div>
+						<p class="text-muted">
+							Pending requests from users to add downloads to the permanent library.
+						</p>
 
-				<div class="users-list">
-					{#each users as user}
-						<div class="user-card">
-							<div class="user-info">
-								<div class="user-name">
-									{user.name}
-									{#if user.isAdmin}
-										<span class="badge badge-admin">Admin</span>
-									{/if}
-									{#if user.id === data.session?.user?.id}
-										<span class="badge badge-you">You</span>
-									{/if}
-								</div>
-								<div class="user-email">{user.email}</div>
-								<div class="user-stats">
-									{user._count.downloads} downloads • {user._count.subscriptions} subscriptions
-								</div>
-								<div class="user-overrides">
-									<div class="user-override">
-										<label for={`access-${user.id}`}>Library Access</label>
-										<select
-											id={`access-${user.id}`}
-											value={userAccessValue(user)}
-											onchange={(e) => updateUserLibraryAccess(user, e.currentTarget.value)}
-										>
-											<option value="default">Default</option>
-											<option value="allowed">Allowed</option>
-											<option value="denied">Denied</option>
-										</select>
-									</div>
-									<div class="user-override">
-										<label for={`quota-${user.id}`}>Cache Override (GB)</label>
-										<div class="user-quota-input">
-											<input
-												type="number"
-												id={`quota-${user.id}`}
-												min="0"
-												step="1"
-												placeholder="Default"
-												value={userQuotaDisplay(user)}
-												oninput={(e) => (userQuotaDrafts[user.id] = e.currentTarget.value)}
+						{#if libraryRequests.length > 0}
+							<div class="requests-list">
+								{#each libraryRequests as req}
+									<div class="request-card">
+										{#if req.download?.thumbnail}
+											<img
+												class="request-thumb"
+												src={req.download.thumbnail}
+												alt=""
+												loading="lazy"
 											/>
-											<button class="btn btn-secondary btn-sm" onclick={() => saveUserQuota(user)}
-												>Save</button
+										{:else}
+											<div class="request-thumb request-thumb-placeholder"></div>
+										{/if}
+										<div class="request-info">
+											<span class="request-title">{req.download?.title || 'Untitled'}</span>
+											{#if req.download?.uploader}
+												<span class="request-uploader">{req.download.uploader}</span>
+											{/if}
+											<span class="request-meta">
+												Requested by {req.user?.name || req.user?.email || 'Unknown'}
+												· {new Date(req.createdAt).toLocaleDateString()}
+											</span>
+										</div>
+										<div class="request-actions">
+											<button
+												class="btn btn-primary btn-sm"
+												onclick={() => handleLibraryRequest(req.id, 'approve')}
+												disabled={processingRequestId === req.id}
 											>
+												Approve
+											</button>
+											<button
+												class="btn btn-danger btn-sm"
+												onclick={() => handleLibraryRequest(req.id, 'deny')}
+												disabled={processingRequestId === req.id}
+											>
+												Deny
+											</button>
 										</div>
 									</div>
-								</div>
+								{/each}
 							</div>
-							<div class="user-actions">
-								{#if user.id === data.session?.user?.id}
-									<button
-										class="btn btn-secondary btn-sm btn-with-icon"
-										onclick={() => openPasswordChange(user.id)}
-									>
-										<LockIcon width={14} height={14} />
-										Change Password
-									</button>
-								{:else if data.session?.user?.isAdmin && !user.isAdmin}
-									<button
-										class="btn btn-secondary btn-sm btn-with-icon"
-										onclick={() => openPasswordChange(user.id)}
-									>
-										<LockIcon width={14} height={14} />
-										Change Password
-									</button>
-								{/if}
+						{:else}
+							<EmptyState title="No pending requests" variant="subtle" size="sm" />
+						{/if}
+					</div>
 
-								{#if data.session?.user?.isAdmin}
-									<button
-										class="btn btn-secondary btn-sm btn-with-icon"
-										onclick={() => toggleAdmin(user)}
-									>
-										<ShieldIcon width={14} height={14} />
-										{user.isAdmin ? 'Demote' : 'Promote'}
-									</button>
-								{/if}
-
-								{#if data.session?.user?.isAdmin && user._count.downloads > 0}
-									<button
-										class="btn btn-danger btn-sm btn-with-icon"
-										onclick={() => clearUserDownloads(user)}
-									>
-										<TrashIcon width={14} height={14} />
-										Clear Downloads
-									</button>
-								{/if}
-
-								{#if data.session?.user?.isAdmin}
-									<button
-										class="btn btn-danger btn-sm btn-with-icon"
-										onclick={() => deleteUser(user)}
-									>
-										<TrashIcon width={14} height={14} />
-										Delete
-									</button>
-								{/if}
+					<div class="settings-section danger-zone" id="danger-zone">
+						<h2>Danger Zone</h2>
+						<div class="danger-row">
+							<div class="danger-info">
+								<div class="danger-title">Clear all downloads</div>
+								<p class="help-text">
+									Permanently delete every user’s downloads and remove the files from disk. This
+									cannot be undone.
+								</p>
 							</div>
-						</div>
-					{/each}
-
-					{#if users.length === 0}
-						<EmptyState
-							title={userSearch.trim() ? 'No users match your search' : 'No users found'}
-							variant="subtle"
-							size="sm"
-						/>
-					{/if}
-				</div>
-
-				{#if usersTotal > 0}
-					<div class="users-pagination">
-						<span class="users-pagination-info">
-							{usersOffset + 1}–{Math.min(usersOffset + USERS_PAGE_SIZE, usersTotal)} of {usersTotal}
-						</span>
-						<div class="users-pagination-controls">
 							<button
-								class="btn btn-secondary btn-sm"
-								onclick={usersPrevPage}
-								disabled={usersOffset === 0 || usersLoading}
+								class="btn btn-danger btn-with-icon"
+								onclick={clearAllDownloads}
+								disabled={clearingDownloads}
 							>
-								Prev
-							</button>
-							<button
-								class="btn btn-secondary btn-sm"
-								onclick={usersNextPage}
-								disabled={usersOffset + USERS_PAGE_SIZE >= usersTotal || usersLoading}
-							>
-								Next
+								<TrashIcon width={16} height={16} />
+								{clearingDownloads ? 'Clearing…' : 'Clear All Downloads'}
 							</button>
 						</div>
 					</div>
-				{/if}
-			</div>
-
-			<div class="settings-section">
-				<div class="section-header">
-					<h2>Library Requests</h2>
-					<button
-						class="btn btn-secondary btn-sm btn-with-icon"
-						onclick={loadLibraryRequests}
-						disabled={loadingRequests}
-					>
-						<RefreshIcon width={14} height={14} />
-						Refresh
-					</button>
-				</div>
-				<p class="text-muted">
-					Pending requests from users to add downloads to the permanent library.
-				</p>
-
-				{#if libraryRequests.length > 0}
-					<div class="requests-list">
-						{#each libraryRequests as req}
-							<div class="request-card">
-								{#if req.download?.thumbnail}
-									<img class="request-thumb" src={req.download.thumbnail} alt="" loading="lazy" />
-								{:else}
-									<div class="request-thumb request-thumb-placeholder"></div>
-								{/if}
-								<div class="request-info">
-									<span class="request-title">{req.download?.title || 'Untitled'}</span>
-									{#if req.download?.uploader}
-										<span class="request-uploader">{req.download.uploader}</span>
-									{/if}
-									<span class="request-meta">
-										Requested by {req.user?.name || req.user?.email || 'Unknown'}
-										· {new Date(req.createdAt).toLocaleDateString()}
-									</span>
-								</div>
-								<div class="request-actions">
-									<button
-										class="btn btn-primary btn-sm"
-										onclick={() => handleLibraryRequest(req.id, 'approve')}
-										disabled={processingRequestId === req.id}
-									>
-										Approve
-									</button>
-									<button
-										class="btn btn-danger btn-sm"
-										onclick={() => handleLibraryRequest(req.id, 'deny')}
-										disabled={processingRequestId === req.id}
-									>
-										Deny
-									</button>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<EmptyState title="No pending requests" variant="subtle" size="sm" />
-				{/if}
-			</div>
-
-			<div class="settings-section danger-zone">
-				<h2>Danger Zone</h2>
-				<div class="danger-row">
-					<div class="danger-info">
-						<div class="danger-title">Clear all downloads</div>
-						<p class="help-text">
-							Permanently delete every user’s downloads and remove the files from disk. This cannot
-							be undone.
-						</p>
-					</div>
-					<button
-						class="btn btn-danger btn-with-icon"
-						onclick={clearAllDownloads}
-						disabled={clearingDownloads}
-					>
-						<TrashIcon width={16} height={16} />
-						{clearingDownloads ? 'Clearing…' : 'Clear All Downloads'}
-					</button>
 				</div>
 			</div>
 		{/if}
@@ -3381,10 +3467,13 @@
 		letter-spacing: 0.5px;
 	}
 
+	/* Indent the section links under their group label, with a guide rail, so the
+	   two levels of the quick-nav read as a hierarchy rather than a flat list. */
 	.settings-nav ul {
 		list-style: none;
-		padding: 0;
-		margin: 0;
+		padding: 0 0 0 var(--spacing-sm);
+		margin: 0 0 0 var(--spacing-md);
+		border-left: 1px solid var(--color-overlay-white-10);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;

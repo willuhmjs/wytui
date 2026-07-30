@@ -1,7 +1,9 @@
 <script lang="ts">
 	import {
 		formatBytes,
+		formatDateTime,
 		formatDuration,
+		formatShortDate,
 		getDownloadStatusColor,
 		getDownloadStatusLabel,
 	} from '$lib/utils/format';
@@ -27,12 +29,11 @@
 	let formattedSize = $derived(download.filesize ? formatBytes(download.filesize) : null);
 	let formattedDuration = $derived(download.duration ? formatDuration(download.duration) : null);
 
-	let formattedDate = $derived.by(() => {
-		const date = download.completedAt || download.createdAt;
-		if (!date) return null;
-		const d = new Date(date);
-		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-	});
+	// When the file landed in wytui vs. when the video was originally published.
+	let downloadedAt = $derived(download.completedAt || download.createdAt);
+	let downloadedDate = $derived(formatShortDate(downloadedAt));
+	let downloadedExact = $derived(formatDateTime(downloadedAt));
+	let releasedDate = $derived(formatShortDate(download.uploadDate));
 </script>
 
 <div class="list-row" role="button" tabindex="0" {onclick} onkeydown={clickOnEnterOrSpace(onclick)}>
@@ -69,9 +70,20 @@
 		<span class="meta size">{formattedSize}</span>
 	{/if}
 
-	{#if formattedDate}
-		<span class="meta date">{formattedDate}</span>
-	{/if}
+	<span class="meta dates">
+		{#if releasedDate}
+			<span class="date-line" title="Released {releasedDate}">
+				<span class="date-tag">Released</span>
+				{releasedDate}
+			</span>
+		{/if}
+		{#if downloadedDate}
+			<span class="date-line" title="Downloaded {downloadedExact}">
+				<span class="date-tag">Downloaded</span>
+				{downloadedDate}
+			</span>
+		{/if}
+	</span>
 </div>
 
 <style>
@@ -163,11 +175,28 @@
 		text-align: right;
 	}
 
-	.date {
-		min-width: 80px;
-		text-align: right;
+	.dates {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 1px;
+		min-width: 130px;
 		font-size: var(--font-size-2xs);
 		color: var(--color-text-tertiary);
+	}
+
+	.date-line {
+		display: flex;
+		align-items: baseline;
+		gap: var(--spacing-xs);
+		white-space: nowrap;
+	}
+
+	.date-tag {
+		font-size: var(--font-size-2xs);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.65;
 	}
 
 	.status-badge {
@@ -185,7 +214,7 @@
 	@media (max-width: 768px) {
 		.duration,
 		.size,
-		.date {
+		.dates {
 			display: none;
 		}
 

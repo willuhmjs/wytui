@@ -30,6 +30,23 @@
 		}
 	}
 
+	// Storage is shown as one bar: cache and library are coloured slices of the
+	// total (totalBytes is exactly cacheBytes + libraryBytes, server-side).
+	const storage = $derived.by(() => {
+		const cache = Number(analytics?.storage?.cacheBytes ?? 0);
+		const library = Number(analytics?.storage?.libraryBytes ?? 0);
+		const total = Number(analytics?.storage?.totalBytes ?? 0);
+		const quota = Number(analytics?.storage?.cacheQuotaBytes ?? 0);
+		return {
+			cache,
+			library,
+			total,
+			quota,
+			cachePct: total > 0 ? (cache / total) * 100 : 0,
+			libraryPct: total > 0 ? (library / total) * 100 : 0,
+		};
+	});
+
 	function formatBytes(bytes: number): string {
 		if (bytes === 0) return '0 B';
 		const k = 1024;
@@ -107,45 +124,44 @@
 
 		<div class="settings-section">
 			<h2>Storage Usage</h2>
-			<div class="storage-bars">
-				<div class="storage-row">
-					<span class="storage-label">Cache</span>
-					<div class="storage-bar">
+			<div class="storage-usage">
+				<div class="storage-total">
+					<span class="storage-total-label">Total used</span>
+					<span class="storage-total-value">{formatBytes(storage.total)}</span>
+				</div>
+				<div
+					class="storage-bar"
+					role="img"
+					aria-label="Cache {formatBytes(storage.cache)}, library {formatBytes(
+						storage.library,
+					)}, total {formatBytes(storage.total)}"
+				>
+					{#if storage.total > 0}
 						<div
 							class="storage-fill cache"
-							style="width: {Math.min(
-								100,
-								(Number(analytics.storage.cacheBytes) / Number(analytics.storage.cacheQuotaBytes)) *
-									100,
-							)}%"
+							style="width: {storage.cachePct}%"
+							title="Cache — {formatBytes(storage.cache)}"
 						></div>
-					</div>
-					<span class="storage-value"
-						>{formatBytes(Number(analytics.storage.cacheBytes))} / {formatBytes(
-							Number(analytics.storage.cacheQuotaBytes),
-						)}</span
-					>
-				</div>
-				<div class="storage-row">
-					<span class="storage-label">Library</span>
-					<div class="storage-bar">
 						<div
 							class="storage-fill library"
-							style="width: {Math.min(
-								100,
-								(Number(analytics.storage.libraryBytes) / Number(analytics.storage.totalBytes)) *
-									100,
-							)}%"
+							style="width: {storage.libraryPct}%"
+							title="Library — {formatBytes(storage.library)}"
 						></div>
-					</div>
-					<span class="storage-value">{formatBytes(Number(analytics.storage.libraryBytes))}</span>
+					{/if}
 				</div>
-				<div class="storage-row">
-					<span class="storage-label">Total</span>
-					<div class="storage-bar">
-						<div class="storage-fill total" style="width: 100%"></div>
+				<div class="storage-legend">
+					<div class="legend-item">
+						<span class="legend-swatch cache"></span>
+						<span class="legend-label">Cache</span>
+						<span class="legend-value">
+							{formatBytes(storage.cache)} / {formatBytes(storage.quota)}
+						</span>
 					</div>
-					<span class="storage-value">{formatBytes(Number(analytics.storage.totalBytes))}</span>
+					<div class="legend-item">
+						<span class="legend-swatch library"></span>
+						<span class="legend-label">Library</span>
+						<span class="legend-value">{formatBytes(storage.library)}</span>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -291,26 +307,34 @@
 		color: var(--color-status-error);
 	}
 
-	.storage-bars {
+	.storage-usage {
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-md);
 	}
 
-	.storage-row {
-		display: grid;
-		grid-template-columns: 80px 1fr 120px;
+	.storage-total {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
 		gap: var(--spacing-md);
-		align-items: center;
 	}
 
-	.storage-label {
+	.storage-total-label {
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
 		font-weight: 500;
 	}
 
+	.storage-total-value {
+		font-size: 1.125rem;
+		color: var(--color-text-primary);
+		font-weight: 600;
+	}
+
+	/* One bar for the whole total; each slice is a colour-coded share of it. */
 	.storage-bar {
+		display: flex;
 		height: 24px;
 		background: var(--color-bg-tertiary);
 		border-radius: var(--radius-sm);
@@ -331,15 +355,41 @@
 		background: linear-gradient(90deg, #8b5cf6, #a78bfa);
 	}
 
-	.storage-fill.total {
-		background: linear-gradient(90deg, #10b981, #34d399);
+	.storage-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--spacing-md) var(--spacing-xl);
 	}
 
-	.storage-value {
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
 		font-size: 0.875rem;
+	}
+
+	.legend-swatch {
+		width: 10px;
+		height: 10px;
+		border-radius: 2px;
+		flex-shrink: 0;
+	}
+
+	.legend-swatch.cache {
+		background: #60a5fa;
+	}
+
+	.legend-swatch.library {
+		background: #a78bfa;
+	}
+
+	.legend-label {
+		color: var(--color-text-secondary);
+	}
+
+	.legend-value {
 		color: var(--color-text-primary);
 		font-weight: 500;
-		text-align: right;
 	}
 
 	.analytics-columns {
@@ -440,8 +490,8 @@
 			grid-template-columns: 1fr;
 		}
 
-		.storage-row {
-			grid-template-columns: 60px 1fr 90px;
+		.storage-legend {
+			flex-direction: column;
 			gap: var(--spacing-sm);
 		}
 
