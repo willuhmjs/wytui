@@ -2,8 +2,10 @@
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
 	import { trapFocus, uniqueId } from '$lib/utils/a11y';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
+	import { onDestroy } from 'svelte';
 
 	interface Channel {
 		id: string;
@@ -31,6 +33,8 @@
 	let loading = $state(false);
 	let refreshing = $state(false);
 	let importing = $state(false);
+	let checkingAll = $state(false);
+	let checkAllProgress = $state<{ done: number; total: number } | null>(null);
 	let selected = $state(new Set<string>());
 	let selectedProfile = $state('');
 	let enabled = $state(true);
@@ -41,6 +45,39 @@
 	// Guard for the staggered select/deselect wave — bumping it cancels the
 	// pending timeouts of any earlier wave.
 	let waveRun = 0;
+
+	// Track how many subscription:checked events arrive after a force check.
+	let checkAllExpected = 0;
+	let checkAllReceived = 0;
+
+	const unsubChecked = onSSEEvent('subscription:checked', () => {
+		if (!checkingAll) return;
+		checkAllReceived++;
+		checkAllProgress = { done: checkAllReceived, total: checkAllExpected };
+		if (checkAllReceived >= checkAllExpected) {
+			checkingAll = false;
+			checkAllProgress = null;
+			addToast('success', 'Finished checking all subscriptions for new videos');
+		}
+	});
+
+	const unsubCheckError = onSSEEvent('subscription:check:error', (data) => {
+		if (!checkingAll) return;
+		checkAllReceived++;
+		checkAllProgress = { done: checkAllReceived, total: checkAllExpected };
+		if (data.rateLimited) {
+			addToast('info', 'Rate limited — some checks were delayed, will retry at next interval');
+		}
+		if (checkAllReceived >= checkAllExpected) {
+			checkingAll = false;
+			checkAllProgress = null;
+		}
+	});
+
+	onDestroy(() => {
+		unsubChecked();
+		unsubCheckError();
+	});
 
 	const filtered = $derived(
 		filter.trim()
@@ -211,6 +248,33 @@
 			addToast('error', 'Failed to import subscriptions');
 		} finally {
 			importing = false;
+		}
+	}
+
+	async function forceCheckAll() {
+		if (checkingAll) return;
+		checkingAll = true;
+		checkAllReceived = 0;
+		checkAllProgress = null;
+		try {
+			const res = await csrfFetch('/api/subscriptions/check', { method: 'POST' });
+			if (!res.ok) {
+				checkingAll = false;
+				addToast('error', 'Failed to start subscription check');
+				return;
+			}
+			const data = await res.json();
+			checkAllExpected = data.subscriptions ?? 0;
+			if (checkAllExpected === 0) {
+				checkingAll = false;
+				addToast('info', 'No active subscriptions to check');
+				return;
+			}
+			checkAllProgress = { done: 0, total: checkAllExpected };
+			addToast('info', `Checking ${checkAllExpected} subscription(s) for new videos…`);
+		} catch {
+			checkingAll = false;
+			addToast('error', 'Failed to start subscription check');
 		}
 	}
 
@@ -406,6 +470,20 @@
 			</div>
 			<div class="modal-footer">
 				<button class="btn btn-secondary" onclick={close}>Cancel</button>
+				<button
+					class="btn btn-secondary force-check-btn"
+					onclick={forceCheckAll}
+					disabled={checkingAll}
+					title="Check all active subscriptions for new videos right now"
+				>
+					{#if checkingAll && checkAllProgress}
+						Checking {checkAllProgress.done}/{checkAllProgress.total}…
+					{:else if checkingAll}
+						Starting check…
+					{:else}
+						Force Check All
+					{/if}
+				</button>
 				<button
 					class="btn btn-primary"
 					onclick={importSubscriptions}
@@ -781,6 +859,11 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: var(--spacing-md);
+		flex-wrap: wrap;
+	}
+
+	.force-check-btn {
+		margin-right: auto;
 	}
 
 	@media (max-width: 768px) {

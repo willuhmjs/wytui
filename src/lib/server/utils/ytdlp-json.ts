@@ -11,11 +11,40 @@ export interface RunYtdlpJsonOptions {
 	extraArgs?: string[];
 }
 
+/** Thrown when YouTube returns HTTP 429 or similar rate-limit signals. */
+export class RateLimitError extends Error {
+	readonly isRateLimit = true;
+	constructor(msg = 'YouTube rate limit reached') {
+		super(msg);
+		this.name = 'RateLimitError';
+	}
+}
+
+/**
+ * Returns true when yt-dlp stderr indicates a YouTube rate limit (HTTP 429).
+ * YouTube surfaces these as "HTTP Error 429", "Too Many Requests", or
+ * "Sign in to confirm you're not a bot" in certain cookie-less contexts.
+ */
+export function isRateLimitedError(stderr: string): boolean {
+	const s = stderr.toLowerCase();
+	return (
+		s.includes('http error 429') ||
+		s.includes('too many requests') ||
+		s.includes('rate limit') ||
+		s.includes('ratelimit') ||
+		/\berror 429\b/.test(s) ||
+		// YouTube sometimes blocks anonymous yt-dlp with this message
+		s.includes('sign in to confirm')
+	);
+}
+
 /**
  * Run yt-dlp in flat-JSON mode and resolve its stdout.
  *
  * The `settled` guard matters: without it a process that both times out and
  * later closes would settle the promise twice and leave a dangling timer.
+ *
+ * Throws {@link RateLimitError} when YouTube responds with HTTP 429.
  */
 export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Promise<string> {
 	const { cookiePath = null, timeoutMs = 120000, extraArgs = [] } = opts;
@@ -55,7 +84,13 @@ export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Pr
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			code === 0 ? resolve(out) : reject(new Error(err || `yt-dlp exit ${code}`));
+			if (code === 0) {
+				resolve(out);
+			} else if (isRateLimitedError(err)) {
+				reject(new RateLimitError(err.trim() || 'YouTube rate limit (HTTP 429)'));
+			} else {
+				reject(new Error(err || `yt-dlp exit ${code}`));
+			}
 		});
 	});
 }

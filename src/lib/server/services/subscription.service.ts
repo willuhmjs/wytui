@@ -7,6 +7,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
 import { access } from 'fs/promises';
+import { RateLimitError, isRateLimitedError } from '../utils/ytdlp-json';
 
 class SubscriptionService {
 	private static readonly CHECK_DEPTH = 15;
@@ -39,8 +40,12 @@ class SubscriptionService {
 		// Remove existing task if any
 		this.unscheduleSubscription(subscription.id);
 
-		// Convert seconds to cron expression (check every X seconds)
-		const cronExpr = this.secondsToCron(subscription.checkInterval);
+		// Hash the subscription ID to a stable per-subscription minute offset so
+		// that subscriptions with the same check interval don't all fire at minute 0.
+		// This spreads load across the interval window and reduces the chance of
+		// hitting YouTube's rate limits when many subscriptions check simultaneously.
+		const offset = this.idToMinuteOffset(subscription.id);
+		const cronExpr = this.secondsToCron(subscription.checkInterval, offset);
 
 		const task = cron.schedule(cronExpr, async () => {
 			await this.checkSubscription(subscription.id);
@@ -48,6 +53,18 @@ class SubscriptionService {
 
 		this.scheduledTasks.set(subscription.id, task);
 		console.log(`[Subscriptions] Scheduled ${subscription.name} (${cronExpr})`);
+	}
+
+	/**
+	 * Map a subscription ID to a stable minute offset (0–59) so checks are spread
+	 * evenly across the check interval rather than all firing at the same time.
+	 */
+	private idToMinuteOffset(id: string): number {
+		let hash = 0;
+		for (let i = 0; i < id.length; i++) {
+			hash = (Math.imul(hash, 31) + id.charCodeAt(i)) | 0;
+		}
+		return Math.abs(hash) % 60;
 	}
 
 	/**
@@ -150,8 +167,20 @@ class SubscriptionService {
 				name: subscription.name,
 				newVideos: newVideos.length,
 			});
-		} catch (error) {
-			console.error(`[Subscriptions] Check failed for ${subscriptionId}:`, error);
+		} catch (error: any) {
+			const rateLimited = error?.isRateLimit === true;
+			console.error(
+				`[Subscriptions] Check failed for ${subscriptionId}${rateLimited ? ' (rate limited)' : ''}:`,
+				error,
+			);
+			// Notify connected clients so the UI can surface the failure.
+			sseEmitter.broadcast('subscription:check:error', {
+				id: subscriptionId,
+				rateLimited,
+				message: rateLimited
+					? 'YouTube rate limit reached — will retry at next interval'
+					: (error?.message ?? 'Unknown error'),
+			});
 		} finally {
 			this.activeChecks.delete(subscriptionId);
 		}
@@ -244,7 +273,11 @@ class SubscriptionService {
 				clearTimeout(timeout);
 
 				if (code !== 0) {
-					reject(new Error(`yt-dlp failed: ${error}`));
+					if (isRateLimitedError(error)) {
+						reject(new RateLimitError(error.trim() || 'YouTube rate limit (HTTP 429)'));
+					} else {
+						reject(new Error(`yt-dlp failed: ${error}`));
+					}
 					return;
 				}
 
@@ -347,6 +380,8 @@ class SubscriptionService {
 					}
 
 					resolve(videos);
+				} else if (isRateLimitedError(error)) {
+					reject(new RateLimitError(error.trim() || 'YouTube rate limit (HTTP 429)'));
 				} else {
 					reject(new Error(`yt-dlp failed: ${error}`));
 				}
@@ -481,24 +516,32 @@ class SubscriptionService {
 						await prisma.download.delete({ where: { id: download.id } });
 					}
 				} else {
-					// Seed-only archive entry (recorded without ever being downloaded).
-					// Only un-skip it if we can *positively* confirm the video was
-					// published after the subscription was created (e.g. a scheduled
-					// premiere that was pre-seeded and later went public). Feed entries
-					// carry no upload timestamp, so they cannot clear this bar and must
-					// keep respecting the pre-seed/archive skip — otherwise a
-					// back-catalog video surfacing in the feed would be resurrected.
-					const publishedAfterSub =
-						subCreatedAt != null &&
-						video.uploadedAt instanceof Date &&
-						video.uploadedAt.getTime() > subCreatedAt;
+					// Seed-only archive entry: no completed download file exists.
+					//
+					// If we have a reliable publish timestamp AND the subscription
+					// creation date, use them to decide:
+					//   - Published before subscription → was back-catalog at import time → skip
+					//   - Published after subscription  → new upload that was coincidentally
+					//                                    seeded (e.g. premiere that went live
+					//                                    shortly after creation) → allow
+					//
+					// If we cannot determine age (no timestamp from yt-dlp, or feed entry
+					// which never carries timestamps), we err on the side of downloading:
+					// the subscription feed only surfaces recent videos, so a seeded entry
+					// appearing there is almost certainly a new upload that the user wants.
+					const hasTimestamp = video.uploadedAt instanceof Date;
+					const ageDeterminate = subCreatedAt != null && hasTimestamp;
 
-					if (!publishedAfterSub) {
-						continue;
+					if (ageDeterminate) {
+						const publishedAfterSub = video.uploadedAt!.getTime() > subCreatedAt;
+						if (!publishedAfterSub) {
+							// Confirmed back-catalog entry — keep skipping.
+							continue;
+						}
 					}
 
-					// Stale skip-entry for a genuinely new upload — clear it and treat
-					// the video as new so it downloads (and re-archives properly).
+					// Age unknown or confirmed new — clear the stale seed entry and
+					// let the video download (it will be properly re-archived on completion).
 					await prisma.archive.delete({ where: { videoId: video.id } }).catch(() => {});
 				}
 			}
@@ -521,25 +564,31 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Convert seconds to cron expression
+	 * Convert seconds to a cron expression with an optional minute offset.
+	 *
+	 * The offset spreads subscriptions across the interval window so they don't
+	 * all fire at minute 0 and hammer YouTube simultaneously.
 	 */
-	private secondsToCron(seconds: number): string {
-		// Convert seconds to nearest cron expression
+	private secondsToCron(seconds: number, offset = 0): string {
+		const off = ((offset % 60) + 60) % 60; // normalise to 0–59
+
 		if (seconds < 60) {
-			// Every X seconds not supported by cron, use every minute
 			return '* * * * *';
 		} else if (seconds < 3600) {
-			// Every X minutes
 			const minutes = Math.floor(seconds / 60);
-			return `*/${minutes} * * * *`;
+			// Build an explicit list of minutes instead of */N so the offset applies.
+			// E.g. 30-min interval with offset 7  → "7,37 * * * *"
+			// E.g. 30-min interval with offset 45 → "15,45 * * * *" (wrap so interval stays 30)
+			const start = off % minutes;
+			const marks: number[] = [];
+			for (let m = start; m < 60; m += minutes) marks.push(m);
+			return `${marks.join(',')} * * * *`;
 		} else if (seconds < 86400) {
-			// Every X hours
 			const hours = Math.floor(seconds / 3600);
-			return `0 */${hours} * * *`;
+			return `${off % 60} */${hours} * * *`;
 		} else {
-			// Every X days
 			const days = Math.floor(seconds / 86400);
-			return `0 0 */${days} * *`;
+			return `0 ${off % 24} */${days} * *`;
 		}
 	}
 

@@ -3,8 +3,10 @@
 	import { csrfFetch } from '$lib/utils/fetch';
 	import { trapFocus, uniqueId } from '$lib/utils/a11y';
 	import { formatDurationLong } from '$lib/utils/format';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
+	import { onDestroy } from 'svelte';
 
 	interface YtPlaylist {
 		id: string;
@@ -31,6 +33,7 @@
 	let loading = $state(false);
 	let refreshing = $state(false);
 	let syncing = $state(false);
+	let syncProgress = $state<{ current: number; total: number; lastTitle: string } | null>(null);
 	let selected = $state(new Set<string>());
 	let filter = $state('');
 
@@ -51,6 +54,32 @@
 
 	const titleId = uniqueId('sync-playlists-title');
 	const bodyId = uniqueId('sync-playlists-body');
+
+	// Listen for background sync progress events from the server.
+	const unsubProgress = onSSEEvent('playlist:sync:progress', (data) => {
+		if (!syncing) return;
+		syncProgress = { current: data.current, total: data.total, lastTitle: data.title };
+		if (data.rateLimited) {
+			addToast('info', `Rate limited on "${data.title}" — backing off, will continue`);
+		}
+	});
+	const unsubComplete = onSSEEvent('playlist:sync:complete', (data) => {
+		if (!syncing) return;
+		syncing = false;
+		syncProgress = null;
+		if (data.needsRelink) {
+			addToast('error', 'YouTube session expired — re-link via the extension');
+			return;
+		}
+		addToast('success', `Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`);
+		onSynced?.();
+		close();
+	});
+
+	onDestroy(() => {
+		unsubProgress();
+		unsubComplete();
+	});
 
 	let dialogEl: HTMLDivElement | null = $state(null);
 	let gridEl: HTMLDivElement | null = $state(null);
@@ -142,6 +171,13 @@
 				signal,
 			});
 			if (runId !== statsRun) return;
+			if (res.status === 429) {
+				// Rate limited: mark this card as unavailable and wait before the
+				// concurrency pool moves on to the next request.
+				set({ status: 'error' });
+				await new Promise((r) => setTimeout(r, 5000));
+				return;
+			}
 			if (!res.ok) {
 				set({ status: 'error' });
 				return;
@@ -225,6 +261,7 @@
 			return;
 		}
 		syncing = true;
+		syncProgress = null;
 		try {
 			const chosen = playlists.filter((p) => selected.has(p.id));
 			const res = await csrfFetch('/api/youtube/playlists/sync', {
@@ -235,21 +272,24 @@
 				}),
 			});
 			if (!res.ok) {
-				addToast('error', 'Failed to sync playlists');
+				syncing = false;
+				addToast('error', 'Failed to start playlist sync');
 				return;
 			}
 			const data = await res.json();
+			// 202: sync started in background — SSE events will drive the rest.
+			// If needsRelink comes back synchronously (no cookie), handle it here.
 			if (data.needsRelink) {
+				syncing = false;
 				addToast('error', 'YouTube session expired — re-link via the extension');
 				return;
 			}
-			addToast('success', `Synced ${data.addedItems} video(s) across ${chosen.length} playlist(s)`);
-			onSynced?.();
-			close();
+			// Initial playlists created; show progress until SSE complete arrives.
+			syncProgress = { current: 0, total: chosen.length, lastTitle: '' };
+			addToast('info', `Syncing ${chosen.length} playlist(s) in background…`);
 		} catch {
-			addToast('error', 'Failed to sync playlists');
-		} finally {
 			syncing = false;
+			addToast('error', 'Failed to start playlist sync');
 		}
 	}
 
@@ -258,6 +298,10 @@
 		waveRun++;
 		statsAbort?.abort();
 		statsAbort = null;
+		// Don't wait for background sync to finish before allowing close.
+		// SSE handlers will still fire and show toasts even with modal closed.
+		syncing = false;
+		syncProgress = null;
 		open = false;
 	}
 
@@ -431,13 +475,19 @@
 				{/if}
 			</div>
 			<div class="modal-footer">
-				<button class="btn btn-secondary" onclick={close}>Cancel</button>
+				<button class="btn btn-secondary" onclick={close} disabled={syncing}>Cancel</button>
 				<button
 					class="btn btn-primary"
 					onclick={sync}
 					disabled={loading || syncing || selected.size === 0}
 				>
-					{syncing ? 'Syncing…' : `Sync ${selected.size > 0 ? `(${selected.size})` : ''}`}
+					{#if syncing && syncProgress}
+						Syncing {syncProgress.current}/{syncProgress.total}…
+					{:else if syncing}
+						Starting…
+					{:else}
+						Sync {selected.size > 0 ? `(${selected.size})` : ''}
+					{/if}
 				</button>
 			</div>
 		</div>

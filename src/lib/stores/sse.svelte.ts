@@ -133,6 +133,21 @@ export function connectSSE() {
 		dispatchCallbacks('subscription:checked', data);
 	});
 
+	eventSource.addEventListener('subscription:check:error', (e) => {
+		const data = JSON.parse(e.data);
+		dispatchCallbacks('subscription:check:error', data);
+	});
+
+	eventSource.addEventListener('playlist:sync:progress', (e) => {
+		const data = JSON.parse(e.data);
+		dispatchCallbacks('playlist:sync:progress', data);
+	});
+
+	eventSource.addEventListener('playlist:sync:complete', (e) => {
+		const data = JSON.parse(e.data);
+		dispatchCallbacks('playlist:sync:complete', data);
+	});
+
 	eventSource.addEventListener('monitor:live', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('monitor:live', data);

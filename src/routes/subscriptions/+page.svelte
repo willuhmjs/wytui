@@ -184,6 +184,21 @@
 			addToast(newVideos > 0 ? 'success' : 'info', message);
 			loadSubscriptions();
 		});
+
+		const unsubCheckError = onSSEEvent('subscription:check:error', ({ id, rateLimited, message }) => {
+			const safetyTimeout = checkTimeouts.get(id);
+			if (safetyTimeout) {
+				clearTimeout(safetyTimeout);
+				checkTimeouts.delete(id);
+			}
+			const dismiss = checkPendingToastDismiss.get(id);
+			if (dismiss) {
+				dismiss();
+				checkPendingToastDismiss.delete(id);
+			}
+			checkingNow = new Set([...checkingNow].filter((x) => x !== id));
+			addToast('error', rateLimited ? 'Rate limited — will retry at next interval' : `Check failed: ${message}`);
+		});
 		const unsubBackfill = onSSEEvent(
 			'subscription:backfill',
 			({ name, totalVideos, newVideos }) => {
@@ -196,6 +211,7 @@
 
 		return () => {
 			unsubChecked();
+			unsubCheckError();
 			unsubBackfill();
 		};
 	});

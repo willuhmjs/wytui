@@ -3,7 +3,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { youtubeLinkService } from './youtube-link.service';
-import { runYtdlpJson } from '../utils/ytdlp-json';
+import { runYtdlpJson, RateLimitError } from '../utils/ytdlp-json';
 
 export interface YtEntry {
 	id: string;
@@ -120,7 +120,10 @@ class YouTubeService {
 			try {
 				const json = await runYtdlpJson(target, { cookiePath, timeoutMs: opts.timeoutMs });
 				return parseFlatEntries(json);
-			} catch {
+			} catch (err) {
+				// Surface rate-limit errors to callers so they can back off rather than
+				// silently treating them as an auth failure.
+				if (err instanceof RateLimitError) throw err;
 				return { needsRelink: true } as NeedsRelink;
 			}
 		});
