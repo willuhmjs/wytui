@@ -38,6 +38,11 @@ RUN apk add --no-cache ffmpeg curl python3 aria2 \
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 RUN mkdir -p /downloads && chown nodejs:nodejs /downloads
 
+# yt-dlp self-updates in place (yt-dlp -U) from the app's scheduler, which runs
+# as nodejs. It stages a temp file next to the binary and renames it over the
+# original, so nodejs needs write access to both the file and its directory.
+RUN chown nodejs:nodejs /usr/local/bin /usr/local/bin/yt-dlp
+
 WORKDIR /app
 
 COPY --from=builder --chown=nodejs:nodejs /app/build ./build
