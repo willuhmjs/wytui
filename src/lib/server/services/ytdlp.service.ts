@@ -184,13 +184,19 @@ export class YtdlpService {
 	 */
 	async fetchMetadata(
 		url: string,
-		options?: { cookiePath?: string | null },
+		options?: { cookiePath?: string | null; proxyUrl?: string | null; extraFlags?: string[] },
 	): Promise<DownloadMetadata> {
 		this.validateUrl(url);
 		return new Promise((resolve, reject) => {
 			const args = ['-J', '--no-warnings'];
 			if (options?.cookiePath) {
 				args.push('--cookies', options.cookiePath);
+			}
+			if (options?.proxyUrl) {
+				args.push('--proxy', options.proxyUrl);
+			}
+			if (options?.extraFlags?.length) {
+				args.push(...this.filterDangerousFlags(options.extraFlags));
 			}
 			args.push(url);
 			const proc = spawn(this.ytdlpPath, args);
@@ -213,14 +219,20 @@ export class YtdlpService {
 						let videoType: string | undefined;
 						if (info.is_live || info.was_live) {
 							videoType = 'stream';
-						} else if (
-							info.duration &&
-							info.duration <= 60 &&
-							(info.webpage_url?.includes('/shorts/') || info.original_url?.includes('/shorts/'))
-						) {
-							videoType = 'short';
 						} else {
-							videoType = 'regular';
+							// Shorts can be up to 3 minutes long and are frequently reached
+							// via /watch/ URLs (channel tab listings), where the URL alone
+							// doesn't identify them. A vertical video (9:16) under 3 minutes
+							// is the reliable marker.
+							const shortsUrl =
+								info.webpage_url?.includes('/shorts/') || info.original_url?.includes('/shorts/');
+							const vertical =
+								typeof info.width === 'number' &&
+								typeof info.height === 'number' &&
+								info.height > info.width;
+							const duration = typeof info.duration === 'number' ? info.duration : 0;
+							videoType =
+								shortsUrl || (vertical && duration > 0 && duration <= 180) ? 'short' : 'regular';
 						}
 
 						resolve({
@@ -237,6 +249,7 @@ export class YtdlpService {
 							album: info.album || undefined,
 							releaseYear: info.release_year || undefined,
 							videoType,
+							liveStatus: info.live_status ?? null,
 							description: info.description || undefined,
 							category: info.categories?.[0] || undefined,
 							tags: info.tags?.length ? info.tags : undefined,
@@ -527,6 +540,25 @@ export class YtdlpService {
 	}
 
 	/**
+	 * Args carrying the global yt-dlp defaults (outbound proxy + extra default
+	 * flags) for invocations that don't go through {@link buildArgs}. Extra
+	 * flags pass through the same whitelist as per-download custom flags.
+	 */
+	buildDefaultsArgs(defaults: {
+		proxyUrl?: string | null;
+		extraFlags?: string[] | null;
+	}): string[] {
+		const args: string[] = [];
+		if (defaults?.proxyUrl) {
+			args.push('--proxy', defaults.proxyUrl);
+		}
+		if (defaults?.extraFlags?.length) {
+			args.push(...this.filterDangerousFlags(defaults.extraFlags));
+		}
+		return args;
+	}
+
+	/**
 	 * Build yt-dlp arguments from profile settings
 	 */
 	buildArgs(
@@ -537,6 +569,7 @@ export class YtdlpService {
 			rateLimit?: string | null;
 			sleepInterval?: number | null;
 			cookiePath?: string | null;
+			proxyUrl?: string | null;
 			concurrentFragments?: number | null;
 			useAria2c?: boolean;
 			httpChunkSize?: string | null;
@@ -585,6 +618,11 @@ export class YtdlpService {
 		// Add cookie authentication if configured
 		if (options?.cookiePath) {
 			args.push('--cookies', options.cookiePath);
+		}
+
+		// Route through the configured outbound proxy (SOCKS/HTTP)
+		if (options?.proxyUrl) {
+			args.push('--proxy', options.proxyUrl);
 		}
 
 		// Add custom flags with filtering

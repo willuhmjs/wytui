@@ -43,7 +43,9 @@ export const POST = apiRoute(
 				throw error(403, 'Access denied');
 			}
 
-			await subscriptionService.checkSubscription(params.id);
+			// Manual trigger: bypass the post-rate-limit cooldown so the user
+			// can always probe a channel directly.
+			await subscriptionService.checkSubscription(params.id, { force: true });
 			return json({ success: true });
 		} catch (e: any) {
 			console.error('Failed to check subscription:', e);

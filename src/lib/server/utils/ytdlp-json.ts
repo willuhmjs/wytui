@@ -5,6 +5,8 @@ const YTDLP = process.env.YTDLP_PATH || '/usr/local/bin/yt-dlp';
 export interface RunYtdlpJsonOptions {
 	/** Netscape cookie file path. Omit for anonymous requests. */
 	cookiePath?: string | null;
+	/** Outbound proxy URL (http(s)/socks4/socks5/socks5h). */
+	proxyUrl?: string | null;
 	/** Hard kill after this many ms. Defaults to 120s. */
 	timeoutMs?: number;
 	/** Extra flags inserted after the base args, before the target. */
@@ -47,7 +49,7 @@ export function isRateLimitedError(stderr: string): boolean {
  * Throws {@link RateLimitError} when YouTube responds with HTTP 429.
  */
 export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Promise<string> {
-	const { cookiePath = null, timeoutMs = 120000, extraArgs = [] } = opts;
+	const { cookiePath = null, proxyUrl = null, timeoutMs = 120000, extraArgs = [] } = opts;
 
 	return new Promise((resolve, reject) => {
 		const args = [
@@ -55,6 +57,7 @@ export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Pr
 			'--dump-single-json',
 			'--no-warnings',
 			...(cookiePath ? ['--cookies', cookiePath] : []),
+			...(proxyUrl ? ['--proxy', proxyUrl] : []),
 			...extraArgs,
 			target,
 		];

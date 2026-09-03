@@ -30,7 +30,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 		for (let i = 0; i < subscriptions.length; i++) {
 			if (i > 0) await new Promise((r) => setTimeout(r, CHECK_DELAY_MS));
 			try {
-				await subscriptionService.checkSubscription(subscriptions[i].id);
+				// Manual trigger: bypass the post-rate-limit cooldown so the user
+				// can always probe their channels directly.
+				await subscriptionService.checkSubscription(subscriptions[i].id, { force: true });
 			} catch (err) {
 				console.error(`[Subscriptions] Batch check failed for ${subscriptions[i].id}:`, err);
 			}

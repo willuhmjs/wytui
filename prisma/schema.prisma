@@ -275,6 +275,11 @@ model Subscription {
   autoDownload Boolean  @default(true)
   saveToLibrary Boolean @default(false)
   customFlags String[]  // Per-subscription yt-dlp flags (SponsorBlock, subtitles, etc.)
+  excludeShorts Boolean @default(false)
+
+  // Check bookkeeping
+  channelId   String?   // Resolved YouTube channel ID, cached for RSS feed lookups
+  lastError   String?   // Last check failure message (null after a successful check)
 
   // Metadata
   thumbnail   String?
@@ -337,14 +342,14 @@ model Settings {
   id          String    @id @default("singleton")
 
   // Download settings
-  maxConcurrentDownloads Int @default(3)
+  maxConcurrentDownloads Int @default(2)
   downloadPath String   @default("/downloads")
   // Kill a download if it makes no progress for this many seconds (0 = disabled)
   downloadStallTimeoutSeconds Int @default(600)
 
   // Download speed tuning
   concurrentFragments Int     @default(4)   // yt-dlp --concurrent-fragments (0/1 = off)
-  useAria2c           Boolean @default(false) // use aria2c external downloader when present
+  useAria2c           Boolean @default(true) // use aria2c external downloader when present (falls back silently if missing)
   httpChunkSize       String? // e.g. "10M" -> --http-chunk-size (null = omit)
 
   // Jellyfin artwork
@@ -356,6 +361,11 @@ model Settings {
   lastYtdlpUpdate DateTime?
   autoUpdateYtdlp Boolean @default(true)
   updateCheckInterval Int @default(86400) // seconds (daily)
+
+  // Global yt-dlp defaults applied to every invocation (downloads, metadata
+  // fetches, subscription checks). Proxy accepts http(s)/socks4/socks5(h).
+  ytdlpProxyUrl   String?
+  ytdlpExtraFlags String[]
 
   // Archive
   enableArchive Boolean @default(true)
@@ -486,6 +496,7 @@ model Archive {
   videoId     String    @unique // e.g., YouTube video ID
   url         String
   title       String
+  reason      String?   // Non-null marks a deliberate skip (e.g. "short") that must never be re-queued
   downloadedAt DateTime @default(now())
 
   @@index([videoId])

@@ -16,6 +16,18 @@ import { libraryAccessStatus, type LibraryAccess } from '$lib/server/permissions
 import { ffmpegPercent } from './download-progress';
 
 /**
+ * Thrown when a download is deliberately abandoned before any bytes are
+ * fetched (excluded short, upcoming premiere). The record is already cleaned
+ * up by the thrower; callers must not retry or mark it failed.
+ */
+class DownloadSkippedError extends Error {
+	constructor(reason: string) {
+		super(reason);
+		this.name = 'DownloadSkippedError';
+	}
+}
+
+/**
  * Serialize download object for JSON responses
  * Converts BigInt fields to strings
  */
@@ -111,6 +123,18 @@ class DownloadService {
 		} else {
 			sseEmitter.broadcast(event, data);
 		}
+	}
+
+	/**
+	 * Remove a download record that was deliberately abandoned before any bytes
+	 * were fetched (excluded short, upcoming premiere). The UI lists don't show
+	 * cancelled rows, so deleting keeps the table clean; child rows cascade.
+	 */
+	private async discardDownloadRecord(downloadId: string): Promise<void> {
+		this.clearDownloadState(downloadId);
+		await prisma.download.delete({ where: { id: downloadId } }).catch(() => {});
+		this.emitToOwner('download:deleted', { id: downloadId }, downloadId);
+		this.downloadOwners.delete(downloadId);
 	}
 
 	/**
@@ -220,9 +244,16 @@ class DownloadService {
 	 */
 	private async processDownload(downloadId: string): Promise<void> {
 		// Phase 1: Fetch metadata (sequential queue)
-		await queueService.enqueueMetadata(async () => {
-			await this.fetchMetadata(downloadId);
-		});
+		try {
+			await queueService.enqueueMetadata(async () => {
+				await this.fetchMetadata(downloadId);
+			});
+		} catch (err: any) {
+			// A deliberate skip (excluded short, upcoming premiere) has already
+			// removed the record — abort the pipeline without error handling.
+			if (err instanceof DownloadSkippedError) return;
+			throw err;
+		}
 
 		// Phase 2: Download file (parallel queue)
 		await queueService.enqueueDownload(async () => {
@@ -253,7 +284,53 @@ class DownloadService {
 			const settings = await this.getSettings();
 			const metadata = await ytdlpService.fetchMetadata(download.url, {
 				cookiePath: settings.cookiePath,
+				proxyUrl: settings.ytdlpProxyUrl,
+				extraFlags: settings.ytdlpExtraFlags,
 			});
+
+			// Upcoming premieres aren't downloadable yet. Drop the record without
+			// archiving so the subscription checker naturally re-queues it once the
+			// stream actually starts — and don't burn the 3-retry cycle on it.
+			if (metadata.liveStatus === 'is_upcoming') {
+				console.log(
+					`[DownloadService] ${download.url} is an upcoming premiere — skipping until it goes live`,
+				);
+				await this.discardDownloadRecord(downloadId);
+				throw new DownloadSkippedError('upcoming');
+			}
+
+			// Subscription-level short exclusion. Shorts can arrive via /watch/ URLs
+			// where the URL alone doesn't identify them, so the aspect-ratio check in
+			// fetchMetadata is the authoritative classifier. Archive with a reason so
+			// the checker never re-queues the same short.
+			if (metadata.videoType === 'short' && download.subscriptionId) {
+				const sub = await prisma.subscription.findUnique({
+					where: { id: download.subscriptionId },
+					select: { excludeShorts: true },
+				});
+				if (sub?.excludeShorts) {
+					const videoId = this.extractVideoId(download.url) ?? metadata.videoId;
+					if (videoId) {
+						await prisma.archive
+							.upsert({
+								where: { videoId },
+								update: { reason: 'short' },
+								create: {
+									videoId,
+									url: download.url,
+									title: metadata.title ?? videoId,
+									reason: 'short',
+								},
+							})
+							.catch(() => {});
+					}
+					console.log(
+						`[DownloadService] Skipped short ${videoId ?? download.url} (excluded by subscription)`,
+					);
+					await this.discardDownloadRecord(downloadId);
+					throw new DownloadSkippedError('short');
+				}
+			}
 
 			// Check duration limit
 			if (settings.maxDurationSeconds && metadata.duration) {
@@ -448,8 +525,14 @@ class DownloadService {
 			throw new Error('Insufficient disk space to start download');
 		}
 
-		// Build yt-dlp arguments (merge profile flags with per-download overrides)
-		let mergedFlags = [...download.profile.customFlags, ...download.customFlags];
+		// Build yt-dlp arguments (merge profile flags with per-download overrides).
+		// Global default flags come first so more specific flags can override them
+		// (yt-dlp honors the last occurrence of a repeated flag).
+		let mergedFlags = [
+			...settings.ytdlpExtraFlags,
+			...download.profile.customFlags,
+			...download.customFlags,
+		];
 
 		// Apply channel override flags and sponsorblock setting
 		if (download.channelUrl) {
@@ -469,6 +552,7 @@ class DownloadService {
 			rateLimit: settings.rateLimit,
 			sleepInterval: settings.sleepInterval,
 			cookiePath: settings.cookiePath,
+			proxyUrl: settings.ytdlpProxyUrl,
 			concurrentFragments: settings.concurrentFragments,
 			useAria2c: settings.useAria2c,
 			httpChunkSize: settings.httpChunkSize,
@@ -1053,11 +1137,15 @@ class DownloadService {
 		const download = await prisma.download.findUnique({ where: { id: downloadId } });
 		if (!download) throw new Error('Download not found');
 
-		const metadata = await ytdlpService.fetchMetadata(download.url);
+		const settings = await this.getSettings();
+		const metadata = await ytdlpService.fetchMetadata(download.url, {
+			cookiePath: settings.cookiePath,
+			proxyUrl: settings.ytdlpProxyUrl,
+			extraFlags: settings.ytdlpExtraFlags,
+		});
 
 		// Fetch RYD dislike count if enabled
 		let dislikeCount: number | undefined;
-		const settings = await this.getSettings();
 		if (metadata.videoId && settings.rydEnabled) {
 			try {
 				const rydRes = await fetch(

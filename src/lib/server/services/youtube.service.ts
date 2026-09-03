@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { youtubeLinkService } from './youtube-link.service';
 import { runYtdlpJson, RateLimitError } from '../utils/ytdlp-json';
+import { prisma } from '../db';
 
 export interface YtEntry {
 	id: string;
@@ -118,7 +119,15 @@ class YouTubeService {
 	private fetchList(userId: string, target: string, opts: { timeoutMs?: number } = {}) {
 		return this.withCookieFile(userId, async (cookiePath) => {
 			try {
-				const json = await runYtdlpJson(target, { cookiePath, timeoutMs: opts.timeoutMs });
+				// Global proxy default applies here too, but not extraFlags: selection
+				// flags (--dateafter, --match-filters, …) would silently corrupt the
+				// imported channel/playlist listings.
+				const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+				const json = await runYtdlpJson(target, {
+					cookiePath,
+					proxyUrl: settings?.ytdlpProxyUrl ?? null,
+					timeoutMs: opts.timeoutMs,
+				});
 				return parseFlatEntries(json);
 			} catch (err) {
 				// Surface rate-limit errors to callers so they can back off rather than
@@ -224,7 +233,8 @@ class YouTubeService {
 	 * the parsed entries. Throws on failure.
 	 */
 	async fetchPlaylistFlat(url: string): Promise<{ title: string | null; entries: YtEntry[] }> {
-		const json = await runYtdlpJson(url);
+		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+		const json = await runYtdlpJson(url, { proxyUrl: settings?.ytdlpProxyUrl ?? null });
 		let title: string | null = null;
 		try {
 			const t = JSON.parse(json)?.title;

@@ -62,6 +62,8 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'useAria2c',
 	'httpChunkSize',
 	'generateJellyfinPosters',
+	'ytdlpProxyUrl',
+	'ytdlpExtraFlags',
 ]);
 
 /**
@@ -352,6 +354,43 @@ export async function validateSettingsUpdate(
 	if (updates.generateJellyfinPosters !== undefined) {
 		if (typeof updates.generateJellyfinPosters !== 'boolean') {
 			throw error(400, 'generateJellyfinPosters must be a boolean');
+		}
+	}
+
+	if (updates.ytdlpProxyUrl !== undefined) {
+		// Empty string or null clears the proxy.
+		if (updates.ytdlpProxyUrl === null || updates.ytdlpProxyUrl === '') {
+			updates.ytdlpProxyUrl = null;
+		} else {
+			const proxy = String(updates.ytdlpProxyUrl).trim();
+			const allowedSchemes = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
+			let scheme: string | null = null;
+			try {
+				scheme = new URL(proxy).protocol;
+			} catch {
+				// fall through to the error below
+			}
+			if (!scheme || !allowedSchemes.includes(scheme)) {
+				throw error(
+					400,
+					'ytdlpProxyUrl must be a valid http(s)/socks4/socks5/socks5h proxy URL (e.g. "socks5://host:port")',
+				);
+			}
+			updates.ytdlpProxyUrl = proxy;
+		}
+	}
+
+	if (updates.ytdlpExtraFlags !== undefined) {
+		if (
+			!Array.isArray(updates.ytdlpExtraFlags) ||
+			!updates.ytdlpExtraFlags.every((f: unknown) => typeof f === 'string')
+		) {
+			throw error(400, 'ytdlpExtraFlags must be an array of strings');
+		}
+		const { ytdlpService } = await import('$lib/server/services/ytdlp.service');
+		const badFlag = ytdlpService.findDangerousFlag(updates.ytdlpExtraFlags);
+		if (badFlag) {
+			throw error(400, `Forbidden ytdlp flag: ${badFlag}`);
 		}
 	}
 

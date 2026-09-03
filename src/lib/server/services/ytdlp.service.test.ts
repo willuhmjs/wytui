@@ -39,3 +39,41 @@ describe('buildArgs speed options', () => {
 		expect(missing).not.toContain('--downloader');
 	});
 });
+
+describe('buildArgs proxy option', () => {
+	it('adds --proxy when set', () => {
+		const args = ytdlpService.buildArgs(URL, OUT, [], { proxyUrl: 'socks5://127.0.0.1:1080' });
+		const i = args.indexOf('--proxy');
+		expect(i).toBeGreaterThan(-1);
+		expect(args[i + 1]).toBe('socks5://127.0.0.1:1080');
+	});
+
+	it('omits --proxy when unset', () => {
+		expect(ytdlpService.buildArgs(URL, OUT, [], {})).not.toContain('--proxy');
+		expect(ytdlpService.buildArgs(URL, OUT, [], { proxyUrl: null })).not.toContain('--proxy');
+	});
+});
+
+describe('buildDefaultsArgs', () => {
+	it('combines proxy and extra flags', () => {
+		expect(
+			ytdlpService.buildDefaultsArgs({
+				proxyUrl: 'socks5h://proxy.internal:1080',
+				extraFlags: ['--sleep-requests', '1'],
+			}),
+		).toEqual(['--proxy', 'socks5h://proxy.internal:1080', '--sleep-requests', '1']);
+	});
+
+	it('filters non-whitelisted flags from extraFlags', () => {
+		expect(
+			ytdlpService.buildDefaultsArgs({ extraFlags: ['--exec', '--cookies-from-browser'] }),
+		).toEqual([]);
+	});
+
+	it('returns an empty array when no defaults are configured', () => {
+		expect(ytdlpService.buildDefaultsArgs({})).toEqual([]);
+		expect(ytdlpService.buildDefaultsArgs({ proxyUrl: null, extraFlags: [] as string[] })).toEqual(
+			[],
+		);
+	});
+});

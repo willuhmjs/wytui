@@ -51,6 +51,8 @@
 	let saving = $state(false);
 	let settingsLoaded = $state(false);
 	let settingsSnapshot = $state('');
+	// Textarea mirror of settings.ytdlpExtraFlags — one flag per line.
+	let ytdlpExtraFlagsText = $state('');
 	let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 	let isAdmin = $derived(data.session?.user?.isAdmin ?? false);
 	let activeTab = $state<'account' | 'app' | 'users'>('account');
@@ -374,6 +376,7 @@
 			if (res.ok) {
 				settings = await res.json();
 				settingsSnapshot = JSON.stringify(settings);
+				ytdlpExtraFlagsText = (settings.ytdlpExtraFlags ?? []).join('\n');
 				settingsLoaded = true;
 				if (settings.cleanupEnabled && settings.jellyfinUrl && settings.jellyfinApiKey) {
 					loadJellyfinUsers();
@@ -498,6 +501,8 @@
 		'useAria2c',
 		'httpChunkSize',
 		'generateJellyfinPosters',
+		'ytdlpProxyUrl',
+		'ytdlpExtraFlags',
 	];
 
 	let diskInfo = $state<{
@@ -908,6 +913,9 @@
 					let value = settings[key];
 					// Coerce empty string to null for optional text fields
 					if (key === 'httpChunkSize' && value === '') {
+						value = null;
+					}
+					if (key === 'ytdlpProxyUrl' && value === '') {
 						value = null;
 					}
 					payload[key] = value;
@@ -2029,6 +2037,42 @@
 							</label>
 							<p class="help-text">
 								Periodically check GitHub for new releases and show an indicator in the sidebar
+							</p>
+						</div>
+
+						<div class="form-group">
+							<label for="ytdlpProxyUrl">Proxy URL</label>
+							<input
+								type="text"
+								id="ytdlpProxyUrl"
+								bind:value={settings.ytdlpProxyUrl}
+								placeholder="socks5://user:pass@host:port"
+							/>
+							<p class="help-text">
+								Route all yt-dlp traffic (downloads, metadata fetches, subscription checks) through
+								an http(s)/socks4/socks5/socks5h proxy. Use <code>socks5h</code> to resolve DNS through
+								the proxy too.
+							</p>
+						</div>
+
+						<div class="form-group">
+							<label for="ytdlpExtraFlags">Extra flags</label>
+							<textarea
+								id="ytdlpExtraFlags"
+								rows="3"
+								bind:value={ytdlpExtraFlagsText}
+								oninput={() => {
+									settings.ytdlpExtraFlags = ytdlpExtraFlagsText
+										.split('\n')
+										.map((line: string) => line.trim())
+										.filter(Boolean);
+								}}
+								placeholder={'--extractor-args youtube:player_client=web_safari\n--sleep-requests 1'}
+							></textarea>
+							<p class="help-text">
+								Default yt-dlp flags applied to every download and subscription check. One token per
+								line — a flag and its value go on separate lines. Profile and per-subscription flags
+								override these.
 							</p>
 						</div>
 					</div>
@@ -3683,7 +3727,8 @@
 
 	input[type='text'],
 	input[type='number'],
-	input[type='email'] {
+	input[type='email'],
+	textarea {
 		width: 100%;
 		padding: var(--spacing-md);
 		background: var(--color-bg-tertiary);
@@ -3691,6 +3736,8 @@
 		border-radius: var(--radius-md);
 		color: var(--color-text-primary);
 		font-size: 1rem;
+		font-family: inherit;
+		resize: vertical;
 	}
 
 	select {

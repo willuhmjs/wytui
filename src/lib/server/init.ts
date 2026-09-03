@@ -155,7 +155,7 @@ export async function ensureDefaults(): Promise<void> {
 		update: {},
 		create: {
 			id: 'singleton',
-			maxConcurrentDownloads: 3,
+			maxConcurrentDownloads: 2,
 			downloadPath: '/downloads',
 			ytdlpPath: '/usr/local/bin/yt-dlp',
 			ytdlpVersion,

@@ -145,12 +145,19 @@ export const PATCH = apiRoute(
 				'checkInterval',
 				'autoDownload',
 				'saveToLibrary',
+				'excludeShorts',
 				'profileId',
 				'customFlags',
 			];
 			const updates: Record<string, any> = {};
 			for (const key of allowedFields) {
 				if (key in body) updates[key] = body[key];
+			}
+
+			// A new URL may point at a different channel — drop the cached channel
+			// ID so the RSS check re-resolves it.
+			if (updates.url !== undefined && updates.url !== existing.url) {
+				updates.channelId = null;
 			}
 
 			if (updates.type !== undefined) {

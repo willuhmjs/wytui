@@ -26,14 +26,20 @@ FROM node:24-alpine3.23
 #   docker build --build-arg YTDLP_VERSION=2026.07.04 .
 ARG YTDLP_VERSION=latest
 RUN apk add --no-cache ffmpeg curl python3 aria2 \
-    && if [ "$YTDLP_VERSION" = "latest" ]; then \
-         YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; \
-       else \
-         YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"; \
-       fi \
-    && curl -fL "$YTDLP_URL" -o /usr/local/bin/yt-dlp \
-    && chmod a+rx /usr/local/bin/yt-dlp \
-    && /usr/local/bin/yt-dlp --version
+  && if [ "$YTDLP_VERSION" = "latest" ]; then \
+  YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; \
+  else \
+  YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"; \
+  fi \
+  && curl -fL "$YTDLP_URL" -o /usr/local/bin/yt-dlp \
+  && chmod a+rx /usr/local/bin/yt-dlp \
+  && /usr/local/bin/yt-dlp --version
+
+#yt-dlp deno
+RUN apk add --no-cache \
+  --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  deno
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 RUN mkdir -p /downloads && chown nodejs:nodejs /downloads

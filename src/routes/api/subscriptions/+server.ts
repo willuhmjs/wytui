@@ -96,6 +96,7 @@ export const POST = apiRoute(
 			},
 			autoDownload: { type: 'boolean', description: 'Auto-download new videos' },
 			saveToLibrary: { type: 'boolean', description: 'Save to library' },
+			excludeShorts: { type: 'boolean', description: 'Skip shorts/vertical videos' },
 			customFlags: { type: 'array', description: 'Custom yt-dlp flags' },
 		},
 		responses: {
@@ -188,6 +189,7 @@ export const POST = apiRoute(
 					checkInterval,
 					autoDownload: data.autoDownload ?? true,
 					saveToLibrary: data.saveToLibrary ?? false,
+					excludeShorts: data.excludeShorts ?? false,
 					customFlags,
 					enabled: true,
 					userId,

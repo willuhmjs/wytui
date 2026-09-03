@@ -72,6 +72,30 @@ describe('runYtdlpJson', () => {
 		]);
 	});
 
+	it('inserts --proxy after --cookies when proxyUrl is set', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET', {
+			cookiePath: '/tmp/c.txt',
+			proxyUrl: 'socks5h://1.2.3.4:1080',
+		});
+		p.emit('close', 0);
+
+		await promise;
+
+		expect(spawnMock.mock.calls[0][1]).toEqual([
+			'--flat-playlist',
+			'--dump-single-json',
+			'--no-warnings',
+			'--cookies',
+			'/tmp/c.txt',
+			'--proxy',
+			'socks5h://1.2.3.4:1080',
+			'TARGET',
+		]);
+	});
+
 	it('rejects with stderr text on non-zero exit', async () => {
 		const p = fakeProc();
 		spawnMock.mockReturnValue(p);

@@ -33,6 +33,7 @@ export interface DownloadMetadata {
 	album?: string;
 	releaseYear?: number;
 	videoType?: string;
+	liveStatus?: string | null;
 	description?: string;
 	category?: string;
 	tags?: string[];

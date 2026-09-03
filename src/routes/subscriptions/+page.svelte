@@ -38,6 +38,7 @@
 	let subFormCheckInterval = $state(1800);
 	let subFormAutoDownload = $state(true);
 	let subFormSaveToLibrary = $state(false);
+	let subFormExcludeShorts = $state(false);
 	let subFormOptions = $state({
 		sponsorblock: false,
 		subtitles: false,
@@ -53,6 +54,7 @@
 	let editSubCheckInterval = $state(1800);
 	let editSubAutoDownload = $state(true);
 	let editSubSaveToLibrary = $state(false);
+	let editSubExcludeShorts = $state(false);
 	let editSubOptions = $state({
 		sponsorblock: false,
 		subtitles: false,
@@ -71,6 +73,7 @@
 		updates: {
 			profileId?: string;
 			saveToLibrary?: boolean;
+			excludeShorts?: boolean;
 			options?: {
 				sponsorblock: boolean;
 				subtitles: boolean;
@@ -91,6 +94,13 @@
 				subFormSaveToLibrary = updates.saveToLibrary;
 			} else {
 				editSubSaveToLibrary = updates.saveToLibrary;
+			}
+		}
+		if (updates.excludeShorts !== undefined) {
+			if (mode === 'new') {
+				subFormExcludeShorts = updates.excludeShorts;
+			} else {
+				editSubExcludeShorts = updates.excludeShorts;
 			}
 		}
 		if (updates.options !== undefined) {
@@ -185,20 +195,26 @@
 			loadSubscriptions();
 		});
 
-		const unsubCheckError = onSSEEvent('subscription:check:error', ({ id, rateLimited, message }) => {
-			const safetyTimeout = checkTimeouts.get(id);
-			if (safetyTimeout) {
-				clearTimeout(safetyTimeout);
-				checkTimeouts.delete(id);
-			}
-			const dismiss = checkPendingToastDismiss.get(id);
-			if (dismiss) {
-				dismiss();
-				checkPendingToastDismiss.delete(id);
-			}
-			checkingNow = new Set([...checkingNow].filter((x) => x !== id));
-			addToast('error', rateLimited ? 'Rate limited — will retry at next interval' : `Check failed: ${message}`);
-		});
+		const unsubCheckError = onSSEEvent(
+			'subscription:check:error',
+			({ id, rateLimited, message }) => {
+				const safetyTimeout = checkTimeouts.get(id);
+				if (safetyTimeout) {
+					clearTimeout(safetyTimeout);
+					checkTimeouts.delete(id);
+				}
+				const dismiss = checkPendingToastDismiss.get(id);
+				if (dismiss) {
+					dismiss();
+					checkPendingToastDismiss.delete(id);
+				}
+				checkingNow = new Set([...checkingNow].filter((x) => x !== id));
+				addToast(
+					'error',
+					rateLimited ? 'Rate limited — will retry at next interval' : `Check failed: ${message}`,
+				);
+			},
+		);
 		const unsubBackfill = onSSEEvent(
 			'subscription:backfill',
 			({ name, totalVideos, newVideos }) => {
@@ -301,6 +317,7 @@
 					checkInterval: subFormCheckInterval,
 					autoDownload: subFormAutoDownload,
 					saveToLibrary: subFormSaveToLibrary,
+					excludeShorts: subFormExcludeShorts,
 					customFlags: buildOptionsFlags(subFormOptions, subFormSaveToLibrary),
 				}),
 			});
@@ -410,6 +427,7 @@
 		editSubCheckInterval = sub.checkInterval;
 		editSubAutoDownload = sub.autoDownload;
 		editSubSaveToLibrary = sub.saveToLibrary;
+		editSubExcludeShorts = sub.excludeShorts ?? false;
 		editSubOptions = parseOptionsFromFlags(sub.customFlags || []);
 	}
 
@@ -430,6 +448,7 @@
 					checkInterval: editSubCheckInterval,
 					autoDownload: editSubAutoDownload,
 					saveToLibrary: editSubSaveToLibrary,
+					excludeShorts: editSubExcludeShorts,
 					customFlags: buildOptionsFlags(editSubOptions, editSubSaveToLibrary),
 				}),
 			});
@@ -518,6 +537,7 @@
 								{profiles}
 								selectedProfileId={subFormProfileId}
 								saveToLibrary={subFormSaveToLibrary}
+								excludeShorts={subFormExcludeShorts}
 								options={subFormOptions}
 								{libraryConfigured}
 								onChange={handleSubFormConfigChange}
@@ -619,6 +639,10 @@
 												<input type="checkbox" bind:checked={editSubAutoDownload} />
 												Auto-download
 											</label>
+											<label class="checkbox-label">
+												<input type="checkbox" bind:checked={editSubExcludeShorts} />
+												Exclude Shorts
+											</label>
 											{#if libraryConfigured}
 												<label class="checkbox-label">
 													<input
@@ -705,7 +729,8 @@
 										{#if sub.saveToLibrary}
 											<span class="library-tag">Library</span>
 										{/if}
-										{#if sub.customFlags?.includes('--sponsorblock-remove')}
+										{#if sub.excludeShorts}<span class="option-tag">No Shorts</span
+											>{/if}{#if sub.customFlags?.includes('--sponsorblock-remove')}
 											<span class="option-tag">SB</span>
 										{/if}
 										{#if sub.customFlags?.includes('--write-subs')}
@@ -716,6 +741,11 @@
 										{/if}
 									</div>
 
+									{#if sub.lastError}
+										<p class="check-error" title={sub.lastError}>
+											⚠ Last check failed: {sub.lastError}
+										</p>
+									{/if}
 									{#if sub.lastChecked || sub.lastVideoDate}
 										<p class="text-muted text-sm">
 											{#if sub.lastChecked}Last checked: {new Date(
@@ -1183,6 +1213,15 @@
 		border-radius: var(--radius-sm);
 		font-size: 0.75rem;
 		font-weight: 600;
+	}
+
+	.check-error {
+		color: var(--color-status-error);
+		font-size: 0.75rem;
+		margin: var(--spacing-xs) 0 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.options-row {

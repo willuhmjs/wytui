@@ -17,6 +17,12 @@ RUN apk add --no-cache \
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp
 
+# yt-dlp JS runtime — see Dockerfile for rationale
+RUN apk add --no-cache \
+        --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
+        --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+        deno
+
 # Create downloads directory
 RUN mkdir -p /downloads && chmod 777 /downloads
 

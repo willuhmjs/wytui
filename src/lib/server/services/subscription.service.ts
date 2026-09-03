@@ -7,12 +7,20 @@ import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
 import { access } from 'fs/promises';
-import { RateLimitError, isRateLimitedError } from '../utils/ytdlp-json';
+import { RateLimitError, isRateLimitedError, runYtdlpJson } from '../utils/ytdlp-json';
 
 class SubscriptionService {
 	private static readonly CHECK_DEPTH = 15;
 	private scheduledTasks = new Map<string, ScheduledTask>();
 	private activeChecks = new Set<string>();
+
+	/**
+	 * Timestamp until which checks are paused after a rate limit. YouTube blocks
+	 * are IP-wide, so one 429 means every other check in the window will fail
+	 * too — backing off globally avoids hammering the blocked endpoint.
+	 */
+	private rateLimitCooldownUntil = 0;
+	private static readonly RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
 
 	/**
 	 * Start subscription scheduler
@@ -80,11 +88,19 @@ class SubscriptionService {
 
 	/**
 	 * Check subscription for new videos
+	 *
+	 * `force` bypasses the global rate-limit cooldown (used by the manual
+	 * "Check now" button so the user can always probe a channel directly).
 	 */
-	async checkSubscription(subscriptionId: string): Promise<void> {
+	async checkSubscription(subscriptionId: string, opts: { force?: boolean } = {}): Promise<void> {
 		// Prevent concurrent checks
 		if (this.activeChecks.has(subscriptionId)) {
 			console.log(`[Subscriptions] Check already in progress for ${subscriptionId}`);
+			return;
+		}
+
+		if (!opts.force && Date.now() < this.rateLimitCooldownUntil) {
+			console.log('[Subscriptions] Skipping check — rate-limit cooldown active');
 			return;
 		}
 
@@ -106,6 +122,7 @@ class SubscriptionService {
 			// Feed-based detection: if the owner linked YouTube and enabled feed mode,
 			// prefer the single subscription feed over polling this channel directly.
 			let videos: any[] | null = null;
+			let trustUndatedEntries = false;
 			if (subscription.userId) {
 				const link = await prisma.youTubeLink.findUnique({
 					where: { userId: subscription.userId },
@@ -116,6 +133,9 @@ class SubscriptionService {
 						const matched = this.matchFeedToSubscription(feed, subscription);
 						if (matched.length > 0) {
 							videos = matched;
+							// The linked-account feed only surfaces recent uploads, so an
+							// archived entry reappearing there is almost certainly new.
+							trustUndatedEntries = true;
 							console.log(
 								`[Subscriptions] Using YouTube feed for ${subscription.name}: ${videos.length} candidate(s)`,
 							);
@@ -126,13 +146,19 @@ class SubscriptionService {
 				}
 			}
 			if (videos === null) {
-				// Get latest videos from channel, including real publish dates so we can
-				// tell genuinely-new uploads apart from back-catalog / pre-seeded entries.
-				videos = await this.getLatestVideosWithDates(subscription.url);
+				videos = await this.getLatestVideos(subscription);
 			}
 
+			// Shorts carry /shorts/ URLs in both the RSS feed and flat playlist
+			// listings, so they can be dropped before any metadata fetch.
+			const candidates = subscription.excludeShorts
+				? videos.filter((v) => !v.url?.includes('/shorts/'))
+				: videos;
+
 			// Filter out already downloaded videos
-			const newVideos = await this.filterNewVideos(videos, subscription);
+			const newVideos = await this.filterNewVideos(candidates, subscription, {
+				trustUndatedEntries,
+			});
 
 			if (newVideos.length > 0 && subscription.autoDownload) {
 				console.log(
@@ -157,9 +183,20 @@ class SubscriptionService {
 				console.log(`[Subscriptions] No new videos for ${subscription.name}`);
 			}
 
+			const latestUpload = videos.reduce<Date | null>((latest, v) => {
+				if (v.uploadedAt instanceof Date && (!latest || v.uploadedAt > latest)) {
+					return v.uploadedAt;
+				}
+				return latest;
+			}, null);
+
 			await prisma.subscription.update({
 				where: { id: subscriptionId },
-				data: { lastChecked: new Date() },
+				data: {
+					lastChecked: new Date(),
+					lastError: null,
+					...(latestUpload && { lastVideoDate: latestUpload }),
+				},
 			});
 
 			sseEmitter.broadcast('subscription:checked', {
@@ -169,10 +206,29 @@ class SubscriptionService {
 			});
 		} catch (error: any) {
 			const rateLimited = error?.isRateLimit === true;
+			if (rateLimited) {
+				this.rateLimitCooldownUntil = Date.now() + SubscriptionService.RATE_LIMIT_COOLDOWN_MS;
+			}
 			console.error(
 				`[Subscriptions] Check failed for ${subscriptionId}${rateLimited ? ' (rate limited)' : ''}:`,
 				error,
 			);
+
+			// Record the failure on the subscription so the UI can show *why*
+			// a check is stale instead of silently freezing lastChecked.
+			await prisma.subscription
+				.update({
+					where: { id: subscriptionId },
+					data: {
+						lastChecked: new Date(),
+						lastError: (rateLimited
+							? 'YouTube rate limit reached'
+							: (error?.message ?? 'Unknown error')
+						).slice(0, 500),
+					},
+				})
+				.catch(() => {});
+
 			// Notify connected clients so the UI can surface the failure.
 			sseEmitter.broadcast('subscription:check:error', {
 				id: subscriptionId,
@@ -207,101 +263,127 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Get latest videos from a channel/playlist (fixed depth)
+	 * Get the latest videos for a subscription check.
+	 *
+	 * Prefers YouTube's public per-channel RSS feed: a single plain HTTPS request
+	 * that carries real publish dates and is not subject to the "confirm you're
+	 * not a bot" player checks that full yt-dlp extraction triggers. Falls back
+	 * to a flat-playlist browse listing (also a single request, but no dates)
+	 * when the feed is unavailable — e.g. playlist-type subscriptions.
 	 */
-	private async getLatestVideos(url: string): Promise<any[]> {
-		return this.fetchPlaylistEntries(url, { limit: SubscriptionService.CHECK_DEPTH });
+	private async getLatestVideos(subscription: any): Promise<any[]> {
+		if (subscription.type === 'CHANNEL') {
+			try {
+				const channelId = await this.resolveChannelId(subscription);
+				if (channelId) {
+					const videos = await this.fetchChannelFeed(channelId);
+					if (videos.length > 0) return videos;
+				}
+			} catch (err: any) {
+				// Rate limits are IP-wide — don't fall back to more yt-dlp traffic.
+				if (err?.isRateLimit) throw err;
+				console.warn(
+					`[Subscriptions] RSS feed unavailable for ${subscription.name}, falling back to playlist listing:`,
+					err?.message ?? err,
+				);
+			}
+		}
+		return this.fetchPlaylistEntries(subscription.url, {
+			limit: SubscriptionService.CHECK_DEPTH,
+		});
 	}
 
 	/**
-	 * Get latest videos with publish dates and live status (full extraction).
-	 *
-	 * The subscription checker needs the real upload timestamp of each video so it
-	 * can distinguish a genuinely-new upload from a back-catalog entry that was
-	 * pre-seeded into the archive. Flat-playlist mode does not return timestamps,
-	 * so this does a single full extraction limited to CHECK_DEPTH videos.
+	 * Global yt-dlp defaults (proxy + extra flags) from the settings singleton.
 	 */
-	private async getLatestVideosWithDates(url: string): Promise<any[]> {
-		ytdlpService.validateUrl(url);
+	private async getYtdlpDefaults(): Promise<{ proxyUrl: string | null; extraFlags: string[] }> {
+		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+		return {
+			proxyUrl: settings?.ytdlpProxyUrl ?? null,
+			extraFlags: settings?.ytdlpExtraFlags ?? [],
+		};
+	}
 
-		// Unit Separator — won't appear in titles, so a single delimited line per
-		// video can be parsed without the fragile "group every 3 lines" assumption.
-		const SEP = String.fromCharCode(31);
+	/**
+	 * Resolve a subscription URL to a YouTube channel ID (UC…) for RSS lookups.
+	 * The result is cached on the subscription row; @handle URLs are resolved
+	 * once via a single flat yt-dlp browse request.
+	 */
+	private async resolveChannelId(subscription: any): Promise<string | null> {
+		if (subscription.channelId) return subscription.channelId;
 
-		return new Promise((resolve, reject) => {
-			const args = [
-				'--no-download',
-				'--print',
-				`%(id)s${SEP}%(title)s${SEP}%(webpage_url)s${SEP}%(timestamp)s${SEP}%(live_status)s`,
-				'--playlist-end',
-				SubscriptionService.CHECK_DEPTH.toString(),
-				url,
-			];
+		const fromUrl = subscription.url?.match(/\/channel\/(UC[\w-]+)/)?.[1];
+		if (fromUrl) {
+			await prisma.subscription
+				.update({ where: { id: subscription.id }, data: { channelId: fromUrl } })
+				.catch(() => {});
+			return fromUrl;
+		}
 
-			const proc = spawn(ytdlpService.getPath(), args);
-			let output = '';
-			let error = '';
-			let settled = false;
-
-			const timeout = setTimeout(() => {
-				if (settled) return;
-				settled = true;
-				try {
-					proc.kill('SIGKILL');
-				} catch {}
-				reject(new Error('yt-dlp playlist fetch timed out'));
-			}, 120000);
-
-			proc.stdout.on('data', (data) => {
-				output += data.toString();
-			});
-
-			proc.stderr.on('data', (data) => {
-				error += data.toString();
-			});
-
-			proc.on('error', (err) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-				reject(err);
-			});
-
-			proc.on('close', (code) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-
-				if (code !== 0) {
-					if (isRateLimitedError(error)) {
-						reject(new RateLimitError(error.trim() || 'YouTube rate limit (HTTP 429)'));
-					} else {
-						reject(new Error(`yt-dlp failed: ${error}`));
-					}
-					return;
-				}
-
-				const videos = [];
-				for (const line of output.split('\n')) {
-					if (!line.trim()) continue;
-					const parts = line.split(SEP);
-					if (parts.length < 3) continue;
-
-					const [id, title, webpageUrl, tsRaw, liveStatus] = parts;
-					const ts = tsRaw && tsRaw !== 'NA' ? parseInt(tsRaw, 10) : NaN;
-
-					videos.push({
-						id,
-						title,
-						url: webpageUrl,
-						uploadedAt: Number.isFinite(ts) ? new Date(ts * 1000) : null,
-						liveStatus: liveStatus && liveStatus !== 'NA' ? liveStatus : null,
-					});
-				}
-
-				resolve(videos);
-			});
+		const defaults = await this.getYtdlpDefaults();
+		const json = await runYtdlpJson(subscription.url, {
+			proxyUrl: defaults.proxyUrl,
+			extraArgs: [
+				'--playlist-items',
+				'0',
+				...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
+			],
+			timeoutMs: 30000,
 		});
+		const channelId = (() => {
+			try {
+				return JSON.parse(json)?.channel_id ?? null;
+			} catch {
+				return null;
+			}
+		})();
+		if (channelId) {
+			await prisma.subscription
+				.update({ where: { id: subscription.id }, data: { channelId } })
+				.catch(() => {});
+		}
+		return channelId;
+	}
+
+	/**
+	 * Fetch a channel's public RSS feed (~15 most recent uploads with publish
+	 * dates). No yt-dlp, no player API, no bot checks — just one GET.
+	 */
+	private async fetchChannelFeed(channelId: string): Promise<any[]> {
+		const res = await fetch(
+			`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`,
+			{
+				signal: AbortSignal.timeout(15000),
+				headers: { 'User-Agent': 'Mozilla/5.0 (compatible; wytui)' },
+			},
+		);
+		if (!res.ok) throw new Error(`Feed request failed: HTTP ${res.status}`);
+		const xml = await res.text();
+
+		const videos: any[] = [];
+		for (const entry of xml.split('<entry>').slice(1)) {
+			const id = /<yt:videoId>([^<]+)<\/yt:videoId>/.exec(entry)?.[1];
+			const title = /<title>([^<]*)<\/title>/.exec(entry)?.[1];
+			const url = /<link rel="alternate" href="([^"]+)"/.exec(entry)?.[1];
+			const published = /<published>([^<]+)<\/published>/.exec(entry)?.[1];
+			if (!id || !url) continue;
+
+			videos.push({
+				id,
+				title: title ? decodeXmlEntities(title) : id,
+				url,
+				uploadedAt: published ? new Date(published) : null,
+				liveStatus: null,
+			});
+		}
+		return videos;
+	}
+
+	/**
+	 * Get latest videos from a channel/playlist via a flat listing (fixed depth)
+	 */
+	private async getLatestVideosByUrl(url: string): Promise<any[]> {
+		return this.fetchPlaylistEntries(url, { limit: SubscriptionService.CHECK_DEPTH });
 	}
 
 	/**
@@ -314,6 +396,7 @@ class SubscriptionService {
 		ytdlpService.validateUrl(url);
 
 		const useFullExtraction = !!opts.dateAfter;
+		const defaults = await this.getYtdlpDefaults();
 
 		return new Promise((resolve, reject) => {
 			const args = ['--print', 'id', '--print', 'title', '--print', 'webpage_url'];
@@ -329,7 +412,7 @@ class SubscriptionService {
 				args.push('--playlist-end', opts.limit.toString());
 			}
 
-			args.push(url);
+			args.push(...ytdlpService.buildDefaultsArgs(defaults), url);
 
 			const proc = spawn(ytdlpService.getPath(), args);
 			let output = '';
@@ -401,7 +484,7 @@ class SubscriptionService {
 
 		if (!subscription) return 0;
 
-		const videos = await this.getLatestVideos(subscription.url);
+		const videos = await this.getLatestVideosByUrl(subscription.url);
 		let seeded = 0;
 
 		for (const video of videos) {
@@ -438,7 +521,10 @@ class SubscriptionService {
 		}
 
 		const videos = await this.fetchPlaylistEntries(subscription.url, { dateAfter: opts.dateAfter });
-		const newVideos = await this.filterNewVideos(videos);
+		const candidates = subscription.excludeShorts
+			? videos.filter((v) => !v.url?.includes('/shorts/'))
+			: videos;
+		const newVideos = await this.filterNewVideos(candidates, subscription);
 
 		for (const video of newVideos) {
 			try {
@@ -474,13 +560,23 @@ class SubscriptionService {
 	 * Checks both the archive and pending/active downloads to prevent duplicates.
 	 *
 	 * When `subscription` is provided and the videos carry publish dates (the
-	 * scheduled-check path), the archive is no longer treated as an unconditional
+	 * RSS-feed path), the archive is no longer treated as an unconditional
 	 * skip: a video that was only *seeded* (archived without ever being downloaded)
 	 * is reconsidered if it was actually published after the subscription was
 	 * created. This heals the case where a scheduled/premiere video gets pre-seeded
 	 * into the global archive and is then silently skipped once it goes public.
+	 *
+	 * `trustUndatedEntries` restores the legacy behavior for sources that only
+	 * surface recent uploads (the linked-account feed) even though their entries
+	 * carry no dates. Otherwise, undated entries (flat-playlist fallback) stay
+	 * skipped — re-downloading a channel's back-catalog is worse than missing a
+	 * borderline entry.
 	 */
-	private async filterNewVideos(videos: any[], subscription?: any): Promise<any[]> {
+	private async filterNewVideos(
+		videos: any[],
+		subscription?: any,
+		opts: { trustUndatedEntries?: boolean } = {},
+	): Promise<any[]> {
 		const newVideos = [];
 		const subCreatedAt = subscription?.createdAt
 			? new Date(subscription.createdAt).getTime()
@@ -502,6 +598,11 @@ class SubscriptionService {
 			});
 
 			if (archived) {
+				// Deliberately skipped (e.g. excluded short) — never re-queue.
+				if (archived.reason) {
+					continue;
+				}
+
 				const download = await prisma.download.findFirst({
 					where: { url: video.url, status: 'COMPLETED' },
 					select: { id: true, filepath: true },
@@ -525,12 +626,14 @@ class SubscriptionService {
 					//                                    seeded (e.g. premiere that went live
 					//                                    shortly after creation) → allow
 					//
-					// If we cannot determine age (no timestamp from yt-dlp, or feed entry
-					// which never carries timestamps), we err on the side of downloading:
-					// the subscription feed only surfaces recent videos, so a seeded entry
-					// appearing there is almost certainly a new upload that the user wants.
+					// Without a timestamp (flat-playlist fallback) we keep skipping
+					// unless the source is known to only surface recent uploads.
 					const hasTimestamp = video.uploadedAt instanceof Date;
 					const ageDeterminate = subCreatedAt != null && hasTimestamp;
+
+					if (!ageDeterminate && !opts.trustUndatedEntries) {
+						continue;
+					}
 
 					if (ageDeterminate) {
 						const publishedAfterSub = video.uploadedAt!.getTime() > subCreatedAt;
@@ -540,8 +643,9 @@ class SubscriptionService {
 						}
 					}
 
-					// Age unknown or confirmed new — clear the stale seed entry and
-					// let the video download (it will be properly re-archived on completion).
+					// Age unknown (trusted source) or confirmed new — clear the stale
+					// seed entry and let the video download (it will be properly
+					// re-archived on completion).
 					await prisma.archive.delete({ where: { videoId: video.id } }).catch(() => {});
 				}
 			}
@@ -602,6 +706,17 @@ class SubscriptionService {
 		this.scheduledTasks.clear();
 		console.log('[Subscriptions] Stopped all tasks');
 	}
+}
+
+/** Decode the handful of XML entities YouTube's feed titles contain. */
+function decodeXmlEntities(s: string): string {
+	return s
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&#39;/g, "'")
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&');
 }
 
 // Singleton instance

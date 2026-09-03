@@ -5,6 +5,7 @@
 		profiles = [],
 		selectedProfileId = '',
 		saveToLibrary = false,
+		excludeShorts = false,
 		options = { sponsorblock: false, subtitles: false, metadata: false },
 		libraryConfigured = false,
 		onChange,
@@ -12,6 +13,7 @@
 		profiles?: DownloadProfile[];
 		selectedProfileId?: string;
 		saveToLibrary?: boolean;
+		excludeShorts?: boolean;
 		options?: {
 			sponsorblock: boolean;
 			subtitles: boolean;
@@ -21,6 +23,7 @@
 		onChange?: (updates: {
 			profileId?: string;
 			saveToLibrary?: boolean;
+			excludeShorts?: boolean;
 			options?: {
 				sponsorblock: boolean;
 				subtitles: boolean;
@@ -45,6 +48,10 @@
 				},
 			});
 		}
+	}
+
+	function updateExcludeShorts(value: boolean) {
+		onChange?.({ excludeShorts: value });
 	}
 
 	function updateProfileId(value: string) {
@@ -84,6 +91,20 @@
 			</p>
 		</div>
 	{/if}
+
+	<div class="form-group">
+		<label class="toggle-label">
+			<input
+				type="checkbox"
+				checked={excludeShorts}
+				onchange={(e) => updateExcludeShorts((e.target as HTMLInputElement).checked)}
+			/>
+			Exclude Shorts
+		</label>
+		<p class="help-text">
+			Skip shorts and other vertical videos from this subscription (up to 3 min, portrait format)
+		</p>
+	</div>
 
 	<div class="form-group">
 		<span class="options-label">Options</span>

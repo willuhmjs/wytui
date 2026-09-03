@@ -94,4 +94,4 @@ export class QueueService {
 }
 
 // Singleton instance
-export const queueService = new QueueService(3);
+export const queueService = new QueueService(2);
