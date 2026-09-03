@@ -5,6 +5,7 @@
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
+	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
 
 	type Channel = { name: string; count: number; thumbnail: string | null };
 
@@ -19,6 +20,17 @@
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	let offset = $state(0);
 	let hasMore = $state(false);
+	let channelsSort = $state<'name' | 'count'>('name');
+
+	let visibleChannels = $derived.by(() => {
+		const sorted = [...channels];
+		if (channelsSort === 'count') {
+			sorted.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+		} else {
+			sorted.sort((a, b) => a.name.localeCompare(b.name));
+		}
+		return sorted;
+	});
 
 	onMount(() => loadChannels());
 
@@ -94,19 +106,42 @@
 				bind:value={search}
 				oninput={handleSearchInput}
 			/>
+			<FilterDropdown
+				label="Sort channels"
+				bind:value={channelsSort}
+				options={[
+					{ value: 'name', label: 'Name A–Z' },
+					{ value: 'count', label: 'Most videos' },
+				]}
+			>
+				{#snippet icon()}
+					<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+						<path
+							d="M2 4h10M4 7h6M6 10h2"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+						/>
+					</svg>
+				{/snippet}
+			</FilterDropdown>
 			<ViewToggle bind:view={viewMode} />
 		</div>
 	</div>
 
-	{#if loading}
+	{#if error && channels.length > 0}
+		<ErrorMessage {error} onRetry={() => loadChannels()} />
+	{/if}
+
+	{#if loading && channels.length === 0}
 		<Skeleton count={12} variant="card" />
-	{:else if error}
+	{:else if error && channels.length === 0}
 		<ErrorMessage {error} onRetry={() => loadChannels()} />
 	{:else if channels.length === 0}
 		<EmptyState title={search ? 'No channels match your search' : 'No completed downloads yet'} />
 	{:else if viewMode === 'list'}
 		<div class="channels-list">
-			{#each channels as channel}
+			{#each visibleChannels as channel (channel.name)}
 				<button class="channel-list-row" onclick={() => goToChannel(channel.name)}>
 					<div class="channel-list-avatar">
 						{#if channel.thumbnail}
@@ -126,7 +161,7 @@
 		</div>
 	{:else}
 		<div class="channels-grid">
-			{#each channels as channel}
+			{#each visibleChannels as channel (channel.name)}
 				<button class="channel-card" onclick={() => goToChannel(channel.name)}>
 					<div class="channel-avatar">
 						{#if channel.thumbnail}

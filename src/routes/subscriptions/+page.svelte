@@ -9,6 +9,8 @@
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import FormField from '$lib/components/ui/FormField.svelte';
+	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import SubscriptionConfig from '$lib/components/download/SubscriptionConfig.svelte';
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
@@ -32,6 +34,46 @@
 	let checkingNow = $state<Set<string>>(new Set());
 	const checkTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 	const checkPendingToastDismiss = new Map<string, () => void>();
+
+	// List filters (client-side, applied to the loaded page)
+	let subsSearch = $state('');
+	let subsProfileFilter = $state('all');
+	let subsSort = $state<'name' | 'lastChecked' | 'lastVideoDate' | 'videoCount'>('name');
+
+	let availableSubProfiles = $derived(
+		[...new Set(subscriptions.map((s) => s.profile).filter(Boolean))].sort() as string[],
+	);
+
+	let visibleSubscriptions = $derived.by(() => {
+		const query = subsSearch.trim().toLowerCase();
+		const filtered = subscriptions.filter((s) => {
+			const matchesSearch =
+				!query || s.name?.toLowerCase().includes(query) || s.url?.toLowerCase().includes(query);
+			const matchesProfile = subsProfileFilter === 'all' || s.profile === subsProfileFilter;
+			return matchesSearch && matchesProfile;
+		});
+		const sorted = [...filtered];
+		switch (subsSort) {
+			case 'lastChecked':
+				sorted.sort(
+					(a, b) => new Date(b.lastChecked ?? 0).getTime() - new Date(a.lastChecked ?? 0).getTime(),
+				);
+				break;
+			case 'lastVideoDate':
+				sorted.sort(
+					(a, b) =>
+						new Date(b.lastVideoDate ?? 0).getTime() - new Date(a.lastVideoDate ?? 0).getTime(),
+				);
+				break;
+			case 'videoCount':
+				sorted.sort((a, b) => (b.videoCount ?? 0) - (a.videoCount ?? 0));
+				break;
+			default:
+				sorted.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+		}
+		return sorted;
+	});
+
 	let showSubsForm = $state(false);
 	let subFormUrl = $state('');
 	let subFormProfileId = $state('');
@@ -260,17 +302,17 @@
 	}
 
 	async function loadSubscriptions() {
-		// Fresh load: reset pagination and replace the list from offset 0.
+		// Replace the list from offset 0. Refetch as many items as were already
+		// loaded (clamped to the API's 100 cap) so background refreshes don't
+		// shrink the page and yank the scroll position back up.
 		subsLoading = true;
 		subsError = null;
-		subsOffset = 0;
+		const limit = Math.min(Math.max(subsOffset, SUBS_PAGE_SIZE), 100);
 		try {
-			const page = await safeFetchJson<any[]>(
-				`/api/subscriptions?limit=${SUBS_PAGE_SIZE}&offset=0`,
-			);
+			const page = await safeFetchJson<any[]>(`/api/subscriptions?limit=${limit}&offset=0`);
 			subscriptions = page;
 			subsOffset = page.length;
-			subsHasMore = page.length === SUBS_PAGE_SIZE;
+			subsHasMore = page.length === limit;
 		} catch (e) {
 			subsError = isFetchError(e)
 				? e
@@ -582,9 +624,50 @@
 					</div>
 				{/if}
 
-				{#if subsLoading}
+				{#if subscriptions.length > 0}
+					<div class="list-filters">
+						<SearchInput
+							bind:value={subsSearch}
+							placeholder="Search subscriptions..."
+							label="Search subscriptions"
+						/>
+						{#if availableSubProfiles.length > 1}
+							<FilterDropdown
+								label="Filter by profile"
+								bind:value={subsProfileFilter}
+								options={[
+									{ value: 'all', label: 'All profiles' },
+									...availableSubProfiles.map((p) => ({ value: p, label: p })),
+								]}
+							/>
+						{/if}
+						<FilterDropdown
+							label="Sort subscriptions"
+							bind:value={subsSort}
+							options={[
+								{ value: 'name', label: 'Name A–Z' },
+								{ value: 'lastChecked', label: 'Recently checked' },
+								{ value: 'lastVideoDate', label: 'Latest video' },
+								{ value: 'videoCount', label: 'Most videos' },
+							]}
+						>
+							{#snippet icon()}
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<path
+										d="M2 4h10M4 7h6M6 10h2"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+									/>
+								</svg>
+							{/snippet}
+						</FilterDropdown>
+					</div>
+				{/if}
+
+				{#if subsLoading && subscriptions.length === 0}
 					<Skeleton count={5} variant="list" />
-				{:else if subsError}
+				{:else if subsError && subscriptions.length === 0}
 					<div class="error-wrapper">
 						<ErrorMessage
 							error={subsError}
@@ -598,8 +681,20 @@
 						description="Add a channel to start monitoring for new videos"
 					/>
 				{:else}
+					{#if subsError}
+						<div class="error-wrapper">
+							<ErrorMessage
+								error={subsError}
+								onRetry={loadSubscriptions}
+								onDismiss={() => (subsError = null)}
+							/>
+						</div>
+					{/if}
 					<div class="content-grid">
-						{#each subscriptions as sub}
+						{#if visibleSubscriptions.length === 0}
+							<p class="no-match-text">No subscriptions match your filters.</p>
+						{/if}
+						{#each visibleSubscriptions as sub (sub.id)}
 							<div class="content-card">
 								{#if editingSub?.id === sub.id}
 									<div class="edit-form">
@@ -1056,6 +1151,21 @@
 
 	.error-wrapper {
 		margin-bottom: var(--spacing-md);
+	}
+
+	.list-filters {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		flex-wrap: wrap;
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.no-match-text {
+		grid-column: 1 / -1;
+		color: var(--color-text-secondary);
+		text-align: center;
+		padding: var(--spacing-xl) 0;
 	}
 
 	.load-more-row {

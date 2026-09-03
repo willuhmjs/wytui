@@ -353,7 +353,13 @@
 	onclick={handleCardClick}
 >
 	{#if selectionMode && download.status === 'COMPLETED'}
-		<button class="select-overlay" onclick={onToggleSelect}>
+		<button
+			class="select-overlay"
+			onclick={(e) => {
+				e.stopPropagation();
+				onToggleSelect?.();
+			}}
+		>
 			<div class="select-checkbox" class:checked={selected}>
 				{#if selected}
 					<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12"

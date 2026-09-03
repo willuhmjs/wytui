@@ -904,6 +904,30 @@
 		}
 	}
 
+	// Mirrors the scheme allow-list in settings-validation.ts so the debounced
+	// auto-save never PATCHes a half-typed proxy URL (empty clears the setting).
+	const YT_DLP_PROXY_SCHEMES = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
+	let ytdlpProxyUrlError = $derived.by(() => {
+		if (!settings) return null;
+		const value = (settings.ytdlpProxyUrl ?? '').trim();
+		if (value === '') return null;
+		try {
+			if (YT_DLP_PROXY_SCHEMES.includes(new URL(value).protocol)) return null;
+		} catch {
+			// fall through to the error
+		}
+		return 'Needs a complete proxy URL, e.g. socks5://host:port (schemes: http, https, socks4, socks4a, socks5, socks5h)';
+	});
+
+	// aria2c only understands HTTP proxies; with a SOCKS proxy yt-dlp hands it
+	// `--all-proxy socks5://...`, which aria2c rejects — every download fails.
+	let aria2cSocksConflict = $derived.by(() => {
+		if (!settings) return false;
+		if (!settings.useAria2c) return false;
+		const proxy = (settings.ytdlpProxyUrl ?? '').trim().toLowerCase();
+		return proxy.startsWith('socks');
+	});
+
 	async function saveSettings() {
 		saving = true;
 		try {
@@ -917,6 +941,16 @@
 					}
 					if (key === 'ytdlpProxyUrl' && value === '') {
 						value = null;
+					}
+					// A half-typed proxy URL stays out of the payload; the
+					// auto-save effect re-saves it once it passes validation.
+					if (key === 'ytdlpProxyUrl' && ytdlpProxyUrlError) {
+						continue;
+					}
+					// aria2c + a SOCKS proxy breaks every download; keep that
+					// combination out of the payload while the warning is showing.
+					if (key === 'useAria2c' && aria2cSocksConflict) {
+						continue;
 					}
 					payload[key] = value;
 				}
@@ -1975,7 +2009,18 @@
 								<input type="checkbox" bind:checked={settings.useAria2c} />
 								Use aria2c accelerated downloader
 							</label>
-							<p class="help-text">Use aria2c accelerated downloader (requires aria2 in image)</p>
+							{#if aria2cSocksConflict}
+								<p class="help-text error-text" role="alert">
+									aria2c only supports HTTP proxies — it can't be combined with a SOCKS proxy URL,
+									every download would fail. This toggle won't be saved while a socks5:// proxy is
+									set.
+								</p>
+							{:else}
+								<p class="help-text">
+									Use aria2c accelerated downloader (requires aria2 in image). Note: aria2c only
+									supports HTTP proxies, not SOCKS.
+								</p>
+							{/if}
 						</div>
 
 						<div class="form-group">
@@ -2047,12 +2092,20 @@
 								id="ytdlpProxyUrl"
 								bind:value={settings.ytdlpProxyUrl}
 								placeholder="socks5://user:pass@host:port"
+								class:invalid={!!ytdlpProxyUrlError}
+								aria-invalid={ytdlpProxyUrlError ? 'true' : undefined}
 							/>
-							<p class="help-text">
-								Route all yt-dlp traffic (downloads, metadata fetches, subscription checks) through
-								an http(s)/socks4/socks5/socks5h proxy. Use <code>socks5h</code> to resolve DNS through
-								the proxy too.
-							</p>
+							{#if ytdlpProxyUrlError}
+								<p class="help-text error-text" role="alert">
+									{ytdlpProxyUrlError}
+								</p>
+							{:else}
+								<p class="help-text">
+									Route all yt-dlp traffic (downloads, metadata fetches, subscription checks)
+									through an http(s)/socks4/socks5/socks5h proxy. Use <code>socks5h</code> to resolve
+									DNS through the proxy too.
+								</p>
+							{/if}
 						</div>
 
 						<div class="form-group">
@@ -3755,6 +3808,11 @@
 	input:focus {
 		outline: none;
 		border-color: var(--color-accent-primary);
+	}
+
+	input.invalid,
+	input.invalid:focus {
+		border-color: var(--color-status-error);
 	}
 
 	input[readonly] {

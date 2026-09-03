@@ -10,11 +10,11 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
+	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
 	import { getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { addToast, addStickyToast, updateToast, resolveToast } from '$lib/stores/toast.svelte';
 	import { formatBytes, formatTimestamp } from '$lib/utils/format';
-	import { focusOnMount } from '$lib/utils/a11y';
 	import CheckSquareIcon from '$lib/components/icons/CheckSquareIcon.svelte';
 	import FolderDownIcon from '$lib/components/icons/FolderDownIcon.svelte';
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
@@ -31,15 +31,10 @@
 	let completedFilter = $state<'all' | 'cache' | 'library'>('all');
 	let watchStateFilter = $state<'all' | 'watched' | 'unwatched' | 'in_progress'>('all');
 	let channelFilter = $state<string>('all');
-	let channelSearch = $state('');
-	let channelDropdownOpen = $state(false);
 	let sortOption = $state<
 		'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'uploader'
 	>('newest');
-	let sortDropdownOpen = $state(false);
 	let resolutionFilter = $state<string>('all');
-	let resolutionDropdownOpen = $state(false);
-	let watchStateDropdownOpen = $state(false);
 	let dateFrom = $state('');
 	let dateTo = $state('');
 	let searchQuery = $state('');
@@ -128,12 +123,6 @@
 			loadCompletedDownloads();
 		}
 	});
-
-	let filteredChannelOptions = $derived(
-		channelSearch
-			? availableChannels.filter((c) => c.toLowerCase().includes(channelSearch.toLowerCase()))
-			: availableChannels,
-	);
 
 	let filtersInitialized = false;
 
@@ -992,7 +981,7 @@
 				{/if}
 			</div>
 
-			{#if failedLoading}
+			{#if failedLoading && failedDownloads.length === 0}
 				<Skeleton count={3} variant="card" />
 			{:else}
 				<div class="downloads-grid">
@@ -1051,127 +1040,32 @@
 					>
 				</div>
 				{#if availableChannels.length > 1}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						class="channel-dropdown"
-						onkeydown={(e) => {
-							if (e.key === 'Escape') channelDropdownOpen = false;
-						}}
-					>
-						<button
-							id="dl-channel-trigger"
-							type="button"
-							class="channel-dropdown-trigger"
-							aria-label="Filter by channel"
-							aria-haspopup="listbox"
-							aria-expanded={channelDropdownOpen}
-							aria-controls="dl-channel-menu"
-							onclick={(e) => {
-								e.stopPropagation();
-								channelDropdownOpen = !channelDropdownOpen;
-								channelSearch = '';
-							}}
-						>
-							<span class="channel-dropdown-label"
-								>{channelFilter === 'all' ? 'All channels' : channelFilter}</span
-							>
-							<svg
-								width="12"
-								height="12"
-								viewBox="0 0 12 12"
-								fill="none"
-								class="channel-dropdown-chevron"
-								class:open={channelDropdownOpen}
-								aria-hidden="true"
-							>
-								<path
-									d="M3 4.5L6 7.5L9 4.5"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</button>
-						{#if channelDropdownOpen}
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<div
-								id="dl-channel-menu"
-								role="listbox"
-								aria-labelledby="dl-channel-trigger"
-								class="channel-dropdown-menu"
-								tabindex="-1"
-								onclick={(e) => e.stopPropagation()}
-							>
-								<input
-									type="text"
-									class="channel-dropdown-search"
-									placeholder="Search channels..."
-									aria-label="Search channels"
-									bind:value={channelSearch}
-									use:focusOnMount
-								/>
-								<div class="channel-dropdown-options">
-									<button
-										type="button"
-										role="option"
-										aria-selected={channelFilter === 'all'}
-										class="channel-dropdown-option"
-										class:selected={channelFilter === 'all'}
-										onclick={(e) => {
-											e.stopPropagation();
-											channelFilter = 'all';
-											channelDropdownOpen = false;
-										}}>All channels</button
-									>
-									{#each filteredChannelOptions as channel}
-										<button
-											type="button"
-											role="option"
-											aria-selected={channelFilter === channel}
-											class="channel-dropdown-option"
-											class:selected={channelFilter === channel}
-											onclick={(e) => {
-												e.stopPropagation();
-												channelFilter = channel;
-												channelDropdownOpen = false;
-											}}>{channel}</button
-										>
-									{/each}
-									{#if filteredChannelOptions.length === 0}
-										<div class="channel-dropdown-empty">No channels found</div>
-									{/if}
-								</div>
-							</div>
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<div
-								class="channel-dropdown-backdrop"
-								onclick={() => (channelDropdownOpen = false)}
-							></div>
-						{/if}
-					</div>
+					<FilterDropdown
+						label="Filter by channel"
+						bind:value={channelFilter}
+						searchable
+						searchPlaceholder="Search channels..."
+						emptyText="No channels found"
+						options={[
+							{ value: 'all', label: 'All channels' },
+							...availableChannels.map((c) => ({ value: c, label: c })),
+						]}
+					/>
 				{/if}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="sort-dropdown"
-					onkeydown={(e) => {
-						if (e.key === 'Escape') sortDropdownOpen = false;
-					}}
+				<FilterDropdown
+					label="Sort downloads"
+					bind:value={sortOption}
+					options={[
+						{ value: 'newest', label: 'Newest first', short: 'Newest' },
+						{ value: 'oldest', label: 'Oldest first', short: 'Oldest' },
+						{ value: 'largest', label: 'Largest first', short: 'Largest' },
+						{ value: 'smallest', label: 'Smallest first', short: 'Smallest' },
+						{ value: 'longest', label: 'Longest first', short: 'Longest' },
+						{ value: 'shortest', label: 'Shortest first', short: 'Shortest' },
+						{ value: 'uploader', label: 'Uploader A–Z', short: 'Uploader' },
+					]}
 				>
-					<button
-						id="dl-sort-trigger"
-						type="button"
-						class="channel-dropdown-trigger"
-						aria-label="Sort downloads"
-						aria-haspopup="listbox"
-						aria-expanded={sortDropdownOpen}
-						aria-controls="dl-sort-menu"
-						onclick={(e) => {
-							e.stopPropagation();
-							sortDropdownOpen = !sortDropdownOpen;
-						}}
-					>
+					{#snippet icon()}
 						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<path
 								d="M2 4h10M4 7h6M6 10h2"
@@ -1180,178 +1074,40 @@
 								stroke-linecap="round"
 							/>
 						</svg>
-						<span class="channel-dropdown-label"
-							>{(
-								{
-									newest: 'Newest',
-									oldest: 'Oldest',
-									largest: 'Largest',
-									smallest: 'Smallest',
-									longest: 'Longest',
-									shortest: 'Shortest',
-									uploader: 'Uploader',
-								} as Record<string, string>
-							)[sortOption]}</span
-						>
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 12 12"
-							fill="none"
-							class="channel-dropdown-chevron"
-							class:open={sortDropdownOpen}
-							aria-hidden="true"
-						>
-							<path
-								d="M3 4.5L6 7.5L9 4.5"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
-					{#if sortDropdownOpen}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							id="dl-sort-menu"
-							role="listbox"
-							aria-labelledby="dl-sort-trigger"
-							class="channel-dropdown-menu"
-							tabindex="-1"
-							onclick={(e) => e.stopPropagation()}
-						>
-							<div class="channel-dropdown-options">
-								{#each [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['largest', 'Largest first'], ['smallest', 'Smallest first'], ['longest', 'Longest first'], ['shortest', 'Shortest first'], ['uploader', 'Uploader A–Z']] as [value, label]}
-									<button
-										type="button"
-										role="option"
-										aria-selected={sortOption === value}
-										class="channel-dropdown-option"
-										class:selected={sortOption === value}
-										onclick={(e) => {
-											e.stopPropagation();
-											sortOption = value as typeof sortOption;
-											sortDropdownOpen = false;
-										}}>{label}</button
-									>
-								{/each}
-							</div>
-						</div>
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div class="channel-dropdown-backdrop" onclick={() => (sortDropdownOpen = false)}></div>
-					{/if}
-				</div>
+					{/snippet}
+				</FilterDropdown>
 			</div>
 			<div class="section-header-filters">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="sort-dropdown"
-					onkeydown={(e) => {
-						if (e.key === 'Escape') watchStateDropdownOpen = false;
-					}}
+				<FilterDropdown
+					label="Filter by watch state"
+					bind:value={watchStateFilter}
+					options={[
+						{ value: 'all', label: 'All states' },
+						{ value: 'unwatched', label: 'Unwatched' },
+						{ value: 'in_progress', label: 'In progress' },
+						{ value: 'watched', label: 'Watched' },
+					]}
 				>
-					<button
-						id="dl-watchstate-trigger"
-						type="button"
-						class="channel-dropdown-trigger"
-						aria-label="Filter by watch state"
-						aria-haspopup="listbox"
-						aria-expanded={watchStateDropdownOpen}
-						aria-controls="dl-watchstate-menu"
-						onclick={(e) => {
-							e.stopPropagation();
-							watchStateDropdownOpen = !watchStateDropdownOpen;
-						}}
-					>
+					{#snippet icon()}
 						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3" fill="none" />
 							<path d="M5.5 5.5L9 7L5.5 8.5z" fill="currentColor" />
 						</svg>
-						<span class="channel-dropdown-label"
-							>{(
-								{
-									all: 'All states',
-									unwatched: 'Unwatched',
-									in_progress: 'In progress',
-									watched: 'Watched',
-								} as Record<string, string>
-							)[watchStateFilter]}</span
-						>
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 12 12"
-							fill="none"
-							class="channel-dropdown-chevron"
-							class:open={watchStateDropdownOpen}
-							aria-hidden="true"
-						>
-							<path
-								d="M3 4.5L6 7.5L9 4.5"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
-					{#if watchStateDropdownOpen}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							id="dl-watchstate-menu"
-							role="listbox"
-							aria-labelledby="dl-watchstate-trigger"
-							class="channel-dropdown-menu"
-							tabindex="-1"
-							onclick={(e) => e.stopPropagation()}
-						>
-							<div class="channel-dropdown-options">
-								{#each [['all', 'All states'], ['unwatched', 'Unwatched'], ['in_progress', 'In progress'], ['watched', 'Watched']] as [value, label]}
-									<button
-										type="button"
-										role="option"
-										aria-selected={watchStateFilter === value}
-										class="channel-dropdown-option"
-										class:selected={watchStateFilter === value}
-										onclick={(e) => {
-											e.stopPropagation();
-											watchStateFilter = value as typeof watchStateFilter;
-											watchStateDropdownOpen = false;
-										}}>{label}</button
-									>
-								{/each}
-							</div>
-						</div>
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							class="channel-dropdown-backdrop"
-							onclick={() => (watchStateDropdownOpen = false)}
-						></div>
-					{/if}
-				</div>
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="sort-dropdown"
-					onkeydown={(e) => {
-						if (e.key === 'Escape') resolutionDropdownOpen = false;
-					}}
+					{/snippet}
+				</FilterDropdown>
+				<FilterDropdown
+					label="Filter by resolution"
+					bind:value={resolutionFilter}
+					options={[
+						{ value: 'all', label: 'All resolutions', short: 'All res' },
+						{ value: '4k', label: '4K+ (2160p+)', short: '4K+' },
+						{ value: '1080p', label: '1080p' },
+						{ value: '720p', label: '720p' },
+						{ value: '480p', label: '480p' },
+						{ value: 'other', label: 'Below 480p', short: 'Other' },
+					]}
 				>
-					<button
-						id="dl-resolution-trigger"
-						type="button"
-						class="channel-dropdown-trigger"
-						aria-label="Filter by resolution"
-						aria-haspopup="listbox"
-						aria-expanded={resolutionDropdownOpen}
-						aria-controls="dl-resolution-menu"
-						onclick={(e) => {
-							e.stopPropagation();
-							resolutionDropdownOpen = !resolutionDropdownOpen;
-						}}
-					>
+					{#snippet icon()}
 						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<rect
 								x="2"
@@ -1365,71 +1121,8 @@
 							/>
 							<path d="M5 7h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
 						</svg>
-						<span class="channel-dropdown-label"
-							>{(
-								{
-									all: 'All res',
-									'4k': '4K+',
-									'1080p': '1080p',
-									'720p': '720p',
-									'480p': '480p',
-									other: 'Other',
-								} as Record<string, string>
-							)[resolutionFilter]}</span
-						>
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 12 12"
-							fill="none"
-							class="channel-dropdown-chevron"
-							class:open={resolutionDropdownOpen}
-							aria-hidden="true"
-						>
-							<path
-								d="M3 4.5L6 7.5L9 4.5"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
-					{#if resolutionDropdownOpen}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							id="dl-resolution-menu"
-							role="listbox"
-							aria-labelledby="dl-resolution-trigger"
-							class="channel-dropdown-menu"
-							tabindex="-1"
-							onclick={(e) => e.stopPropagation()}
-						>
-							<div class="channel-dropdown-options">
-								{#each [['all', 'All resolutions'], ['4k', '4K+ (2160p+)'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p'], ['other', 'Below 480p']] as [value, label]}
-									<button
-										type="button"
-										role="option"
-										aria-selected={resolutionFilter === value}
-										class="channel-dropdown-option"
-										class:selected={resolutionFilter === value}
-										onclick={(e) => {
-											e.stopPropagation();
-											resolutionFilter = value;
-											resolutionDropdownOpen = false;
-										}}>{label}</button
-									>
-								{/each}
-							</div>
-						</div>
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<div
-							class="channel-dropdown-backdrop"
-							onclick={() => (resolutionDropdownOpen = false)}
-						></div>
-					{/if}
-				</div>
+					{/snippet}
+				</FilterDropdown>
 				<div class="date-range-filter">
 					<input
 						type="date"
@@ -1544,7 +1237,7 @@
 			</div>
 		{/if}
 		<div class="completed-body">
-			{#if completedLoading}
+			{#if completedLoading && completedDownloads.length === 0}
 				{#if viewMode === 'grid'}
 					<Skeleton count={6} variant="card" />
 				{:else}
@@ -1630,6 +1323,9 @@
 					{#each filteredCompletedDownloads as download (download.id)}
 						<DownloadListRow
 							{download}
+							{selectionMode}
+							selected={selectedIds.has(download.id)}
+							onToggleSelect={() => toggleSelection(download.id)}
 							onclick={() => {
 								if (download.status === 'COMPLETED') goto(`/downloads/${download.id}`);
 							}}
@@ -1929,114 +1625,6 @@
 		align-items: center;
 		padding: 0 var(--spacing-md);
 		font-size: 0.8125rem;
-	}
-
-	.channel-dropdown {
-		position: relative;
-	}
-	.channel-dropdown-trigger {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		height: var(--control-height);
-		padding: 0 var(--spacing-md);
-		background: var(--color-bg-tertiary);
-		border: 1px solid var(--color-border-translucent);
-		border-radius: var(--radius-md);
-		color: var(--color-text-primary);
-		font-size: 0.8125rem;
-		cursor: pointer;
-		white-space: nowrap;
-		transition: border-color 0.15s;
-	}
-	.channel-dropdown-trigger:hover {
-		border-color: var(--color-border-translucent-hover);
-	}
-	.channel-dropdown-chevron {
-		transition: transform 0.15s;
-	}
-	.channel-dropdown-chevron.open {
-		transform: rotate(180deg);
-	}
-	.channel-dropdown-menu {
-		position: absolute;
-		top: calc(100% + 4px);
-		right: 0;
-		min-width: 220px;
-		background: var(--color-bg-tertiary);
-		border: 1px solid var(--color-border-translucent);
-		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-dropdown);
-		z-index: 100;
-		overflow: hidden;
-		transform-origin: top right;
-		animation: dropdown-in 160ms cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
-	}
-	@keyframes dropdown-in {
-		from {
-			opacity: 0;
-			transform: translateY(-6px) scale(0.96);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.channel-dropdown-menu {
-			animation: none;
-		}
-	}
-	.channel-dropdown-search {
-		width: 100%;
-		padding: var(--spacing-sm) var(--spacing-md);
-		background: transparent;
-		border: none;
-		border-bottom: 1px solid var(--color-border-translucent);
-		color: var(--color-text-primary);
-		font-size: 0.85rem;
-		outline: none;
-	}
-	.channel-dropdown-search::placeholder {
-		color: var(--color-text-secondary);
-	}
-	.channel-dropdown-options {
-		max-height: 200px;
-		overflow-y: auto;
-		padding: var(--spacing-xs) 0;
-	}
-	.channel-dropdown-option {
-		display: block;
-		width: 100%;
-		padding: var(--spacing-xs) var(--spacing-md);
-		background: transparent;
-		border: none;
-		color: var(--color-text-primary);
-		font-size: 0.85rem;
-		text-align: left;
-		cursor: pointer;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.channel-dropdown-option:hover {
-		background: var(--color-overlay-hover);
-	}
-	.channel-dropdown-option.selected {
-		color: var(--color-accent-primary);
-	}
-	.channel-dropdown-empty {
-		padding: var(--spacing-sm) var(--spacing-md);
-		color: var(--color-text-secondary);
-		font-size: 0.85rem;
-	}
-	.channel-dropdown-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 99;
-	}
-	.sort-dropdown {
-		position: relative;
 	}
 
 	.downloads-grid {
@@ -2428,10 +2016,6 @@
 		background: var(--color-overlay-hover);
 	}
 
-	.filter-dropdown {
-		position: relative;
-	}
-
 	.completed-subtitles {
 		padding: var(--spacing-lg);
 		border-bottom: 1px solid var(--color-border-default);
@@ -2631,40 +2215,6 @@
 			flex: 1;
 			text-align: center;
 			min-height: 44px;
-		}
-		.channel-dropdown,
-		.sort-dropdown {
-			min-width: 0;
-		}
-		.channel-dropdown-trigger {
-			width: 100%;
-			justify-content: space-between;
-			min-height: 44px;
-			padding: var(--spacing-sm) var(--spacing-md);
-			font-size: var(--font-size-sm);
-		}
-		.channel-dropdown-label {
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			flex: 1;
-			text-align: left;
-		}
-		.channel-dropdown-menu {
-			left: 0;
-			right: 0;
-			min-width: unset;
-			max-width: calc(100vw - var(--spacing-md) * 2);
-		}
-		.channel-dropdown-search {
-			min-height: 44px;
-			font-size: 1rem;
-		}
-		.channel-dropdown-option {
-			padding: var(--spacing-sm) var(--spacing-md);
-			min-height: 44px;
-			display: flex;
-			align-items: center;
 		}
 		.bulk-bar {
 			flex-direction: column;

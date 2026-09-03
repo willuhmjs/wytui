@@ -6,6 +6,8 @@
 	import { csrfFetch } from '$lib/utils/fetch';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
 
@@ -18,6 +20,33 @@
 	let monFormType = $state('YOUTUBE_LIVE');
 	let monFormAutoDownload = $state(true);
 	let monFormOptions = $state({ sponsorblock: false, subtitles: false, metadata: false });
+
+	// List filters (client-side)
+	let monitorsSearch = $state('');
+	let monitorsPlatformFilter = $state<'all' | 'YOUTUBE_LIVE' | 'TWITCH'>('all');
+	let monitorsSort = $state<'name' | 'status' | 'platform'>('name');
+
+	let visibleMonitors = $derived.by(() => {
+		const query = monitorsSearch.trim().toLowerCase();
+		const filtered = monitors.filter((m) => {
+			const matchesSearch =
+				!query || m.name?.toLowerCase().includes(query) || m.url?.toLowerCase().includes(query);
+			const matchesPlatform = monitorsPlatformFilter === 'all' || m.type === monitorsPlatformFilter;
+			return matchesSearch && matchesPlatform;
+		});
+		const sorted = [...filtered];
+		switch (monitorsSort) {
+			case 'status':
+				sorted.sort((a, b) => Number(b.isLive ?? false) - Number(a.isLive ?? false));
+				break;
+			case 'platform':
+				sorted.sort((a, b) => (a.type ?? '').localeCompare(b.type ?? ''));
+				break;
+			default:
+				sorted.sort((a, b) => (a.name ?? a.url ?? '').localeCompare(b.name ?? b.url ?? ''));
+		}
+		return sorted;
+	});
 
 	// Monitor edit state
 	let editingMonitor = $state<any | null>(null);
@@ -310,13 +339,55 @@
 			</form>
 		{/if}
 
-		{#if monitorsLoading}
+		{#if monitors.length > 0}
+			<div class="list-filters">
+				<SearchInput
+					bind:value={monitorsSearch}
+					placeholder="Search monitors..."
+					label="Search monitors"
+				/>
+				<FilterDropdown
+					label="Filter by platform"
+					bind:value={monitorsPlatformFilter}
+					options={[
+						{ value: 'all', label: 'All platforms' },
+						{ value: 'YOUTUBE_LIVE', label: 'YouTube Live' },
+						{ value: 'TWITCH', label: 'Twitch' },
+					]}
+				/>
+				<FilterDropdown
+					label="Sort monitors"
+					bind:value={monitorsSort}
+					options={[
+						{ value: 'name', label: 'Name A–Z' },
+						{ value: 'status', label: 'Live first' },
+						{ value: 'platform', label: 'Platform' },
+					]}
+				>
+					{#snippet icon()}
+						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+							<path
+								d="M2 4h10M4 7h6M6 10h2"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+							/>
+						</svg>
+					{/snippet}
+				</FilterDropdown>
+			</div>
+		{/if}
+
+		{#if monitorsLoading && monitors.length === 0}
 			<Skeleton count={3} variant="card" />
 		{:else if monitors.length === 0}
 			<EmptyState title="No monitors yet" description="Add a livestream URL to start monitoring" />
 		{:else}
 			<div class="content-grid">
-				{#each monitors as monitor}
+				{#if visibleMonitors.length === 0}
+					<p class="no-match-text">No monitors match your filters.</p>
+				{/if}
+				{#each visibleMonitors as monitor (monitor.id)}
 					<div class="content-card" class:live={monitor.isLive}>
 						{#if editingMonitor?.id === monitor.id}
 							<div class="edit-form">
@@ -595,6 +666,21 @@
 		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
 		gap: var(--spacing-lg);
 		width: 100%;
+	}
+
+	.list-filters {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		flex-wrap: wrap;
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.no-match-text {
+		grid-column: 1 / -1;
+		color: var(--color-text-secondary);
+		text-align: center;
+		padding: var(--spacing-xl) 0;
 	}
 
 	.content-card {

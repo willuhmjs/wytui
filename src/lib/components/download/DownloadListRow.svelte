@@ -12,9 +12,18 @@
 	interface Props {
 		download: any;
 		onclick: () => void;
+		selectionMode?: boolean;
+		selected?: boolean;
+		onToggleSelect?: () => void;
 	}
 
-	let { download, onclick }: Props = $props();
+	let {
+		download,
+		onclick,
+		selectionMode = false,
+		selected = false,
+		onToggleSelect,
+	}: Props = $props();
 
 	let statusColor = $derived(getDownloadStatusColor(download.status));
 	let statusLabel = $derived(getDownloadStatusLabel(download.status));
@@ -34,9 +43,43 @@
 	let downloadedDate = $derived(formatShortDate(downloadedAt));
 	let downloadedExact = $derived(formatDateTime(downloadedAt));
 	let releasedDate = $derived(formatShortDate(download.uploadDate));
+	function handleRowClick() {
+		if (selectionMode) {
+			onToggleSelect?.();
+			return;
+		}
+		onclick();
+	}
 </script>
 
-<div class="list-row" role="button" tabindex="0" {onclick} onkeydown={clickOnEnterOrSpace(onclick)}>
+<div
+	class="list-row"
+	class:selecting={selectionMode}
+	class:selected
+	role="button"
+	tabindex="0"
+	onclick={handleRowClick}
+	onkeydown={clickOnEnterOrSpace(handleRowClick)}
+>
+	{#if selectionMode}
+		<button
+			class="select-checkbox"
+			class:checked={selected}
+			aria-label={selected ? 'Deselect download' : 'Select download'}
+			onclick={(e) => {
+				e.stopPropagation();
+				onToggleSelect?.();
+			}}
+		>
+			{#if selected}
+				<svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12"
+					><path
+						d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2.5-2.5a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z"
+					/></svg
+				>
+			{/if}
+		</button>
+	{/if}
 	<div class="thumbnail">
 		{#if download.thumbnail && !thumbnailFailed}
 			<img
@@ -102,6 +145,35 @@
 	.list-row:hover {
 		border-color: var(--color-border-subtle);
 		background: var(--color-bg-hover);
+	}
+
+	.list-row.selecting {
+		cursor: default;
+	}
+
+	.list-row.selected {
+		border-color: var(--color-accent-primary);
+		background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+	}
+
+	.select-checkbox {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
+		border: 1.5px solid var(--color-border-translucent);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: #fff;
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.select-checkbox.checked {
+		background: var(--color-accent-primary);
+		border-color: var(--color-accent-primary);
 	}
 
 	.list-row:focus-visible {

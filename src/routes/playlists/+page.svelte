@@ -8,6 +8,8 @@
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
+	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import SyncPlaylistsModal from '$lib/components/youtube/SyncPlaylistsModal.svelte';
 
 	let playlists = $state<any[]>([]);
@@ -15,6 +17,34 @@
 	let viewMode = $state<'grid' | 'list'>('grid');
 	let youtubeLinked = $state(false);
 	let showSyncModal = $state(false);
+
+	// List filters (client-side)
+	let playlistsSearch = $state('');
+	let playlistsSort = $state<'name' | 'itemCount' | 'updatedAt'>('name');
+
+	let visiblePlaylists = $derived.by(() => {
+		const query = playlistsSearch.trim().toLowerCase();
+		const filtered = playlists.filter(
+			(p) =>
+				!query ||
+				p.name?.toLowerCase().includes(query) ||
+				p.description?.toLowerCase().includes(query),
+		);
+		const sorted = [...filtered];
+		switch (playlistsSort) {
+			case 'itemCount':
+				sorted.sort((a, b) => (b.itemCount ?? 0) - (a.itemCount ?? 0));
+				break;
+			case 'updatedAt':
+				sorted.sort(
+					(a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
+				);
+				break;
+			default:
+				sorted.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+		}
+		return sorted;
+	});
 
 	let showCreateForm = $state(false);
 	let formName = $state('');
@@ -280,7 +310,37 @@
 			</div>
 		{/if}
 
-		{#if loading}
+		{#if playlists.length > 0}
+			<div class="list-filters">
+				<SearchInput
+					bind:value={playlistsSearch}
+					placeholder="Search playlists..."
+					label="Search playlists"
+				/>
+				<FilterDropdown
+					label="Sort playlists"
+					bind:value={playlistsSort}
+					options={[
+						{ value: 'name', label: 'Name A–Z' },
+						{ value: 'itemCount', label: 'Most videos' },
+						{ value: 'updatedAt', label: 'Recently updated' },
+					]}
+				>
+					{#snippet icon()}
+						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+							<path
+								d="M2 4h10M4 7h6M6 10h2"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+							/>
+						</svg>
+					{/snippet}
+				</FilterDropdown>
+			</div>
+		{/if}
+
+		{#if loading && playlists.length === 0}
 			<Skeleton count={4} variant="card" />
 		{:else if playlists.length === 0}
 			<EmptyState
@@ -289,7 +349,10 @@
 			/>
 		{:else if viewMode === 'list'}
 			<div class="content-list">
-				{#each playlists as playlist}
+				{#if visiblePlaylists.length === 0}
+					<p class="no-match-text">No playlists match your filters.</p>
+				{/if}
+				{#each visiblePlaylists as playlist (playlist.id)}
 					<div class="list-row">
 						<button class="list-row-main" onclick={() => goto(`/playlists/${playlist.id}`)}>
 							<svg
@@ -370,7 +433,10 @@
 			</div>
 		{:else}
 			<div class="content-grid">
-				{#each playlists as playlist}
+				{#if visiblePlaylists.length === 0}
+					<p class="no-match-text">No playlists match your filters.</p>
+				{/if}
+				{#each visiblePlaylists as playlist (playlist.id)}
 					<div class="content-card">
 						<button class="card-main" onclick={() => goto(`/playlists/${playlist.id}`)}>
 							<div class="card-icon">
@@ -529,6 +595,21 @@
 		grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 		gap: var(--spacing-lg);
 		width: 100%;
+	}
+
+	.list-filters {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		flex-wrap: wrap;
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.no-match-text {
+		grid-column: 1 / -1;
+		color: var(--color-text-secondary);
+		text-align: center;
+		padding: var(--spacing-xl) 0;
 	}
 
 	.content-list {
