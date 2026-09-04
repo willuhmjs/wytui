@@ -992,7 +992,21 @@ class DownloadService {
 
 				const videoId = this.extractVideoId(download.url);
 				if (videoId) {
-					await prisma.archive.deleteMany({ where: { videoId } });
+					// Archive the failure (with a timestamp) instead of dropping the
+					// entry: subscription sync re-queues failed videos after a cooldown
+					// rather than on every check, so a persistent error like a full
+					// disk can't turn each sync into an enqueue storm.
+					await prisma.archive.upsert({
+						where: { videoId },
+						update: { reason: 'failed', failedAt: new Date() },
+						create: {
+							videoId,
+							url: download.url,
+							title: download.title ?? videoId,
+							reason: 'failed',
+							failedAt: new Date(),
+						},
+					});
 				}
 
 				await prisma.download.delete({ where: { id: downloadId } }).catch(() => {});
@@ -1082,6 +1096,9 @@ class DownloadService {
 				} catch {
 					// File may already be gone
 				}
+				// Also remove what was left next to it: subtitle/thumbnail sidecars
+				// in the cache, artwork-only library folders after the video is gone.
+				await libraryService.removeVideoArtifacts(download.filepath);
 			}
 		}
 

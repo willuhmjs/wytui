@@ -191,3 +191,60 @@ describe('checkSubscription rate-limit cooldown', () => {
 		expect(subsDb[SUB_ID].lastError).toBeNull();
 	});
 });
+
+describe('filterNewVideos failure cooldown', () => {
+	const DAY = 24 * 60 * 60 * 1000;
+
+	beforeEach(() => {
+		Object.keys(archiveDb).forEach((k) => delete archiveDb[k]);
+		downloadsDb.length = 0;
+	});
+
+	const sub = { id: 'sub-1', createdAt: new Date('2026-01-01') };
+	const video = (id: string) => ({
+		id,
+		url: `https://www.youtube.com/watch?v=${id}`,
+		uploadedAt: new Date(Date.now() - 30 * DAY),
+	});
+
+	it('skips a video archived as failed while the cooldown is active', async () => {
+		archiveDb['vid1'] = {
+			videoId: 'vid1',
+			reason: 'failed',
+			failedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+		};
+
+		const result = await (subscriptionService as any).filterNewVideos([video('vid1')], sub);
+
+		expect(result).toHaveLength(0);
+		expect(archiveDb['vid1']).toBeTruthy();
+	});
+
+	it('re-queues a failed video once the cooldown lapses and drops the entry', async () => {
+		archiveDb['vid1'] = {
+			videoId: 'vid1',
+			reason: 'failed',
+			failedAt: new Date(Date.now() - 2 * DAY),
+		};
+
+		const result = await (subscriptionService as any).filterNewVideos([video('vid1')], sub);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].id).toBe('vid1');
+		expect(archiveDb['vid1']).toBeUndefined();
+	});
+
+	it('still never re-queues deliberate skips like excluded shorts', async () => {
+		archiveDb['vid1'] = { videoId: 'vid1', reason: 'short', failedAt: null };
+
+		const result = await (subscriptionService as any).filterNewVideos([video('vid1')], sub);
+
+		expect(result).toHaveLength(0);
+	});
+
+	it('queues videos with no archive entry', async () => {
+		const result = await (subscriptionService as any).filterNewVideos([video('vid1')], sub);
+
+		expect(result).toHaveLength(1);
+	});
+});

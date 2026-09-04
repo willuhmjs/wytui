@@ -1,8 +1,18 @@
 import { prisma } from '../db';
 import { sseEmitter } from '../sse/emitter';
 import { DownloadStatus } from '@prisma/client';
-import { copyFile, unlink, mkdir, access, writeFile, statfs } from 'fs/promises';
-import { join, basename, resolve, extname, sep } from 'path';
+import {
+	copyFile,
+	unlink,
+	mkdir,
+	rmdir,
+	readdir,
+	access,
+	stat,
+	statfs,
+	writeFile,
+} from 'fs/promises';
+import { join, basename, dirname, resolve, extname, sep } from 'path';
 import { musicMetadataService } from './music-metadata.service';
 import { ytdlpService } from './ytdlp.service';
 import { plexService } from './plex.service';
@@ -100,6 +110,7 @@ class LibraryService {
 		try {
 			await unlink(download.filepath);
 		} catch {}
+		await this.transferSidecars(download.filepath, destPath);
 
 		if (info.coverArtBuffer) {
 			const coverPath = join(albumPath, 'cover.jpg');
@@ -161,6 +172,7 @@ class LibraryService {
 		try {
 			await unlink(download.filepath);
 		} catch {}
+		await this.transferSidecars(download.filepath, destPath);
 
 		try {
 			const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
@@ -258,6 +270,7 @@ class LibraryService {
 				} catch {
 					continue;
 				}
+				await this.removeVideoArtifacts(candidate.filepath);
 			}
 
 			const videoId = await this.getVideoIdForDownload(candidate.id);
@@ -372,6 +385,7 @@ class LibraryService {
 				} catch {
 					continue;
 				}
+				await this.removeVideoArtifacts(candidate.filepath);
 			}
 
 			const videoId = await this.getVideoIdForDownload(candidate.id);
@@ -476,6 +490,7 @@ class LibraryService {
 				} catch {
 					continue;
 				}
+				await this.removeVideoArtifacts(candidate.filepath);
 			}
 
 			const videoId = await this.getVideoIdForDownload(candidate.id);
@@ -563,6 +578,7 @@ class LibraryService {
 				} catch {
 					continue;
 				}
+				await this.removeVideoArtifacts(candidate.filepath);
 			}
 
 			const videoId = await this.getVideoIdForDownload(candidate.id);
@@ -707,6 +723,284 @@ class LibraryService {
 
 		return removed;
 	}
+
+	/**
+	 * Move subtitle sidecars written next to a download over to its library
+	 * destination and delete every other stem-matched artifact (thumbnail
+	 * .webp/.jpg, .meta, stray .part). Promotions used to unlink only the video
+	 * file, so each promoted video leaked its sidecars into the download root
+	 * forever — no DB row points at them, so nothing ever reclaimed them.
+	 */
+	private async transferSidecars(sourceFilepath: string, destFilepath: string): Promise<void> {
+		const sourceDir = dirname(resolve(sourceFilepath));
+		const sourceName = basename(resolve(sourceFilepath));
+		const stem = basename(sourceFilepath, extname(sourceFilepath));
+		const destDir = dirname(resolve(destFilepath));
+		const destStem = basename(destFilepath, extname(destFilepath));
+
+		try {
+			const entries = await readdir(sourceDir);
+			for (const entry of entries) {
+				if (entry === sourceName || !entry.startsWith(stem + '.')) continue;
+				// Keep language suffixes: "<stem>.en.vtt" -> "<destStem>.en.vtt" so
+				// Jellyfin and subtitle indexing still find them next to the video.
+				if (entry.endsWith('.vtt') || entry.endsWith('.srt')) {
+					const suffix = entry.slice(stem.length);
+					await copyFile(join(sourceDir, entry), join(destDir, destStem + suffix)).catch(() => {});
+				}
+				await unlink(join(sourceDir, entry)).catch(() => {});
+			}
+		} catch {}
+	}
+
+	/**
+	 * Delete a media file plus every artifact yt-dlp/ffmpeg left next to it
+	 * (.part, .ytdl, fragment streams, subtitle/thumbnail sidecars). For library
+	 * files it also removes the per-video artwork and the now-empty video
+	 * directory, so deletions stop leaving artwork-only husk folders behind.
+	 */
+	async removeVideoArtifacts(filepath: string): Promise<void> {
+		const resolved = resolve(filepath);
+		try {
+			await unlink(resolved);
+		} catch {}
+
+		const dir = dirname(resolved);
+		const stem = basename(resolved, extname(resolved));
+
+		try {
+			const entries = await readdir(dir);
+			for (const entry of entries) {
+				if (entry === basename(resolved) || entry.startsWith(stem + '.')) {
+					await unlink(join(dir, entry)).catch(() => {});
+				}
+			}
+		} catch {
+			return;
+		}
+
+		// Files in the download root live flat next to other downloads' files —
+		// never touch the root itself or anything not matching this stem.
+		const settings = await this.getSettings();
+		const downloadRoot = resolve(settings.downloadPath || '/downloads');
+		if (resolved === downloadRoot || resolved.startsWith(downloadRoot + sep)) return;
+
+		// Library layout is <channel>/<video>/<video>.<ext>: once nothing playable
+		// remains, drop the artwork written at promotion time and the directory.
+		try {
+			const entries = await readdir(dir);
+			const hasMedia = entries.some((entry) =>
+				LibraryService.MEDIA_EXTENSIONS.has(extname(entry).toLowerCase().slice(1)),
+			);
+			if (hasMedia) return;
+			for (const entry of entries) {
+				if (LibraryService.ARTWORK_FILES.has(entry)) {
+					await unlink(join(dir, entry)).catch(() => {});
+				}
+			}
+			await rmdir(dir).catch(() => {});
+		} catch {}
+	}
+
+	/**
+	 * Delete files in the download directory that no download record owns.
+	 * yt-dlp writes .part/.ytdl/fragment and subtitle/thumbnail sidecar files
+	 * next to its output; when a download is killed (stall watchdog, pod
+	 * restart) or its record deleted, those files are orphaned with no DB row
+	 * pointing at them — invisible to quota enforcement, which only ever unlinks
+	 * filepaths from COMPLETED cache rows. Left alone they silently fill the
+	 * disk and wedge every future download on the pre-flight space check.
+	 *
+	 * A file is kept when its name matches the tracked output of a non-terminal
+	 * download (including the .part/.sidecar siblings of a captured filepath)
+	 * or when it is still fresh (mtime within maxAgeHours — an active download
+	 * writes continuously, so its fragments are always fresh). Everything else
+	 * is unreclaimable garbage.
+	 */
+	async sweepOrphanedDownloads(options?: {
+		maxAgeHours?: number;
+	}): Promise<{ deletedCount: number; freedBytes: bigint }> {
+		const settings = await this.getSettings();
+		const downloadRoot = resolve(settings.downloadPath || '/downloads');
+
+		// Never sweep a root that is or contains a configured library — every
+		// library file is "untracked" from the download table's perspective.
+		for (const libraryPath of [settings.libraryPath, settings.musicLibraryPath]) {
+			if (!libraryPath) continue;
+			const libraryRoot = resolve(libraryPath);
+			if (
+				downloadRoot === libraryRoot ||
+				downloadRoot.startsWith(libraryRoot + sep) ||
+				libraryRoot.startsWith(downloadRoot + sep)
+			) {
+				console.warn(
+					`[LibraryService] Download sweep skipped: download path overlaps library path ${libraryPath}`,
+				);
+				return { deletedCount: 0, freedBytes: BigInt(0) };
+			}
+		}
+
+		let entries: string[];
+		try {
+			entries = await readdir(downloadRoot);
+		} catch {
+			return { deletedCount: 0, freedBytes: BigInt(0) };
+		}
+
+		const downloads = await prisma.download.findMany({
+			where: {
+				status: {
+					in: [
+						DownloadStatus.PENDING,
+						DownloadStatus.FETCHING_INFO,
+						DownloadStatus.DOWNLOADING,
+						DownloadStatus.PROCESSING,
+						DownloadStatus.COMPLETED,
+					],
+				},
+				filepath: { not: null },
+			},
+			select: { filepath: true },
+		});
+
+		const protectedFiles = new Set<string>();
+		const protectedStems = new Set<string>();
+		for (const download of downloads) {
+			if (!download.filepath) continue;
+			const resolved = resolve(download.filepath);
+			if (dirname(resolved) !== downloadRoot) continue;
+			const name = basename(resolved);
+			protectedFiles.add(name);
+			protectedStems.add(basename(name, extname(name)) + '.');
+		}
+
+		const maxAgeMs = Math.max(0, (options?.maxAgeHours ?? 24) * 60 * 60 * 1000);
+		let deletedCount = 0;
+		let freedBytes = BigInt(0);
+
+		for (const entry of entries) {
+			const fullPath = join(downloadRoot, entry);
+			let fileStat;
+			try {
+				fileStat = await stat(fullPath);
+			} catch {
+				continue;
+			}
+			if (!fileStat.isFile()) continue; // lost+found etc.
+
+			let tracked = protectedFiles.has(entry);
+			if (!tracked) {
+				for (const stemPrefix of protectedStems) {
+					if (entry.startsWith(stemPrefix)) {
+						tracked = true;
+						break;
+					}
+				}
+			}
+			if (tracked) continue;
+
+			// Fresh files may belong to a download that hasn't reported its
+			// destination yet — give actively-written files a grace window.
+			if (Date.now() - fileStat.mtimeMs < maxAgeMs) continue;
+
+			try {
+				await unlink(fullPath);
+				deletedCount++;
+				freedBytes += BigInt(fileStat.size);
+			} catch {}
+		}
+
+		if (deletedCount > 0) {
+			console.log(`[LibraryService] Swept ${deletedCount} orphaned file(s) from ${downloadRoot}`);
+		}
+
+		return { deletedCount, freedBytes };
+	}
+
+	/**
+	 * Remove library video directories that no longer contain playable media —
+	 * the artwork-only husks older deletion paths left behind. Only
+	 * <channel>/<video> directories are considered; channel folders and any
+	 * directory still holding a media file are left alone.
+	 */
+	async sweepLibraryHusks(): Promise<number> {
+		const settings = await this.getSettings();
+		const roots = [settings.libraryPath, settings.musicLibraryPath].filter((p): p is string => !!p);
+
+		let removed = 0;
+		for (const root of roots) {
+			const resolvedRoot = resolve(root);
+			let channels: string[];
+			try {
+				channels = await readdir(resolvedRoot);
+			} catch {
+				continue;
+			}
+
+			for (const channel of channels) {
+				const channelDir = join(resolvedRoot, channel);
+				let channelEntries;
+				try {
+					channelEntries = await readdir(channelDir, { withFileTypes: true });
+				} catch {
+					continue;
+				}
+
+				for (const entry of channelEntries) {
+					if (!entry.isDirectory()) continue;
+					const videoDir = join(channelDir, entry.name);
+					let files: string[];
+					try {
+						files = await readdir(videoDir);
+					} catch {
+						continue;
+					}
+
+					const hasMedia = files.some((f) =>
+						LibraryService.MEDIA_EXTENSIONS.has(extname(f).toLowerCase().slice(1)),
+					);
+					if (hasMedia) continue;
+
+					for (const f of files) {
+						await unlink(join(videoDir, f)).catch(() => {});
+					}
+					await rmdir(videoDir).catch(() => {});
+					removed++;
+				}
+			}
+		}
+
+		if (removed > 0) {
+			console.log(`[LibraryService] Removed ${removed} empty library folder(s)`);
+		}
+		return removed;
+	}
+
+	/** Extensions treated as playable media when deciding whether a folder is a husk. */
+	private static readonly MEDIA_EXTENSIONS = new Set([
+		'mp4',
+		'webm',
+		'mkv',
+		'flv',
+		'mov',
+		'avi',
+		'mp3',
+		'm4a',
+		'aac',
+		'flac',
+		'opus',
+		'ogg',
+		'wav',
+	]);
+
+	/** Artwork file names written into per-video library folders. */
+	private static readonly ARTWORK_FILES = new Set([
+		'poster.jpg',
+		'backdrop.jpg',
+		'cover.jpg',
+		'landscape.jpg',
+		'folder.jpg',
+	]);
 
 	async triggerLibraryScan(): Promise<void> {
 		const settings = await this.getSettings();

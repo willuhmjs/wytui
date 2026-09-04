@@ -178,6 +178,9 @@ class CleanupService {
 			console.error(`[Cleanup] Failed to delete file ${download.filepath}:`, e);
 			return;
 		}
+		// Remove the video's sidecars and now-empty artwork folder so watched
+		// deletions don't leave artwork-only husks in the library.
+		await libraryService.removeVideoArtifacts(download.filepath!);
 
 		try {
 			const res = await internalFetch(`${baseUrl}/Items/${jellyfinItemId}`, {

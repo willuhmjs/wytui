@@ -3,6 +3,7 @@ import { statfs } from 'fs/promises';
 import { prisma } from './db';
 import { hashPassword, invalidateUsersCache } from './auth';
 import { downloadService } from './services/download.service';
+import { libraryService } from './services/library.service';
 
 const DEFAULT_PROFILES = [
 	// Video Quality Presets (using H.264 for compatibility)
@@ -219,6 +220,13 @@ export async function ensureDefaults(): Promise<void> {
 			downloadService.resumeDownload(dl.id, dl.userId ?? undefined);
 		}
 	}
+
+	// Downloads killed by the previous run (pod restart, stall watchdog) leave
+	// .part/.ytdl/sidecar files in the download root that no DB row owns —
+	// reclaim them now so a restart can't strand disk space forever.
+	libraryService.sweepOrphanedDownloads().catch((error) => {
+		console.error('[Init] Download directory sweep failed:', error);
+	});
 
 	// Ensure every default system profile exists
 	for (const profile of DEFAULT_PROFILES) {

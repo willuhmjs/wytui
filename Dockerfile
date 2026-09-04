@@ -25,7 +25,7 @@ FROM node:24-alpine3.23
 # Pin a specific version for a reproducible build or a rollback:
 #   docker build --build-arg YTDLP_VERSION=2026.07.04 .
 ARG YTDLP_VERSION=latest
-RUN apk add --no-cache ffmpeg curl python3 aria2 \
+RUN apk add --no-cache ffmpeg curl python3 aria2 tini \
   && if [ "$YTDLP_VERSION" = "latest" ]; then \
   YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"; \
   else \
@@ -62,4 +62,8 @@ EXPOSE 3000
 ARG GIT_SHA=unknown
 ENV NODE_ENV=production PORT=3000 GIT_SHA=$GIT_SHA
 
+# tini as PID 1: reaps orphaned/zombie children (yt-dlp's ffmpeg dies and gets
+# reparented to PID 1 after the stall watchdog kills the process group; plain
+# sh/node never wait() them, so zombies accumulate for the pod's lifetime).
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["sh", "-c", "npx prisma migrate deploy && node build"]

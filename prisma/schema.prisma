@@ -496,7 +496,8 @@ model Archive {
   videoId     String    @unique // e.g., YouTube video ID
   url         String
   title       String
-  reason      String?   // Non-null marks a deliberate skip (e.g. "short") that must never be re-queued
+  reason      String?   // Non-null marks a deliberate skip (e.g. "short", "failed") that must never be re-queued unconditionally
+  failedAt    DateTime? // set when reason = "failed": re-queueable after the cooldown elapses
   downloadedAt DateTime @default(now())
 
   @@index([videoId])

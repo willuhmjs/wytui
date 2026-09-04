@@ -126,6 +126,9 @@ class JobScheduler {
 			await this.logJobRun('cache-cleanup', async () => {
 				await libraryService.reconcileFiles();
 				await libraryService.enforceCacheQuota();
+				// Reclaim download-root files no download record owns (stale .part
+				// fragments, orphaned sidecars) so the disk can't silently fill up.
+				await libraryService.sweepOrphanedDownloads();
 			});
 		});
 

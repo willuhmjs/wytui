@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { unlink } from 'fs/promises';
 import { sseEmitter } from '../sse/emitter';
+import { libraryService } from './library.service';
 
 class AutoDeleteService {
 	async deleteWatchedOverThreshold() {
@@ -49,6 +50,7 @@ class AutoDeleteService {
 					try {
 						await unlink(dl.filepath);
 					} catch {}
+					await libraryService.removeVideoArtifacts(dl.filepath);
 				}
 				// Delete record
 				await prisma.download.delete({ where: { id: dl.id } });

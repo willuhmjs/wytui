@@ -598,8 +598,19 @@ class SubscriptionService {
 			});
 
 			if (archived) {
-				// Deliberately skipped (e.g. excluded short) — never re-queue.
-				if (archived.reason) {
+				// A terminal download failure is archived with a timestamp so a
+				// persistent error (e.g. disk full) can't re-enqueue the same video
+				// on every sync. Once the cooldown lapses the entry is dropped and
+				// the video becomes eligible again (completed downloads still block
+				// re-queue via the existing-download check below).
+				if (archived.reason === 'failed') {
+					const FAILED_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+					if (archived.failedAt && Date.now() - archived.failedAt.getTime() < FAILED_COOLDOWN_MS) {
+						continue;
+					}
+					await prisma.archive.delete({ where: { videoId: video.id } }).catch(() => {});
+				} else if (archived.reason) {
+					// Deliberately skipped (e.g. excluded short) — never re-queue.
 					continue;
 				}
 

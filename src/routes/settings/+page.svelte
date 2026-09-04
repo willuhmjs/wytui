@@ -548,6 +548,33 @@
 		}
 	}
 
+	let cleaningDownloads = $state(false);
+	let downloadsCleanupResult = $state<string | null>(null);
+
+	async function runDownloadsCleanup() {
+		cleaningDownloads = true;
+		downloadsCleanupResult = null;
+		try {
+			const res = await csrfFetch('/api/settings/cleanup', { method: 'POST' });
+			if (res.ok) {
+				const data = await res.json();
+				const freedMB = Math.round(Number(BigInt(data.freedBytes)) / (1024 * 1024));
+				downloadsCleanupResult =
+					data.deletedFiles > 0 || data.husksRemoved > 0
+						? `Removed ${data.deletedFiles} orphaned file(s)${freedMB > 0 ? ` (${freedMB} MB)` : ''} and ${data.husksRemoved} empty library folder(s)`
+						: 'Nothing to clean — no orphaned files found';
+				addToast('success', 'Cleanup complete');
+				loadDiskInfo();
+			} else {
+				addToast('error', 'Cleanup failed');
+			}
+		} catch {
+			addToast('error', 'Cleanup failed');
+		} finally {
+			cleaningDownloads = false;
+		}
+	}
+
 	function updateCacheQuota(gb: number) {
 		if (settings) {
 			settings.cacheQuotaBytes = String(Math.round(gb * 1024 * 1024 * 1024));
@@ -1884,6 +1911,26 @@
 									</p>
 								{/if}
 							</div>
+						</div>
+
+						<div class="form-group">
+							<label>Downloads Cleanup</label>
+							<button
+								type="button"
+								class="btn btn-secondary"
+								onclick={runDownloadsCleanup}
+								disabled={cleaningDownloads}
+							>
+								{cleaningDownloads ? 'Cleaning…' : 'Clean up downloads directory'}
+							</button>
+							<p class="help-text">
+								Removes stale partial downloads and leftover temporary files that no download owns,
+								plus empty artwork-only library folders. Runs automatically every 5 minutes; this
+								forces it immediately. In-flight downloads are never touched.
+							</p>
+							{#if downloadsCleanupResult}
+								<p class="help-text">{downloadsCleanupResult}</p>
+							{/if}
 						</div>
 
 						<div class="form-group">
