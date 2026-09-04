@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
+import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -97,6 +98,13 @@ export const POST = apiRoute(
 			autoDownload: { type: 'boolean', description: 'Auto-download new videos' },
 			saveToLibrary: { type: 'boolean', description: 'Save to library' },
 			excludeShorts: { type: 'boolean', description: 'Skip shorts/vertical videos' },
+			maxDurationSeconds: {
+				type: 'integer',
+				nullable: true,
+				minimum: 1,
+				maximum: 2592000,
+				description: 'Skip videos longer than this many seconds (null = no limit)',
+			},
 			customFlags: { type: 'array', description: 'Custom yt-dlp flags' },
 		},
 		responses: {
@@ -190,6 +198,7 @@ export const POST = apiRoute(
 					autoDownload: data.autoDownload ?? true,
 					saveToLibrary: data.saveToLibrary ?? false,
 					excludeShorts: data.excludeShorts ?? false,
+					maxDurationSeconds: normalizeMaxDuration(data.maxDurationSeconds),
 					customFlags,
 					enabled: true,
 					userId,

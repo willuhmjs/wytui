@@ -12,6 +12,7 @@
 	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import SubscriptionConfig from '$lib/components/download/SubscriptionConfig.svelte';
+	import DurationField from '$lib/components/ui/DurationField.svelte';
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
 	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
@@ -81,6 +82,7 @@
 	let subFormAutoDownload = $state(true);
 	let subFormSaveToLibrary = $state(false);
 	let subFormExcludeShorts = $state(false);
+	let subFormMaxDurationSeconds = $state(0);
 	let subFormOptions = $state({
 		sponsorblock: false,
 		subtitles: false,
@@ -97,6 +99,7 @@
 	let editSubAutoDownload = $state(true);
 	let editSubSaveToLibrary = $state(false);
 	let editSubExcludeShorts = $state(false);
+	let editSubMaxDurationSeconds = $state(0);
 	let editSubOptions = $state({
 		sponsorblock: false,
 		subtitles: false,
@@ -116,6 +119,7 @@
 			profileId?: string;
 			saveToLibrary?: boolean;
 			excludeShorts?: boolean;
+			maxDurationSeconds?: number;
 			options?: {
 				sponsorblock: boolean;
 				subtitles: boolean;
@@ -143,6 +147,13 @@
 				subFormExcludeShorts = updates.excludeShorts;
 			} else {
 				editSubExcludeShorts = updates.excludeShorts;
+			}
+		}
+		if (updates.maxDurationSeconds !== undefined) {
+			if (mode === 'new') {
+				subFormMaxDurationSeconds = updates.maxDurationSeconds;
+			} else {
+				editSubMaxDurationSeconds = updates.maxDurationSeconds;
 			}
 		}
 		if (updates.options !== undefined) {
@@ -184,6 +195,14 @@
 		if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
 		if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
 		return `${Math.floor(seconds / 86400)}d`;
+	}
+
+	function formatDurationLimit(seconds: number): string {
+		const minutes = Math.round(seconds / 60);
+		if (minutes < 60) return `${minutes}m`;
+		const h = Math.floor(minutes / 60);
+		const m = minutes % 60;
+		return m === 0 ? `${h}h` : `${h}h${m}m`;
 	}
 
 	function formatRelativeTime(date: string | Date): string {
@@ -360,6 +379,7 @@
 					autoDownload: subFormAutoDownload,
 					saveToLibrary: subFormSaveToLibrary,
 					excludeShorts: subFormExcludeShorts,
+					maxDurationSeconds: subFormMaxDurationSeconds || null,
 					customFlags: buildOptionsFlags(subFormOptions, subFormSaveToLibrary),
 				}),
 			});
@@ -367,6 +387,8 @@
 			if (res.ok) {
 				subFormUrl = '';
 				subFormSaveToLibrary = libraryConfigured;
+				subFormExcludeShorts = false;
+				subFormMaxDurationSeconds = 0;
 				subFormOptions = {
 					sponsorblock: false,
 					subtitles: false,
@@ -470,6 +492,7 @@
 		editSubAutoDownload = sub.autoDownload;
 		editSubSaveToLibrary = sub.saveToLibrary;
 		editSubExcludeShorts = sub.excludeShorts ?? false;
+		editSubMaxDurationSeconds = sub.maxDurationSeconds ?? 0;
 		editSubOptions = parseOptionsFromFlags(sub.customFlags || []);
 	}
 
@@ -491,6 +514,7 @@
 					autoDownload: editSubAutoDownload,
 					saveToLibrary: editSubSaveToLibrary,
 					excludeShorts: editSubExcludeShorts,
+					maxDurationSeconds: editSubMaxDurationSeconds || null,
 					customFlags: buildOptionsFlags(editSubOptions, editSubSaveToLibrary),
 				}),
 			});
@@ -580,6 +604,7 @@
 								selectedProfileId={subFormProfileId}
 								saveToLibrary={subFormSaveToLibrary}
 								excludeShorts={subFormExcludeShorts}
+								maxDurationSeconds={subFormMaxDurationSeconds}
 								options={subFormOptions}
 								{libraryConfigured}
 								onChange={handleSubFormConfigChange}
@@ -757,6 +782,18 @@
 												</label>
 											{/if}
 										</div>
+										<div class="form-group">
+											<span class="options-label">Max Video Length</span>
+											<DurationField
+												label="Max Video Length"
+												minutes={Math.round(Math.max(0, editSubMaxDurationSeconds) / 60)}
+												onChange={(m) => (editSubMaxDurationSeconds = m * 60)}
+											/>
+											<p class="help-text">
+												Only download videos up to this length. Drag to adjust, click to type — 0
+												means no limit
+											</p>
+										</div>
 										<div class="options-row">
 											<span class="options-label">Options</span>
 											<div class="options-chips">
@@ -825,7 +862,14 @@
 											<span class="library-tag">Library</span>
 										{/if}
 										{#if sub.excludeShorts}<span class="option-tag">No Shorts</span
-											>{/if}{#if sub.customFlags?.includes('--sponsorblock-remove')}
+											>{/if}{#if sub.maxDurationSeconds}
+											<span
+												class="option-tag"
+												title="Skips videos longer than {formatDurationLimit(
+													sub.maxDurationSeconds,
+												)}">≤{formatDurationLimit(sub.maxDurationSeconds)}</span
+											>
+										{/if}{#if sub.customFlags?.includes('--sponsorblock-remove')}
 											<span class="option-tag">SB</span>
 										{/if}
 										{#if sub.customFlags?.includes('--write-subs')}
@@ -1123,6 +1167,12 @@
 	.form-group {
 		display: flex;
 		flex-direction: column;
+	}
+
+	.help-text {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-secondary);
+		margin: var(--spacing-xs) 0 0;
 	}
 
 	label {

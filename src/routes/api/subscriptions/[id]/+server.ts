@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
+import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -90,6 +91,14 @@ export const PATCH = apiRoute(
 			},
 			autoDownload: { type: 'boolean', description: 'Auto-download new videos' },
 			saveToLibrary: { type: 'boolean', description: 'Save to library' },
+			excludeShorts: { type: 'boolean', description: 'Skip shorts/vertical videos' },
+			maxDurationSeconds: {
+				type: 'integer',
+				nullable: true,
+				minimum: 1,
+				maximum: 2592000,
+				description: 'Skip videos longer than this many seconds (null = no limit)',
+			},
 			profileId: { type: 'string', description: 'Download profile ID' },
 			customFlags: { type: 'array', description: 'Custom yt-dlp flags' },
 		},
@@ -146,12 +155,17 @@ export const PATCH = apiRoute(
 				'autoDownload',
 				'saveToLibrary',
 				'excludeShorts',
+				'maxDurationSeconds',
 				'profileId',
 				'customFlags',
 			];
 			const updates: Record<string, any> = {};
 			for (const key of allowedFields) {
 				if (key in body) updates[key] = body[key];
+			}
+
+			if (updates.maxDurationSeconds !== undefined) {
+				updates.maxDurationSeconds = normalizeMaxDuration(updates.maxDurationSeconds);
 			}
 
 			// A new URL may point at a different channel — drop the cached channel

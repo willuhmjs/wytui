@@ -1,11 +1,13 @@
 <script lang="ts">
 	import type { DownloadProfile } from '$lib/types';
+	import DurationField from '$lib/components/ui/DurationField.svelte';
 
 	let {
 		profiles = [],
 		selectedProfileId = '',
 		saveToLibrary = false,
 		excludeShorts = false,
+		maxDurationSeconds = 0,
 		options = { sponsorblock: false, subtitles: false, metadata: false },
 		libraryConfigured = false,
 		onChange,
@@ -14,6 +16,7 @@
 		selectedProfileId?: string;
 		saveToLibrary?: boolean;
 		excludeShorts?: boolean;
+		maxDurationSeconds?: number;
 		options?: {
 			sponsorblock: boolean;
 			subtitles: boolean;
@@ -24,6 +27,7 @@
 			profileId?: string;
 			saveToLibrary?: boolean;
 			excludeShorts?: boolean;
+			maxDurationSeconds?: number;
 			options?: {
 				sponsorblock: boolean;
 				subtitles: boolean;
@@ -52,6 +56,10 @@
 
 	function updateExcludeShorts(value: boolean) {
 		onChange?.({ excludeShorts: value });
+	}
+
+	function updateMaxDuration(minutes: number) {
+		onChange?.({ maxDurationSeconds: minutes * 60 });
 	}
 
 	function updateProfileId(value: string) {
@@ -103,6 +111,19 @@
 		</label>
 		<p class="help-text">
 			Skip shorts and other vertical videos from this subscription (up to 3 min, portrait format)
+		</p>
+	</div>
+
+	<div class="form-group">
+		<span class="options-label">Max Video Length</span>
+		<DurationField
+			label="Max Video Length"
+			minutes={Math.round(Math.max(0, maxDurationSeconds) / 60)}
+			onChange={updateMaxDuration}
+		/>
+		<p class="help-text">
+			Only download videos up to this length (e.g. skip 4-hour livestream VODs). Drag to adjust,
+			click to type — 0 means no limit
 		</p>
 	</div>
 

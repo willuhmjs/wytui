@@ -127,3 +127,67 @@ describe('fetchMetadata short/premiere skipping', () => {
 		expect(archiveDb['prem1']).toBeUndefined();
 	});
 });
+
+describe('fetchMetadata subscription max-duration skipping', () => {
+	beforeEach(() => {
+		for (const k of Object.keys(downloads)) delete downloads[k];
+		for (const k of Object.keys(archiveDb)) delete archiveDb[k];
+		for (const k of Object.keys(subs)) delete subs[k];
+		settings = { cookiePath: null, maxDurationSeconds: null, rydEnabled: false };
+		(downloadService as any).retryTimeouts.clear();
+		vi.restoreAllMocks();
+	});
+
+	it('discards a video over the subscription limit and archives it with a reason', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=long1' });
+		subs[SUB_ID] = { excludeShorts: false, maxDurationSeconds: 3600 };
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: '4h Stream VOD',
+			videoId: 'long1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 4 * 3600,
+		} as any);
+
+		await expect((downloadService as any).fetchMetadata(ID)).rejects.toThrow('duration');
+
+		// Record is gone, archive entry carries the skip reason.
+		expect(downloads[ID]).toBeUndefined();
+		expect(archiveDb['long1']?.reason).toBe('duration');
+		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
+	});
+
+	it('keeps the download when the duration is within the subscription limit', async () => {
+		seedDownload();
+		subs[SUB_ID] = { excludeShorts: false, maxDurationSeconds: 3600 };
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Regular video',
+			videoId: 'ok1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 1800,
+		} as any);
+
+		await (downloadService as any).fetchMetadata(ID);
+
+		expect(downloads[ID]).toBeDefined();
+		expect(archiveDb['ok1']).toBeUndefined();
+	});
+
+	it('keeps the download when the subscription has no limit', async () => {
+		seedDownload();
+		subs[SUB_ID] = { excludeShorts: false, maxDurationSeconds: null };
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Long video',
+			videoId: 'nolimit1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 5 * 3600,
+		} as any);
+
+		await (downloadService as any).fetchMetadata(ID);
+
+		expect(downloads[ID]).toBeDefined();
+		expect(archiveDb['nolimit1']).toBeUndefined();
+	});
+});

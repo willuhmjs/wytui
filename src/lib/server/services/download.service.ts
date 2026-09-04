@@ -299,16 +299,18 @@ class DownloadService {
 				throw new DownloadSkippedError('upcoming');
 			}
 
-			// Subscription-level short exclusion. Shorts can arrive via /watch/ URLs
-			// where the URL alone doesn't identify them, so the aspect-ratio check in
-			// fetchMetadata is the authoritative classifier. Archive with a reason so
-			// the checker never re-queues the same short.
-			if (metadata.videoType === 'short' && download.subscriptionId) {
+			// Subscription-level short exclusion and max-duration limit. Shorts can
+			// arrive via /watch/ URLs where the URL alone doesn't identify them, and
+			// durations aren't available to the feed-based checker at all, so the
+			// metadata fetched here is the authoritative classifier for both. Archive
+			// with a reason so the checker never re-queues the same video.
+			if (download.subscriptionId) {
 				const sub = await prisma.subscription.findUnique({
 					where: { id: download.subscriptionId },
-					select: { excludeShorts: true },
+					select: { excludeShorts: true, maxDurationSeconds: true },
 				});
-				if (sub?.excludeShorts) {
+
+				if (metadata.videoType === 'short' && sub?.excludeShorts) {
 					const videoId = this.extractVideoId(download.url) ?? metadata.videoId;
 					if (videoId) {
 						await prisma.archive
@@ -329,6 +331,31 @@ class DownloadService {
 					);
 					await this.discardDownloadRecord(downloadId);
 					throw new DownloadSkippedError('short');
+				}
+
+				if (sub?.maxDurationSeconds && metadata.duration) {
+					if (metadata.duration > sub.maxDurationSeconds) {
+						const videoId = this.extractVideoId(download.url) ?? metadata.videoId;
+						if (videoId) {
+							await prisma.archive
+								.upsert({
+									where: { videoId },
+									update: { reason: 'duration' },
+									create: {
+										videoId,
+										url: download.url,
+										title: metadata.title ?? videoId,
+										reason: 'duration',
+									},
+								})
+								.catch(() => {});
+						}
+						console.log(
+							`[DownloadService] Skipped ${videoId ?? download.url} (${Math.round(metadata.duration / 60)} min exceeds subscription limit of ${Math.round(sub.maxDurationSeconds / 60)} min)`,
+						);
+						await this.discardDownloadRecord(downloadId);
+						throw new DownloadSkippedError('duration');
+					}
 				}
 			}
 

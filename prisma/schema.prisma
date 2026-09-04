@@ -276,6 +276,7 @@ model Subscription {
   saveToLibrary Boolean @default(false)
   customFlags String[]  // Per-subscription yt-dlp flags (SponsorBlock, subtitles, etc.)
   excludeShorts Boolean @default(false)
+  maxDurationSeconds Int? // Skip videos longer than this (null = no limit)
 
   // Check bookkeeping
   channelId   String?   // Resolved YouTube channel ID, cached for RSS feed lookups
