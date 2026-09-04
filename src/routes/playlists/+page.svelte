@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
 	import { trapFocus } from '$lib/utils/a11y';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
@@ -66,9 +67,21 @@
 		}
 	});
 
+	let unsubs: Array<() => void> = [];
+
 	onMount(() => {
 		loadPlaylists();
 		checkYoutubeLink();
+
+		const refresh = () => loadPlaylists();
+		unsubs.push(onSSEEvent('playlist:sync:progress', refresh));
+		unsubs.push(onSSEEvent('playlist:sync:complete', refresh));
+		unsubs.push(onSSEEvent('download:complete', refresh));
+		unsubs.push(onSSEEvent('download:deleted', refresh));
+	});
+
+	onDestroy(() => {
+		unsubs.forEach(unsub => unsub());
 	});
 
 	async function checkYoutubeLink() {

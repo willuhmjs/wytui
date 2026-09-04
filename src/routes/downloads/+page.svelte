@@ -335,11 +335,13 @@
 				completedDownloads = [download, ...completedDownloads];
 			}
 			loadCacheUsage();
+			loadDiskInfo();
 		});
 		const unsubDeleted = onSSEEvent('download:deleted', ({ id }) => {
 			completedDownloads = completedDownloads.filter((d) => d.id !== id);
 			failedDownloads = failedDownloads.filter((d) => d.id !== id);
 			loadCacheUsage();
+			loadDiskInfo();
 		});
 		// download:failed only carries { id, error }, so refetch the failed
 		// list to pick up the full record and show it live.

@@ -1,15 +1,27 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 
 	let analytics = $state<any>(null);
 	let analyticsLoading = $state(true);
 	let error = $state<string | null>(null);
+	let unsubs: Array<() => void> = [];
 
 	onMount(() => {
 		loadAnalytics();
+		
+		const refresh = () => loadAnalytics();
+		unsubs.push(onSSEEvent('download:created', refresh));
+		unsubs.push(onSSEEvent('download:complete', refresh));
+		unsubs.push(onSSEEvent('download:failed', refresh));
+		unsubs.push(onSSEEvent('download:deleted', refresh));
+	});
+
+	onDestroy(() => {
+		unsubs.forEach(unsub => unsub());
 	});
 
 	async function loadAnalytics() {

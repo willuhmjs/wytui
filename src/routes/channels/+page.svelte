@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import ViewToggle from '$lib/components/ui/ViewToggle.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import FilterDropdown from '$lib/components/ui/FilterDropdown.svelte';
 
 	type Channel = { name: string; count: number; thumbnail: string | null };
@@ -32,7 +33,21 @@
 		return sorted;
 	});
 
-	onMount(() => loadChannels());
+	let unsubs: Array<() => void> = [];
+
+	onMount(() => {
+		loadChannels();
+		
+		const refresh = () => loadChannels(search);
+		unsubs.push(onSSEEvent('download:created', refresh));
+		unsubs.push(onSSEEvent('download:complete', refresh));
+		unsubs.push(onSSEEvent('download:failed', refresh));
+		unsubs.push(onSSEEvent('download:deleted', refresh));
+	});
+
+	onDestroy(() => {
+		unsubs.forEach(unsub => unsub());
+	});
 
 	async function loadChannels(q = search) {
 		// Fresh load: reset pagination and replace results.
