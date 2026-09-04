@@ -46,7 +46,6 @@ spec:
       - name: wytui
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        command: ["node", "build"]
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
