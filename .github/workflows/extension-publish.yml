@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # to push the ext-v<version> tag and update the Release
+    outputs:
+      should_publish: ${{ steps.ver.outputs.already_published == 'false' }}
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -100,3 +103,29 @@ jobs:
           - **Firefox:** auto-updates from [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/wytui/).
           - Full changelog: https://github.com/$GITHUB_REPOSITORY/commits/ext-v$VERSION"
           gh release upload "ext-v$VERSION" "$ZIP" --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish-chrome:
+    needs: publish
+    if: needs.publish.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wytui-extension-${{ needs.publish.outputs.version }}
+          path: extension-artifacts
+
+      - name: Normalize zip filename
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          ZIP=$(ls extension-artifacts/*.zip | head -n1)
+          echo "web-ext built: $ZIP"
+          mv "$ZIP" "extension-artifacts/wytui-extension-$VERSION.zip"
+
+      - name: Upload & submit to Chrome Web Store
+        uses: PlasmoHQ/bpp@v3
+        with:
+          keys: ${{ secrets.CWS_CLIENT_SECRET_JSON }}
+          chrome-file: extension-artifacts/wytui-extension-${{ needs.publish.outputs.version }}.zip
+          verbose: true
