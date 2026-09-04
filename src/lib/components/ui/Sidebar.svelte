@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { getExtensionStoreUrl, REPO_URL } from '$lib/extension-links';
+	import { REPO_URL } from '$lib/extension-links';
+	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
 
 	interface Props {
 		isAdmin: boolean;
@@ -65,11 +66,7 @@
 	let updateAvailable = $state(false);
 	let commitsUrl = $state('');
 
-	// Browser-aware extension store URL; re-resolved client-side in onMount.
-	let extensionStoreUrl = $state(getExtensionStoreUrl());
-
 	onMount(async () => {
-		extensionStoreUrl = getExtensionStoreUrl();
 		try {
 			const res = await fetch('/api/version');
 			if (res.ok) {
@@ -241,30 +238,9 @@
 
 		<div class="nav-group">
 			{#if !collapsed}<span class="nav-label">Links</span>{/if}
-			<a
-				href={extensionStoreUrl}
-				class="nav-item"
-				target="_blank"
-				rel="noopener noreferrer"
-				title={collapsed ? 'Browser extension' : undefined}
-			>
-				<svg
-					class="nav-icon"
-					width="20"
-					height="20"
-					viewBox="0 0 20 20"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path
-						d="M7 3.5a1.5 1.5 0 0 1 3 0V5h2.5A1.5 1.5 0 0 1 14 6.5V9h1.5a1.5 1.5 0 0 1 0 3H14v2.5a1.5 1.5 0 0 1-1.5 1.5H10v-1.5a1.5 1.5 0 0 0-3 0V16H4.5A1.5 1.5 0 0 1 3 14.5V12h1.5a1.5 1.5 0 0 0 0-3H3V6.5A1.5 1.5 0 0 1 4.5 5H7V3.5z"
-					/>
-				</svg>
-				{#if !collapsed}<span class="nav-text">Extension</span>{/if}
-			</a>
+			<div class="nav-extension-wrap" class:collapsed>
+				<ExtensionMenu label="Extension" variant="nav" {collapsed} />
+			</div>
 			<a
 				href={REPO_URL}
 				class="nav-item"
@@ -667,6 +643,23 @@
 		transition: all var(--transition-fast);
 		white-space: nowrap;
 		overflow: hidden;
+	}
+
+	.nav-extension-wrap {
+		display: block;
+	}
+
+	.nav-extension-wrap :global(button.nav-item) {
+		width: 100%;
+	}
+
+	.nav-extension-wrap.collapsed :global(.extension-menu-panel) {
+		left: calc(100% + 8px);
+		top: 0;
+	}
+
+	.nav-extension-wrap.collapsed :global(.chev) {
+		display: none;
 	}
 
 	.sidebar.collapsed .nav-item {

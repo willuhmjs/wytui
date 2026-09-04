@@ -17,10 +17,8 @@
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
 	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
 	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
-	import { getExtensionStoreUrl, REPO_URL } from '$lib/extension-links';
-
-	// Store URL matches the current browser; resolved client-side in onMount.
-	let extensionStoreUrl = $state(getExtensionStoreUrl());
+	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
+	import { REPO_URL } from '$lib/extension-links';
 
 	interface Props {
 		data: {
@@ -351,8 +349,6 @@
 	});
 
 	onMount(() => {
-		// Re-resolve now that navigator is available (avoids an SSR hydration mismatch).
-		extensionStoreUrl = getExtensionStoreUrl();
 		loadApiKeys();
 		loadYouTubeLink();
 		if (isAdmin) {
@@ -1787,15 +1783,7 @@
 					<div class="youtube-links">
 						<h3>Links</h3>
 						<div class="link-buttons">
-							<a
-								class="btn btn-secondary"
-								href={extensionStoreUrl}
-								target="_blank"
-								rel="noopener noreferrer"
-							>
-								Browser extension
-								<ExternalLinkIcon width={14} height={14} />
-							</a>
+							<ExtensionMenu label="Browser extension" variant="button" />
 							<a
 								class="btn btn-secondary"
 								href={REPO_URL}
