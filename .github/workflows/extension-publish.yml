@@ -1,10 +1,11 @@
-name: Publish Extension (Firefox AMO)
+name: Publish Extension (Firefox AMO + GitHub Release)
 
-# Publishes the browser extension to addons.mozilla.org (listed channel) when
+# Publishes the browser extension to addons.mozilla.org (listed channel) and
+# attaches the unsigned Chrome zip to the ext-v<version> GitHub Release when
 # extension/ changes land on main. To cut a release, bump the version in
 # extension/manifest.json — publishing is guarded by an `ext-v<version>` git tag
 # so pushes that change the extension without bumping the version are skipped
-# (rather than failing on AMO's "duplicate version" error).
+# (rather than failing on AMO's duplicate version error).
 
 on:
   push:
@@ -19,7 +20,7 @@ jobs:
     if: github.repository == 'willuhmjs/wytui'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # to push the ext-v<version> tag
+      contents: write # to push the ext-v<version> tag and update the Release
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -81,3 +82,21 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "ext-v${{ steps.ver.outputs.version }}"
           git push origin "ext-v${{ steps.ver.outputs.version }}"
+
+      - name: Attach zip to GitHub Release
+        if: steps.ver.outputs.already_published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          ZIP=$(ls extension-artifacts/*.zip | head -n1)
+          echo "Attaching $ZIP to release ext-v$VERSION"
+          gh release view "ext-v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "ext-v$VERSION" --repo "$GITHUB_REPOSITORY" \
+                 --title "wytui extension v$VERSION" \
+                 --notes "Browser extension v$VERSION.
+
+          - **Chrome (manual install / dev):** download \`wytui-extension-$VERSION.zip\` below, unzip, load unpacked in \`chrome://extensions\` with Developer mode on.
+          - **Firefox:** auto-updates from [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/wytui/).
+          - Full changelog: https://github.com/$GITHUB_REPOSITORY/commits/ext-v$VERSION"
+          gh release upload "ext-v$VERSION" "$ZIP" --repo "$GITHUB_REPOSITORY" --clobber
