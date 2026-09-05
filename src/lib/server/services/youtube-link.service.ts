@@ -5,6 +5,8 @@ import {
 	looksLikeYouTubeAuth,
 	type BrowserCookie,
 } from '../utils/netscape-cookies';
+import { validateProxyUrlInput } from '../utils/proxy-url';
+import { ytdlpService } from './ytdlp.service';
 
 class YouTubeLinkService {
 	async storeCookies(
@@ -62,6 +64,15 @@ class YouTubeLinkService {
 				syncWatchLater: link.syncWatchLater,
 				useFeedForNewVideos: link.useFeedForNewVideos,
 			},
+			ytdlp: {
+				proxyUrl: link.proxyUrl ?? null,
+				extraFlags: link.extraFlags ?? [],
+			},
+			notifications: {
+				appriseUrl: link.appriseUrl ?? null,
+				notifyOnComplete: link.notifyOnComplete,
+				notifyOnFail: link.notifyOnFail,
+			},
 		};
 	}
 
@@ -87,6 +98,73 @@ class YouTubeLinkService {
 		if (Object.keys(data).length === 0) return;
 		// updateMany so a missing row is a no-op (0 rows) instead of a P2025 throw.
 		await prisma.youTubeLink.updateMany({ where: { userId }, data });
+	}
+
+	/**
+	 * Per-account overrides for the server-wide Settings: yt-dlp proxy/flags and
+	 * automation notifications. An empty extraFlags array means "inherit the
+	 * default"; notifications only replace the global ones once the account has
+	 * its own appriseUrl.
+	 */
+	async updateAccountSettings(
+		userId: string,
+		updates: {
+			proxyUrl?: string | null;
+			extraFlags?: string[];
+			appriseUrl?: string | null;
+			notifyOnComplete?: boolean;
+			notifyOnFail?: boolean;
+		},
+	): Promise<void> {
+		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
+		if (!link) throw new Error('No linked YouTube account');
+
+		const data: Record<string, string | null | boolean | string[]> = {};
+		if ('proxyUrl' in updates) {
+			const check = validateProxyUrlInput(updates.proxyUrl);
+			if (!check.ok) throw new Error(`Proxy URL ${check.error}`);
+			data.proxyUrl = check.value;
+		}
+		if ('extraFlags' in updates) {
+			const flags = updates.extraFlags;
+			if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) {
+				throw new Error('extraFlags must be an array of strings');
+			}
+			const badFlag = ytdlpService.findDangerousFlag(flags);
+			if (badFlag) throw new Error(`Forbidden yt-dlp flag: ${badFlag}`);
+			data.extraFlags = flags.map((f) => f.trim()).filter(Boolean);
+		}
+		if ('appriseUrl' in updates) {
+			if (updates.appriseUrl === null || updates.appriseUrl === '') {
+				data.appriseUrl = null;
+			} else if (typeof updates.appriseUrl === 'string') {
+				data.appriseUrl = updates.appriseUrl.trim();
+			} else {
+				throw new Error('appriseUrl must be a string or null');
+			}
+		}
+		for (const key of ['notifyOnComplete', 'notifyOnFail'] as const) {
+			if (updates[key] === undefined) continue;
+			if (typeof updates[key] !== 'boolean') {
+				throw new Error(`${key} must be a boolean`);
+			}
+			data[key] = updates[key];
+		}
+		if (Object.keys(data).length === 0) return;
+		await prisma.youTubeLink.update({ where: { userId }, data });
+	}
+
+	/**
+	 * Raw per-account yt-dlp settings, or null when the user has no linked
+	 * account. Callers fall back to the server-wide defaults themselves.
+	 */
+	async getAccountYtdlp(
+		userId: string | null | undefined,
+	): Promise<{ proxyUrl: string | null; extraFlags: string[] } | null> {
+		if (!userId) return null;
+		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
+		if (!link) return null;
+		return { proxyUrl: link.proxyUrl ?? null, extraFlags: link.extraFlags ?? [] };
 	}
 
 	async unlink(userId: string): Promise<void> {

@@ -19,7 +19,8 @@ import { plexService } from './plex.service';
 import { effectiveCacheQuota } from '../permissions';
 import { internalFetch } from '../utils/fetch';
 import { resolveBestThumbnailUrl } from './thumbnail';
-import { writeJellyfinArtwork } from './artwork';
+import { writeJellyfinArtwork, writePosterFromBuffer } from './artwork';
+import { nfoService } from './nfo.service';
 
 function sanitizeFilename(name: string): string {
 	return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'Unknown';
@@ -174,8 +175,8 @@ class LibraryService {
 		} catch {}
 		await this.transferSidecars(download.filepath, destPath);
 
+		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
 		try {
-			const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
 			const sourceUrl = await resolveBestThumbnailUrl({
 				videoId: download.videoId,
 				thumbnail: download.thumbnail,
@@ -185,7 +186,10 @@ class LibraryService {
 				await writeJellyfinArtwork({
 					sourceUrl,
 					videoDir,
-					generatePoster: settings?.generateJellyfinPosters ?? true,
+					// In a TV Shows library a per-episode poster.jpg would override the
+					// landscape cover as the episode's primary image — posters belong at
+					// the channel (series) level instead.
+					generatePoster: false,
 				});
 			}
 		} catch {
@@ -193,7 +197,11 @@ class LibraryService {
 		}
 
 		const uploaderPath = resolve(targetLibrary, uploaderDir);
-		await this.ensureChannelArt(uploaderPath, download.channelUrl);
+		await this.ensureChannelArt(
+			uploaderPath,
+			download.channelUrl,
+			settings?.generateJellyfinPosters ?? true,
+		);
 
 		await prisma.download.update({
 			where: { id: download.id },
@@ -202,23 +210,75 @@ class LibraryService {
 				filepath: destPath,
 			},
 		});
+
+		// Refresh the channel's NFO metadata (an older-dated video shifts the
+		// episode numbering of later same-year videos) so Jellyfin keeps
+		// chronological order. Best-effort: never block the library move.
+		await nfoService.syncChannel(uploaderPath).catch((err) => {
+			console.error('[LibraryService] NFO sync failed:', err);
+		});
 	}
 
-	private async ensureChannelArt(dirPath: string, channelUrl?: string | null): Promise<void> {
+	private async ensureChannelArt(
+		dirPath: string,
+		channelUrl?: string | null,
+		generatePoster = false,
+	): Promise<void> {
 		if (!channelUrl) return;
 		const folderJpg = join(dirPath, 'folder.jpg');
+		let avatar: Buffer | null = null;
 		try {
 			await access(folderJpg);
-			return;
-		} catch {}
-		try {
-			const buffer = await ytdlpService.fetchChannelThumbnail(channelUrl);
-			if (buffer) {
-				await writeFile(folderJpg, buffer);
+		} catch {
+			try {
+				avatar = await ytdlpService.fetchChannelThumbnail(channelUrl);
+				if (avatar) {
+					await writeFile(folderJpg, avatar);
+				}
+			} catch (err) {
+				console.error('[LibraryService] Failed to fetch channel art:', err);
+				return;
 			}
-		} catch (err) {
-			console.error('[LibraryService] Failed to fetch channel art:', err);
 		}
+		if (!generatePoster) return;
+		// Series-level 2:3 poster for the TV Shows library view (poster.jpg wins
+		// over folder.jpg as the series primary image).
+		const posterJpg = join(dirPath, 'poster.jpg');
+		try {
+			await access(posterJpg);
+		} catch {
+			const buffer =
+				avatar ?? (await ytdlpService.fetchChannelThumbnail(channelUrl).catch(() => null));
+			if (buffer) {
+				await writePosterFromBuffer(buffer, posterJpg);
+			}
+		}
+	}
+
+	/**
+	 * Write/refresh NFO metadata and channel artwork for every channel folder in
+	 * the video library. Backfills libraries created before the Jellyfin
+	 * TV-library integration; also exposed as the settings "Write metadata" action.
+	 */
+	async syncJellyfinMetadata(): Promise<{ channels: number; episodes: number }> {
+		const settings = await this.getSettings();
+		if (!settings.libraryPath) throw new Error('Library path not configured');
+		const root = resolve(settings.libraryPath);
+		const entries = await readdir(root, { withFileTypes: true });
+
+		let channels = 0;
+		let episodes = 0;
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			const channelDir = join(root, entry.name);
+			const result = await nfoService.syncChannel(channelDir);
+			await this.ensureChannelArt(channelDir, result.channelUrl, settings.generateJellyfinPosters);
+			if (result.episodes > 0) {
+				channels++;
+				episodes += result.episodes;
+			}
+		}
+		return { channels, episodes };
 	}
 
 	/**

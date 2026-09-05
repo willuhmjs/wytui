@@ -187,6 +187,26 @@
 	let youtubeLoading = $state(false);
 	let showImportModal = $state(false);
 
+	// Per-account overrides for the linked YouTube account (yt-dlp + notifications)
+	let accountProxyUrl = $state('');
+	let accountExtraFlagsText = $state('');
+	let accountAppriseUrl = $state('');
+	let accountNotifyOnComplete = $state(false);
+	let accountNotifyOnFail = $state(false);
+	let savingAccountSettings = $state(false);
+	let accountSettingsResult = $state<{ success: boolean; message: string } | null>(null);
+	const ACCOUNT_PROXY_SCHEMES = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
+	let accountProxyUrlError = $derived.by(() => {
+		const value = accountProxyUrl.trim();
+		if (value === '') return null;
+		try {
+			if (ACCOUNT_PROXY_SCHEMES.includes(new URL(value).protocol)) return null;
+		} catch {
+			// fall through to the error
+		}
+		return 'Needs a complete proxy URL, e.g. socks5://host:port (schemes: http, https, socks4, socks4a, socks5, socks5h)';
+	});
+
 	// Library requests (admin)
 	let libraryRequests = $state<any[]>([]);
 	let loadingRequests = $state(false);
@@ -595,6 +615,7 @@
 	}
 
 	let testingJellyfin = $state(false);
+	let jellyfinSetupResult = $state<{ success: boolean; message: string } | null>(null);
 	let jellyfinTestResult = $state<{
 		success: boolean;
 		message: string;
@@ -880,6 +901,78 @@
 			jellyfinTestResult = { success: false, message: 'Request failed' };
 		} finally {
 			testingJellyfin = false;
+		}
+	}
+
+	let settingUpJellyfin = $state(false);
+	let writingNfo = $state(false);
+
+	async function setupJellyfinLibrary() {
+		// Guard before the confirm dialog: a double click must not open two
+		// confirms or fire two concurrent setup requests.
+		if (settingUpJellyfin) return;
+		settingUpJellyfin = true;
+		jellyfinSetupResult = null;
+		try {
+			const confirmed = await showConfirm(
+				'Set up Jellyfin library',
+				'Creates or fixes the Jellyfin library for your wytui paths (TV Shows, NFO-only metadata). If an existing library uses another type (e.g. Home Videos) it will be rebuilt — Jellyfin watch history for it resets. Media files are not touched.',
+			);
+			if (!confirmed) return;
+			const res = await csrfFetch('/api/settings/jellyfin-setup', { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok || !data.success) {
+				jellyfinSetupResult = {
+					success: false,
+					message: data.error ?? `Request failed (${res.status})`,
+				};
+				return;
+			}
+			const describe = (lib: any) => {
+				const type = lib.collectionType === 'tvshows' ? 'TV Shows' : 'Music';
+				const verb =
+					lib.action === 'created'
+						? 'Created'
+						: lib.action === 'converted'
+							? 'Rebuilt'
+							: 'Already OK';
+				return `${verb} "${lib.name}" (${type})`;
+			};
+			const parts = [describe(data.video)];
+			if (data.music) parts.push(describe(data.music));
+			const warnings = [...(data.video?.warnings ?? []), ...(data.music?.warnings ?? [])];
+			jellyfinSetupResult = {
+				success: true,
+				message: parts.join(' · ') + (warnings.length ? ` — ${warnings.join(' ')}` : ''),
+			};
+		} catch {
+			jellyfinSetupResult = { success: false, message: 'Request failed' };
+		} finally {
+			settingUpJellyfin = false;
+		}
+	}
+
+	async function writeJellyfinMetadata() {
+		writingNfo = true;
+		jellyfinSetupResult = null;
+		try {
+			const res = await csrfFetch('/api/settings/jellyfin-metadata', { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok || !data.success) {
+				jellyfinSetupResult = {
+					success: false,
+					message: data.error ?? `Request failed (${res.status})`,
+				};
+				return;
+			}
+			jellyfinSetupResult = {
+				success: true,
+				message: `Wrote metadata for ${data.episodes} videos across ${data.channels} channels`,
+			};
+		} catch {
+			jellyfinSetupResult = { success: false, message: 'Request failed' };
+		} finally {
+			writingNfo = false;
 		}
 	}
 
@@ -1220,6 +1313,7 @@
 			const res = await fetch('/api/youtube/link');
 			if (res.ok) {
 				youtubeLink = await res.json();
+				applyAccountState(youtubeLink);
 			}
 		} catch {
 			// best-effort
@@ -1251,6 +1345,69 @@
 		} catch {
 			addToast('error', 'Failed to update setting');
 			await loadYouTubeLink();
+		}
+	}
+
+	function applyAccountState(link: any) {
+		accountProxyUrl = link?.ytdlp?.proxyUrl ?? '';
+		accountExtraFlagsText = (link?.ytdlp?.extraFlags ?? []).join('\n');
+		accountAppriseUrl = link?.notifications?.appriseUrl ?? '';
+		accountNotifyOnComplete = link?.notifications?.notifyOnComplete ?? false;
+		accountNotifyOnFail = link?.notifications?.notifyOnFail ?? false;
+	}
+
+	async function saveAccountSettings() {
+		if (accountProxyUrlError) return;
+		savingAccountSettings = true;
+		accountSettingsResult = null;
+		try {
+			const res = await csrfFetch('/api/youtube/link', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					proxyUrl: accountProxyUrl.trim() || null,
+					extraFlags: accountExtraFlagsText
+						.split('\n')
+						.map((line: string) => line.trim())
+						.filter(Boolean),
+					appriseUrl: accountAppriseUrl.trim() || null,
+					notifyOnComplete: accountNotifyOnComplete,
+					notifyOnFail: accountNotifyOnFail,
+				}),
+			});
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				accountSettingsResult = {
+					success: false,
+					message: data?.message ?? `Request failed (${res.status})`,
+				};
+				return;
+			}
+			youtubeLink = data;
+			applyAccountState(data);
+			accountSettingsResult = { success: true, message: 'Saved — applies to this account only' };
+		} catch {
+			accountSettingsResult = { success: false, message: 'Request failed' };
+		} finally {
+			savingAccountSettings = false;
+		}
+	}
+
+	async function testAccountNotifications() {
+		accountSettingsResult = null;
+		try {
+			const res = await csrfFetch('/api/youtube/link/test', { method: 'POST' });
+			if (res.ok) {
+				accountSettingsResult = { success: true, message: 'Test notification sent' };
+			} else {
+				const data = await res.json().catch(() => null);
+				accountSettingsResult = {
+					success: false,
+					message: data?.message ?? `Request failed (${res.status})`,
+				};
+			}
+		} catch {
+			accountSettingsResult = { success: false, message: 'Request failed' };
 		}
 	}
 
@@ -1744,6 +1901,96 @@
 							</label>
 						</div>
 
+						<h3>Per-account overrides</h3>
+						<p class="help-text">
+							These replace the server-wide defaults for every download, subscription check, and
+							sync made as this YouTube account.
+						</p>
+
+						<div class="form-group">
+							<label for="accountProxyUrl">yt-dlp proxy URL</label>
+							<input
+								type="text"
+								id="accountProxyUrl"
+								bind:value={accountProxyUrl}
+								placeholder="socks5://host:port (empty = server default)"
+								class:invalid={!!accountProxyUrlError}
+								aria-invalid={accountProxyUrlError ? 'true' : undefined}
+							/>
+							{#if accountProxyUrlError}
+								<p class="help-text error-text" role="alert">{accountProxyUrlError}</p>
+							{:else}
+								<p class="help-text">
+									Keep one stable egress IP per account — rotating IPs can trip YouTube's bot
+									detection. SOCKS proxies automatically skip aria2c.
+								</p>
+							{/if}
+						</div>
+
+						<div class="form-group">
+							<label for="accountExtraFlags">yt-dlp extra flags</label>
+							<textarea
+								id="accountExtraFlags"
+								rows="3"
+								bind:value={accountExtraFlagsText}
+								placeholder={'--extractor-args youtube:player_client=web_safari\n--sleep-requests 1'}
+							></textarea>
+							<p class="help-text">
+								One token per line — a flag and its value go on separate lines. Empty = server
+								default.
+							</p>
+						</div>
+
+						<h3>Notifications</h3>
+						<div class="form-group">
+							<label for="accountAppriseUrl">Apprise URL</label>
+							<input
+								type="text"
+								id="accountAppriseUrl"
+								bind:value={accountAppriseUrl}
+								placeholder="http://apprise:8000 (empty = server default)"
+							/>
+							<p class="help-text">
+								Set your own Apprise endpoint and this account's downloads notify it instead of the
+								server-wide one. The toggles below then pick which events are sent.
+							</p>
+						</div>
+						<div class="youtube-toggles">
+							<label>
+								<input type="checkbox" bind:checked={accountNotifyOnComplete} />
+								Notify on download complete
+							</label>
+							<label>
+								<input type="checkbox" bind:checked={accountNotifyOnFail} />
+								Notify on download failure
+							</label>
+						</div>
+						<div class="youtube-actions">
+							<button
+								class="btn btn-secondary"
+								onclick={saveAccountSettings}
+								disabled={savingAccountSettings || !!accountProxyUrlError}
+							>
+								{savingAccountSettings ? 'Saving…' : 'Save account settings'}
+							</button>
+							<button
+								class="btn btn-secondary"
+								onclick={testAccountNotifications}
+								disabled={!accountAppriseUrl.trim()}
+							>
+								Send test notification
+							</button>
+							{#if accountSettingsResult}
+								<span
+									class="test-result"
+									class:success={accountSettingsResult.success}
+									class:error={!accountSettingsResult.success}
+								>
+									{accountSettingsResult.message}
+								</span>
+							{/if}
+						</div>
+
 						<div class="youtube-actions">
 							<button class="btn btn-primary" onclick={() => (showImportModal = true)}>
 								Import Subscriptions
@@ -2063,7 +2310,10 @@
 								<input type="checkbox" bind:checked={settings.generateJellyfinPosters} />
 								Generate Jellyfin posters
 							</label>
-							<p class="help-text">Generate 2:3 posters + 16:9 backdrops for Jellyfin</p>
+							<p class="help-text">
+								Generate a 2:3 channel poster + 16:9 episode thumbnails for Jellyfin (TV Shows
+								libraries)
+							</p>
 						</div>
 
 						<div class="form-group">
@@ -2136,9 +2386,9 @@
 								</p>
 							{:else}
 								<p class="help-text">
-									Route all yt-dlp traffic (downloads, metadata fetches, subscription checks)
-									through an http(s)/socks4/socks5/socks5h proxy. Use <code>socks5h</code> to resolve
-									DNS through the proxy too.
+									Server-wide default proxy for yt-dlp traffic (downloads, metadata fetches,
+									subscription checks). Linked YouTube accounts can override it with their own
+									proxy. Use <code>socks5h</code> to resolve DNS through the proxy too.
 								</p>
 							{/if}
 						</div>
@@ -2158,9 +2408,9 @@
 								placeholder={'--extractor-args youtube:player_client=web_safari\n--sleep-requests 1'}
 							></textarea>
 							<p class="help-text">
-								Default yt-dlp flags applied to every download and subscription check. One token per
-								line — a flag and its value go on separate lines. Profile and per-subscription flags
-								override these.
+								Server-wide default yt-dlp flags applied to every download and subscription check.
+								Linked YouTube accounts can override these. One token per line — a flag and its
+								value go on separate lines. Profile and per-subscription flags override these.
 							</p>
 						</div>
 					</div>
@@ -2301,6 +2551,45 @@
 										{jellyfinTestResult.message}
 									</span>
 								{/if}
+							</div>
+
+							<div class="jellyfin-library-setup nested-field">
+								<div class="info-box">
+									<strong>Library type:</strong> use <strong>TV Shows</strong> for the wytui video library
+									— each channel becomes a show and each video an episode, ordered by upload date (seasons
+									= years). "Set up library" creates or fixes the library via the API and pins it to wytui's
+									NFO metadata (no online matching). Run "Write NFO metadata" once to backfill existing
+									videos.
+								</div>
+								<div class="jellyfin-test">
+									<button
+										type="button"
+										class="btn btn-secondary btn-sm"
+										onclick={setupJellyfinLibrary}
+										disabled={settingUpJellyfin ||
+											!settings.jellyfinUrl ||
+											!settings.jellyfinApiKey}
+									>
+										{settingUpJellyfin ? 'Setting up…' : 'Set up library'}
+									</button>
+									<button
+										type="button"
+										class="btn btn-secondary btn-sm"
+										onclick={writeJellyfinMetadata}
+										disabled={writingNfo}
+									>
+										{writingNfo ? 'Writing…' : 'Write NFO metadata'}
+									</button>
+									{#if jellyfinSetupResult}
+										<span
+											class="test-result"
+											class:success={jellyfinSetupResult.success}
+											class:error={!jellyfinSetupResult.success}
+										>
+											{jellyfinSetupResult.message}
+										</span>
+									{/if}
+								</div>
 							</div>
 
 							<div class="cleanup-section nested-field">
@@ -2630,7 +2919,10 @@
 								bind:value={settings.appriseUrl}
 								placeholder="http://apprise:8000"
 							/>
-							<p class="help-text">URL of your Apprise API server for push notifications</p>
+							<p class="help-text">
+								URL of your Apprise API server for push notifications. Linked accounts with their
+								own Apprise URL are notified separately.
+							</p>
 						</div>
 
 						{#if settings.appriseUrl}

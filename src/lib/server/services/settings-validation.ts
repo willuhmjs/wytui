@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { validateProxyUrlInput } from '../utils/proxy-url';
 import { prisma } from '$lib/server/db';
 import { queueService } from '$lib/server/services/queue.service';
 import { isOidcManagedByEnv } from '$lib/server/oidc';
@@ -359,25 +360,11 @@ export async function validateSettingsUpdate(
 
 	if (updates.ytdlpProxyUrl !== undefined) {
 		// Empty string or null clears the proxy.
-		if (updates.ytdlpProxyUrl === null || updates.ytdlpProxyUrl === '') {
-			updates.ytdlpProxyUrl = null;
-		} else {
-			const proxy = String(updates.ytdlpProxyUrl).trim();
-			const allowedSchemes = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
-			let scheme: string | null = null;
-			try {
-				scheme = new URL(proxy).protocol;
-			} catch {
-				// fall through to the error below
-			}
-			if (!scheme || !allowedSchemes.includes(scheme)) {
-				throw error(
-					400,
-					'ytdlpProxyUrl must be a valid http(s)/socks4/socks5/socks5h proxy URL (e.g. "socks5://host:port")',
-				);
-			}
-			updates.ytdlpProxyUrl = proxy;
+		const check = validateProxyUrlInput(updates.ytdlpProxyUrl);
+		if (!check.ok) {
+			throw error(400, `ytdlpProxyUrl ${check.error}`);
 		}
+		updates.ytdlpProxyUrl = check.value;
 	}
 
 	if (updates.ytdlpExtraFlags !== undefined) {

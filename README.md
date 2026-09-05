@@ -100,6 +100,19 @@ https://<your-wytui-domain>/auth/oidc/callback
 
 Users who sign in via OIDC are created with a default `user` role. An admin can promote them from the admin panel.
 
+## Jellyfin Integration
+
+wytui organizes the video library as `<channel>/<video>/<video>.<ext>`, which maps directly onto Jellyfin's **TV Shows** library model: each channel becomes a show, each video an episode. wytui writes Kodi-compatible NFO metadata alongside every video (season = upload year, episode = index within that year), so episodes appear in release order without any online metadata matching. Do **not** use a Home Videos library — it shows folder names in alphabetical order and loses the timeline.
+
+### Setup
+
+1. In Jellyfin: Dashboard → API Keys → create a key.
+2. In wytui: Settings → Jellyfin → enter the server URL and API key.
+3. Click **Set up library**. wytui creates (or repairs) the Jellyfin library via the API: collection type TV Shows, online metadata providers disabled, NFO-only. If an existing library of another type (e.g. Home Videos) points at the same path, it is rebuilt — Jellyfin's watch history for that library resets, media files are untouched.
+4. Click **Write NFO metadata** once to backfill `tvshow.nfo` + per-episode `.nfo` for videos already in the library.
+
+After that everything is automatic: every video saved to the library gets artwork (16:9 episode thumbs + a 2:3 channel poster), an NFO file, and a Jellyfin library scan trigger. If a music library path is configured, the same button sets up a Music library for it.
+
 ## Tech Stack
 
 - **Frontend**: SvelteKit 5 (Svelte with runes)

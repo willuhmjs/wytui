@@ -9,6 +9,8 @@ import { unlink, stat, readdir } from 'fs/promises';
 import { dirname, basename, extname, join } from 'path';
 import { libraryService } from './library.service';
 import { channelOverrideService } from './channel-override.service';
+import { youtubeLinkService } from './youtube-link.service';
+import { isSocksProxy } from '../utils/proxy-url';
 import { notificationService } from './notification.service';
 import { subtitleService } from './subtitle.service';
 import { extractVideoId } from '$lib/utils/youtube';
@@ -282,10 +284,16 @@ class DownloadService {
 		try {
 			// Get settings for cookie path
 			const settings = await this.getSettings();
+			// The owning user's linked YouTube account overrides the server-wide
+			// proxy/extra-flag defaults (empty account flags = inherit the default).
+			const account = download.userId
+				? await youtubeLinkService.getAccountYtdlp(download.userId)
+				: null;
 			const metadata = await ytdlpService.fetchMetadata(download.url, {
 				cookiePath: settings.cookiePath,
-				proxyUrl: settings.ytdlpProxyUrl,
-				extraFlags: settings.ytdlpExtraFlags,
+				proxyUrl: account?.proxyUrl ?? settings.ytdlpProxyUrl,
+				extraFlags:
+					account && account.extraFlags.length > 0 ? account.extraFlags : settings.ytdlpExtraFlags,
 			});
 
 			// Upcoming premieres aren't downloadable yet. Drop the record without
@@ -552,14 +560,19 @@ class DownloadService {
 			throw new Error('Insufficient disk space to start download');
 		}
 
+		// Per-account yt-dlp settings: the owning user's linked YouTube account
+		// overrides the server-wide defaults (proxy + extra flags).
+		const account = download.userId
+			? await youtubeLinkService.getAccountYtdlp(download.userId)
+			: null;
+		const proxyUrl = account?.proxyUrl ?? settings.ytdlpProxyUrl ?? null;
+		const defaultFlags =
+			account && account.extraFlags.length > 0 ? account.extraFlags : settings.ytdlpExtraFlags;
+
 		// Build yt-dlp arguments (merge profile flags with per-download overrides).
-		// Global default flags come first so more specific flags can override them
+		// Default flags come first so more specific flags can override them
 		// (yt-dlp honors the last occurrence of a repeated flag).
-		let mergedFlags = [
-			...settings.ytdlpExtraFlags,
-			...download.profile.customFlags,
-			...download.customFlags,
-		];
+		let mergedFlags = [...defaultFlags, ...download.profile.customFlags, ...download.customFlags];
 
 		// Apply channel override flags and sponsorblock setting
 		if (download.channelUrl) {
@@ -574,14 +587,17 @@ class DownloadService {
 			}
 		}
 
-		const aria2cAvailable = settings.useAria2c ? await ytdlpService.isAria2cAvailable() : false;
+		// aria2c only understands HTTP proxies; a SOCKS proxy URL would make every
+		// download fail, so quietly fall back to the built-in downloader.
+		const useAria2c = settings.useAria2c && !isSocksProxy(proxyUrl);
+		const aria2cAvailable = useAria2c ? await ytdlpService.isAria2cAvailable() : false;
 		const args = ytdlpService.buildArgs(download.url, outputPath, mergedFlags, {
 			rateLimit: settings.rateLimit,
 			sleepInterval: settings.sleepInterval,
 			cookiePath: settings.cookiePath,
-			proxyUrl: settings.ytdlpProxyUrl,
+			proxyUrl,
 			concurrentFragments: settings.concurrentFragments,
-			useAria2c: settings.useAria2c,
+			useAria2c,
 			httpChunkSize: settings.httpChunkSize,
 			aria2cAvailable,
 		});
@@ -940,7 +956,9 @@ class DownloadService {
 		this.downloadOwners.delete(downloadId);
 
 		// Send notification
-		notificationService.notifyComplete(download.title || download.url).catch(() => {});
+		notificationService
+			.notifyComplete(download.title || download.url, download.userId)
+			.catch(() => {});
 
 		// Enforce cache quota asynchronously — per-user so each user is evicted
 		// against their own limit, then globally against the total cache cap.
@@ -1042,7 +1060,9 @@ class DownloadService {
 				this.downloadOwners.delete(downloadId);
 
 				// Send failure notification
-				notificationService.notifyFail(download.title || download.url, error).catch(() => {});
+				notificationService
+					.notifyFail(download.title || download.url, error, download.userId)
+					.catch(() => {});
 			}
 		} finally {
 			this.handlingError.delete(downloadId);
@@ -1182,10 +1202,14 @@ class DownloadService {
 		if (!download) throw new Error('Download not found');
 
 		const settings = await this.getSettings();
+		const account = download.userId
+			? await youtubeLinkService.getAccountYtdlp(download.userId)
+			: null;
 		const metadata = await ytdlpService.fetchMetadata(download.url, {
 			cookiePath: settings.cookiePath,
-			proxyUrl: settings.ytdlpProxyUrl,
-			extraFlags: settings.ytdlpExtraFlags,
+			proxyUrl: account?.proxyUrl ?? settings.ytdlpProxyUrl,
+			extraFlags:
+				account && account.extraFlags.length > 0 ? account.extraFlags : settings.ytdlpExtraFlags,
 		});
 
 		// Fetch RYD dislike count if enabled

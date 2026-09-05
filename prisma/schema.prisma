@@ -620,6 +620,22 @@ model YouTubeLink {
   channelHandle   String?
   channelId       String?
 
+  // Per-account yt-dlp settings. Applied to every yt-dlp call made as this
+  // account (its downloads, subscription checks, feed/history syncs) and
+  // preferred over the server-wide Settings defaults. null/empty = inherit.
+  // Keeping a stable egress IP per account avoids tripping YouTube's
+  // bot detection on rotating-IP deployments.
+  proxyUrl        String?
+  extraFlags      String[]
+
+  // Per-account automation notifications. When an account sets its own
+  // appriseUrl, its toggles + URL replace the server-wide notification
+  // settings for that account's downloads; otherwise the global Settings
+  // apply.
+  appriseUrl      String?
+  notifyOnComplete Boolean @default(false)
+  notifyOnFail    Boolean @default(false)
+
   syncWatchedToYouTube Boolean @default(false)
   syncHistoryToWytui   Boolean @default(false)
   syncWatchLater       Boolean @default(false)

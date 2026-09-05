@@ -86,3 +86,63 @@ describe('youtubeLinkService', () => {
 		).resolves.toBeUndefined();
 	});
 });
+
+describe('account settings overrides', () => {
+	beforeEach(() => {
+		for (const k of Object.keys(store)) delete store[k];
+	});
+
+	it('requires a linked account', async () => {
+		await expect(
+			youtubeLinkService.updateAccountSettings('nobody', { proxyUrl: 'http://p:1' }),
+		).rejects.toThrow('No linked YouTube account');
+	});
+
+	it('rejects invalid proxy URLs and dangerous flags', async () => {
+		await youtubeLinkService.storeCookies('u1', cookies);
+		await expect(
+			youtubeLinkService.updateAccountSettings('u1', { proxyUrl: 'not a url' }),
+		).rejects.toThrow(/proxy URL/i);
+		await expect(
+			youtubeLinkService.updateAccountSettings('u1', { extraFlags: ['--sleep-requests; rm -rf /'] }),
+		).rejects.toThrow(/forbidden yt-dlp flag/i);
+	});
+
+	it('persists proxy, flags, and notification settings; empty clears', async () => {
+		await youtubeLinkService.storeCookies('u1', cookies);
+		await youtubeLinkService.updateAccountSettings('u1', {
+			proxyUrl: ' socks5://h:1080 ',
+			extraFlags: [' --sleep-requests 1', '', '  '],
+			appriseUrl: ' http://apprise:8000 ',
+			notifyOnComplete: true,
+			notifyOnFail: false,
+		});
+		const status: any = await youtubeLinkService.getLinkStatus('u1');
+		expect(status.ytdlp).toEqual({ proxyUrl: 'socks5://h:1080', extraFlags: ['--sleep-requests 1'] });
+		expect(status.notifications).toEqual({
+			appriseUrl: 'http://apprise:8000',
+			notifyOnComplete: true,
+			notifyOnFail: false,
+		});
+
+		await youtubeLinkService.updateAccountSettings('u1', { proxyUrl: '', appriseUrl: null });
+		const cleared: any = await youtubeLinkService.getLinkStatus('u1');
+		expect(cleared.ytdlp.proxyUrl).toBeNull();
+		expect(cleared.notifications.appriseUrl).toBeNull();
+	});
+
+	it('getAccountYtdlp resolves per-account settings or null', async () => {
+		expect(await youtubeLinkService.getAccountYtdlp('u1')).toBeNull();
+		expect(await youtubeLinkService.getAccountYtdlp(null)).toBeNull();
+
+		await youtubeLinkService.storeCookies('u1', cookies);
+		await youtubeLinkService.updateAccountSettings('u1', {
+			proxyUrl: 'http://p:1',
+			extraFlags: ['--sleep-requests', '1'],
+		});
+		expect(await youtubeLinkService.getAccountYtdlp('u1')).toEqual({
+			proxyUrl: 'http://p:1',
+			extraFlags: ['--sleep-requests', '1'],
+		});
+	});
+});

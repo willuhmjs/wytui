@@ -22,7 +22,21 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 export const PATCH: RequestHandler = async ({ locals, request }) => {
 	const userId = requireAuth(locals);
-	const toggles = await request.json().catch(() => ({}));
+	const body = await request.json().catch(() => ({}));
+
+	// Per-account yt-dlp settings ride alongside the sync toggles. Both are
+	// optional; updateToggles ignores keys it doesn't know.
+	const { proxyUrl, extraFlags, appriseUrl, notifyOnComplete, notifyOnFail, ...toggles } =
+		body ?? {};
+	const accountSettings = { proxyUrl, extraFlags, appriseUrl, notifyOnComplete, notifyOnFail };
+	const hasAccountSettings = Object.values(accountSettings).some((v) => v !== undefined);
+	if (hasAccountSettings) {
+		try {
+			await youtubeLinkService.updateAccountSettings(userId, accountSettings);
+		} catch (e) {
+			throw error(400, e instanceof Error ? e.message : 'Invalid account settings');
+		}
+	}
 	await youtubeLinkService.updateToggles(userId, toggles);
 	return json(await youtubeLinkService.getLinkStatus(userId));
 };

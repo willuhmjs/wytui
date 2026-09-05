@@ -2,6 +2,7 @@ import { prisma } from '../db';
 import { downloadService } from './download.service';
 import { ytdlpService } from './ytdlp.service';
 import { youtubeService } from './youtube.service';
+import { youtubeLinkService } from './youtube-link.service';
 import { sseEmitter } from '../sse/emitter';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Subscription } from '@prisma/client';
@@ -290,18 +291,28 @@ class SubscriptionService {
 		}
 		return this.fetchPlaylistEntries(subscription.url, {
 			limit: SubscriptionService.CHECK_DEPTH,
+			userId: subscription.userId,
 		});
 	}
 
 	/**
-	 * Global yt-dlp defaults (proxy + extra flags) from the settings singleton.
+	 * yt-dlp defaults (proxy + extra flags) for a subscription. The owning
+	 * user's linked YouTube account overrides the server-wide defaults.
 	 */
-	private async getYtdlpDefaults(): Promise<{ proxyUrl: string | null; extraFlags: string[] }> {
+	private async getYtdlpDefaults(
+		subscription?: { userId?: string | null } | null,
+	): Promise<{ proxyUrl: string | null; extraFlags: string[] }> {
 		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
-		return {
-			proxyUrl: settings?.ytdlpProxyUrl ?? null,
-			extraFlags: settings?.ytdlpExtraFlags ?? [],
-		};
+		let proxyUrl = settings?.ytdlpProxyUrl ?? null;
+		let extraFlags = settings?.ytdlpExtraFlags ?? [];
+		const account = subscription?.userId
+			? await youtubeLinkService.getAccountYtdlp(subscription.userId)
+			: null;
+		if (account) {
+			if (account.proxyUrl) proxyUrl = account.proxyUrl;
+			if (account.extraFlags.length > 0) extraFlags = account.extraFlags;
+		}
+		return { proxyUrl, extraFlags };
 	}
 
 	/**
@@ -320,7 +331,7 @@ class SubscriptionService {
 			return fromUrl;
 		}
 
-		const defaults = await this.getYtdlpDefaults();
+		const defaults = await this.getYtdlpDefaults(subscription);
 		const json = await runYtdlpJson(subscription.url, {
 			proxyUrl: defaults.proxyUrl,
 			extraArgs: [
@@ -391,12 +402,12 @@ class SubscriptionService {
 	 */
 	private async fetchPlaylistEntries(
 		url: string,
-		opts: { limit?: number; dateAfter?: string } = {},
+		opts: { limit?: number; dateAfter?: string; userId?: string | null } = {},
 	): Promise<any[]> {
 		ytdlpService.validateUrl(url);
 
 		const useFullExtraction = !!opts.dateAfter;
-		const defaults = await this.getYtdlpDefaults();
+		const defaults = await this.getYtdlpDefaults({ userId: opts.userId });
 
 		return new Promise((resolve, reject) => {
 			const args = ['--print', 'id', '--print', 'title', '--print', 'webpage_url'];
@@ -520,7 +531,10 @@ class SubscriptionService {
 			throw new Error('Subscription not found');
 		}
 
-		const videos = await this.fetchPlaylistEntries(subscription.url, { dateAfter: opts.dateAfter });
+		const videos = await this.fetchPlaylistEntries(subscription.url, {
+			dateAfter: opts.dateAfter,
+			userId: subscription.userId,
+		});
 		const candidates = subscription.excludeShorts
 			? videos.filter((v) => !v.url?.includes('/shorts/'))
 			: videos;

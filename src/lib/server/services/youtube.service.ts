@@ -119,13 +119,17 @@ class YouTubeService {
 	private fetchList(userId: string, target: string, opts: { timeoutMs?: number } = {}) {
 		return this.withCookieFile(userId, async (cookiePath) => {
 			try {
-				// Global proxy default applies here too, but not extraFlags: selection
-				// flags (--dateafter, --match-filters, …) would silently corrupt the
+				// Proxy comes from the linked account first, then the server-wide
+				// default. extraFlags are deliberately excluded: selection flags
+				// (--dateafter, --match-filters, …) would silently corrupt the
 				// imported channel/playlist listings.
-				const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+				const [settings, link] = await Promise.all([
+					prisma.settings.findUnique({ where: { id: 'singleton' } }),
+					prisma.youTubeLink.findUnique({ where: { userId } }),
+				]);
 				const json = await runYtdlpJson(target, {
 					cookiePath,
-					proxyUrl: settings?.ytdlpProxyUrl ?? null,
+					proxyUrl: link?.proxyUrl ?? settings?.ytdlpProxyUrl ?? null,
 					timeoutMs: opts.timeoutMs,
 				});
 				return parseFlatEntries(json);

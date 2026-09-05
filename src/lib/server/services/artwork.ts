@@ -19,6 +19,24 @@ export function buildConvertArgs(srcPath: string, outPath: string): string[] {
 	return ['-y', '-i', srcPath, '-frames:v', '1', '-q:v', '2', outPath];
 }
 
+/**
+ * Composite a 2:3 blurred-fill poster from an image buffer (e.g. a channel
+ * avatar) and write it to destPath. Best-effort: returns false instead of
+ * throwing when ffmpeg is unavailable or fails.
+ */
+export async function writePosterFromBuffer(buffer: Buffer, destPath: string): Promise<boolean> {
+	const tmpSrc = join(tmpdir(), `wytui-poster-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
+	try {
+		await writeFile(tmpSrc, buffer);
+		await runFfmpeg(buildPosterFilterArgs(tmpSrc, destPath));
+		return true;
+	} catch {
+		return false;
+	} finally {
+		await unlink(tmpSrc).catch(() => {});
+	}
+}
+
 function runFfmpeg(args: string[]): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const p = spawn(FFMPEG, args, { stdio: 'ignore' });
