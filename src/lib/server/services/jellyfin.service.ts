@@ -20,6 +20,26 @@ export function pathOverlaps(a: string, b: string): boolean {
 }
 
 /**
+ * Translate a wytui-container path into Jellyfin-container path space. wytui
+ * and Jellyfin often mount the same volume at different mount points (wytui
+ * may see /media while Jellyfin sees /media/youtube on the same claim), so
+ * library paths must be mapped before being compared against or created in
+ * Jellyfin. Paths outside the local prefix pass through unchanged.
+ */
+export function mapToJellyfinPath(
+	path: string,
+	localPath?: string | null,
+	remotePath?: string | null,
+): string {
+	const resolved = resolve(path);
+	if (!localPath || !remotePath) return resolved;
+	const local = resolve(localPath);
+	if (resolved !== local && !resolved.startsWith(local + '/')) return resolved;
+	const suffix = resolved === local ? '' : resolved.slice(local.length);
+	return resolve(remotePath + suffix);
+}
+
+/**
  * YouTube channel folders only match online providers (TheTVDB etc.) by
  * accident, so the automated setup pins both libraries to local metadata:
  * NFO files for TV shows, embedded tags / filenames for music.
@@ -131,7 +151,15 @@ class JellyfinService {
 
 		const { baseUrl, apiKey } = await this.configured();
 		const folders = await this.listVirtualFolders(baseUrl, apiKey);
-		const videoPath = resolve(settings.libraryPath);
+		const map = (p: string) =>
+			mapToJellyfinPath(p, settings.jellyfinLocalPath, settings.jellyfinRemotePath);
+		const videoPath = map(settings.libraryPath);
+		// Without a mapping the paths compared below live in different
+		// containers' mount namespaces, which can fake an overlap.
+		const overlapHint =
+			!settings.jellyfinLocalPath || !settings.jellyfinRemotePath
+				? 'If Jellyfin sees this media under a different path than wytui does, configure the path mapping in Settings → Jellyfin first.'
+				: '';
 
 		const video = await this.ensureLibrary({
 			baseUrl,
@@ -140,6 +168,7 @@ class JellyfinService {
 			collectionType: 'tvshows',
 			path: videoPath,
 			fallbackName: 'YouTube',
+			overlapHint,
 		});
 
 		let music: JellyfinLibraryResult | null = null;
@@ -149,11 +178,12 @@ class JellyfinService {
 				apiKey,
 				folders,
 				collectionType: 'music',
-				path: resolve(settings.musicLibraryPath),
+				path: map(settings.musicLibraryPath),
 				fallbackName: 'YouTube Music',
 				// The video library is managed by this same run; a nested music
 				// path is reported as a warning instead of refused.
 				managedPaths: [videoPath],
+				overlapHint,
 			});
 		}
 		return { video, music };
@@ -168,6 +198,8 @@ class JellyfinService {
 		fallbackName: string;
 		/** Paths managed by wytui in this same run: overlapping them warns instead of erroring. */
 		managedPaths?: string[];
+		/** Appended to the overlap error when the local->remote path mapping may be missing. */
+		overlapHint?: string;
 	}): Promise<JellyfinLibraryResult> {
 		const {
 			baseUrl,
@@ -177,6 +209,7 @@ class JellyfinService {
 			path,
 			fallbackName,
 			managedPaths = [],
+			overlapHint = '',
 		} = opts;
 		const existing = folders.find((vf) =>
 			(vf.Locations ?? []).some((loc: string) => resolve(loc) === path),
@@ -205,7 +238,8 @@ class JellyfinService {
 				}
 				throw new Error(
 					`The path ${path} overlaps with the existing "${vf.Name}" library (${resolve(loc)}). ` +
-						`Remove that library in Jellyfin or use a dedicated path — creating another one would scan the same files twice.`,
+						`Remove that library in Jellyfin or use a dedicated path — creating another one would scan the same files twice.` +
+						(overlapHint ? ` ${overlapHint}` : ''),
 				);
 			}
 		}

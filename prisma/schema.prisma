@@ -395,6 +395,8 @@ model Settings {
   jellyfinUrl         String?
   jellyfinApiKey      String?
   jellyfinExternalUrl String?
+  jellyfinLocalPath   String? // wytui-container prefix of a shared volume, e.g. /media
+  jellyfinRemotePath  String? // same volume as mounted by Jellyfin, e.g. /media/youtube
 
   // Plex integration
   plexUrl             String?

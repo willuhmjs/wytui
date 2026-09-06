@@ -479,6 +479,8 @@
 		'jellyfinApiKey',
 		'maxDurationSeconds',
 		'jellyfinExternalUrl',
+		'jellyfinLocalPath',
+		'jellyfinRemotePath',
 		'plexUrl',
 		'plexToken',
 		'cleanupEnabled',
@@ -872,6 +874,8 @@
 			settings.jellyfinUrl = null;
 			settings.jellyfinApiKey = null;
 			settings.jellyfinExternalUrl = null;
+			settings.jellyfinLocalPath = null;
+			settings.jellyfinRemotePath = null;
 		}
 	}
 
@@ -2530,6 +2534,29 @@
 									<p class="help-text">
 										Public URL used for "Open in Jellyfin" links. Defaults to Server URL if empty.
 									</p>
+								</div>
+								<div class="form-group">
+									<label for="jellyfinLocalPath">wytui path</label>
+									<input
+										type="text"
+										id="jellyfinLocalPath"
+										bind:value={settings.jellyfinLocalPath}
+										placeholder="/media"
+									/>
+									<p class="help-text">
+										Path mapping for the library setup: how the shared volume is mounted here vs in
+										Jellyfin (e.g. /media → /media/youtube). Leave both empty when both containers
+										use the same path.
+									</p>
+								</div>
+								<div class="form-group">
+									<label for="jellyfinRemotePath">Jellyfin path</label>
+									<input
+										type="text"
+										id="jellyfinRemotePath"
+										bind:value={settings.jellyfinRemotePath}
+										placeholder="/media/youtube"
+									/>
 								</div>
 							</div>
 							<div class="jellyfin-test nested-field">

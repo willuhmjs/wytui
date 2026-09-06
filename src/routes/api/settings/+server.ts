@@ -143,6 +143,16 @@ export const PATCH = apiRoute(
 			jellyfinUrl: { type: 'string', description: 'Jellyfin server URL' },
 			jellyfinApiKey: { type: 'string', description: 'Jellyfin API key' },
 			jellyfinExternalUrl: { type: 'string', description: 'Jellyfin external URL' },
+			jellyfinLocalPath: {
+				type: 'string',
+				description: 'wytui-container mount prefix of the shared media volume',
+				nullable: true,
+			},
+			jellyfinRemotePath: {
+				type: 'string',
+				description: 'Same volume as mounted by the Jellyfin container',
+				nullable: true,
+			},
 			plexUrl: { type: 'string', description: 'Plex server URL', nullable: true },
 			plexToken: { type: 'string', description: 'Plex authentication token', nullable: true },
 			maxDurationSeconds: {

@@ -108,8 +108,9 @@ wytui organizes the video library as `<channel>/<video>/<video>.<ext>`, which ma
 
 1. In Jellyfin: Dashboard → API Keys → create a key.
 2. In wytui: Settings → Jellyfin → enter the server URL and API key.
-3. Click **Set up library**. wytui creates (or repairs) the Jellyfin library via the API: collection type TV Shows, online metadata providers disabled, NFO-only. If an existing library of another type (e.g. Home Videos) points at the same path, it is rebuilt — Jellyfin's watch history for that library resets, media files are untouched.
-4. Click **Write NFO metadata** once to backfill `tvshow.nfo` + per-episode `.nfo` for videos already in the library.
+3. If wytui and Jellyfin run in different containers, set the **path mapping** so the setup compares and creates paths as Jellyfin sees them: `wytui path` is the mount prefix inside the wytui container, `Jellyfin path` the same volume's prefix inside the Jellyfin container — e.g. `/media` → `/media/youtube` when wytui mounts a subpath of a volume Jellyfin sees whole. Leave both empty when the containers use identical paths.
+4. Click **Set up library**. wytui creates (or repairs) the Jellyfin library via the API: collection type TV Shows, online metadata providers disabled, NFO-only. If an existing library of another type (e.g. Home Videos) points at the same path, it is rebuilt — Jellyfin's watch history for that library resets, media files are untouched.
+5. Click **Write NFO metadata** once to backfill `tvshow.nfo` + per-episode `.nfo` for videos already in the library.
 
 After that everything is automatic: every video saved to the library gets artwork (16:9 episode thumbs + a 2:3 channel poster), an NFO file, and a Jellyfin library scan trigger. If a music library path is configured, the same button sets up a Music library for it.
 

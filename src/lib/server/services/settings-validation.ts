@@ -24,6 +24,8 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'jellyfinUrl',
 	'jellyfinApiKey',
 	'jellyfinExternalUrl',
+	'jellyfinLocalPath',
+	'jellyfinRemotePath',
 	'plexUrl',
 	'plexToken',
 	'maxDurationSeconds',
@@ -197,6 +199,29 @@ export async function validateSettingsUpdate(
 			throw error(400, 'Invalid music library path');
 		}
 		updates.musicLibraryPath = normalized;
+	}
+
+	// Jellyfin path mapping: prefixes of the same volume as mounted by the
+	// wytui and Jellyfin containers. Both sides must be configured together.
+	if (updates.jellyfinLocalPath !== undefined || updates.jellyfinRemotePath !== undefined) {
+		const clean = (v: any): string | null | undefined =>
+			v === undefined ? undefined : v === null || v.trim() === '' ? null : normalize(v.trim());
+		const local = clean(updates.jellyfinLocalPath);
+		const remote = clean(updates.jellyfinRemotePath);
+		if (local && !local.startsWith('/')) {
+			throw error(400, 'jellyfinLocalPath must be an absolute path');
+		}
+		if (remote && !remote.startsWith('/')) {
+			throw error(400, 'jellyfinRemotePath must be an absolute path');
+		}
+		const current = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+		const effLocal = local ?? current?.jellyfinLocalPath ?? null;
+		const effRemote = remote ?? current?.jellyfinRemotePath ?? null;
+		if ((effLocal === null) !== (effRemote === null)) {
+			throw error(400, 'jellyfinLocalPath and jellyfinRemotePath must be set together');
+		}
+		if (local !== undefined) updates.jellyfinLocalPath = local;
+		if (remote !== undefined) updates.jellyfinRemotePath = remote;
 	}
 
 	if (updates.cacheQuotaBytes !== undefined) {
