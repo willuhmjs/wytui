@@ -8,6 +8,7 @@ let settings: any = {
 };
 // Simulated Jellyfin virtual folders + a log of outgoing API calls.
 let folders: any[] = [];
+let items: Record<string, any> = {};
 const calls: { url: string; method: string }[] = [];
 
 vi.mock('../db', () => ({
@@ -22,7 +23,17 @@ vi.mock('../utils/fetch', () => ({
 	internalFetch: vi.fn(async (url: string, init: any = {}) => {
 		const method = init.method ?? 'GET';
 		calls.push({ url, method });
-		if (method === 'GET') return { ok: true, status: 200, json: async () => folders };
+		if (method === 'GET') {
+			if (url.includes('/Items?Ids=')) {
+				const ids = decodeURIComponent(url.split('Ids=')[1]).split(',');
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ Items: ids.map((id) => items[id]).filter(Boolean) }),
+				};
+			}
+			return { ok: true, status: 200, json: async () => folders };
+		}
 		return { ok: true, status: 204 };
 	}),
 }));
@@ -58,6 +69,7 @@ describe('mapToJellyfinPath', () => {
 describe('jellyfinService.setupLibrary', () => {
 	beforeEach(() => {
 		folders = [];
+		items = {};
 		calls.length = 0;
 		settings = {
 			jellyfinUrl: 'http://jf:8096',
@@ -73,8 +85,12 @@ describe('jellyfinService.setupLibrary', () => {
 		expect(first.video.name).toBe('YouTube');
 		expect(posts()).toHaveLength(1);
 
-		// Simulate Jellyfin now exposing the created library.
-		folders = [{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'] }];
+		// Simulate Jellyfin now exposing the created library (config file and
+		// persisted database item both say tvshows).
+		folders = [
+			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
+		];
+		items = { vf1: { CollectionType: 'tvshows' } };
 		calls.length = 0;
 
 		const second = await jellyfinService.setupLibrary();
@@ -92,9 +108,40 @@ describe('jellyfinService.setupLibrary', () => {
 		expect(result.video.name).toBe('Home Videos');
 		expect(deletes()).toHaveLength(1);
 		expect(deletes()[0].url).toContain('name=Home%20Videos');
+		expect(deletes()[0].url).toContain('refreshLibrary=true');
 		expect(posts()).toHaveLength(1);
 		expect(posts()[0].url).toContain('collectionType=tvshows');
 		expect(result.video.warnings.join(' ')).toContain('watch history');
+	});
+
+	it('rebuilds a library whose persisted database item kept a stale collection type', async () => {
+		// Config file says tvshows, but the library item Jellyfin actually uses
+		// for child resolution still says homevideos (e.g. an older library on
+		// the same path was removed without purging its item).
+		folders = [
+			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
+		];
+		items = { vf1: { CollectionType: 'homevideos' } };
+
+		const result = await jellyfinService.setupLibrary();
+		expect(result.video.action).toBe('converted');
+		expect(deletes()).toHaveLength(1);
+		expect(deletes()[0].url).toContain('refreshLibrary=true');
+		expect(posts()).toHaveLength(1);
+		expect(posts()[0].url).toContain('collectionType=tvshows');
+	});
+
+	it('leaves a matching library alone when the item lookup cannot be made', async () => {
+		folders = [
+			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
+		];
+		// Items endpoint returns an empty payload — treated as unknown, not stale.
+		items = {};
+
+		const result = await jellyfinService.setupLibrary();
+		expect(result.video.action).toBe('already-configured');
+		expect(deletes()).toHaveLength(0);
+		expect(posts()).toHaveLength(0);
 	});
 
 	it('refuses to create a library that overlaps another library (no duplicate scanning)', async () => {
@@ -142,7 +189,10 @@ describe('jellyfinService.setupLibrary', () => {
 	it('matches existing libraries by their Jellyfin-side path', async () => {
 		settings.jellyfinLocalPath = '/media';
 		settings.jellyfinRemotePath = '/media/youtube';
-		folders = [{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media/youtube'] }];
+		folders = [
+			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media/youtube'], ItemId: 'vf1' },
+		];
+		items = { vf1: { CollectionType: 'tvshows' } };
 
 		const result = await jellyfinService.setupLibrary();
 		expect(result.video.action).toBe('already-configured');

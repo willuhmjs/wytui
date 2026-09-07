@@ -130,6 +130,30 @@ class JellyfinService {
 	}
 
 	/**
+	 * Collection type persisted on the library's database item, or null when the
+	 * item is gone. Undefined means the check could not be made — callers must
+	 * not act destructively on that.
+	 */
+	private async itemCollectionType(
+		baseUrl: string,
+		apiKey: string,
+		itemId?: string,
+	): Promise<string | null | undefined> {
+		if (!itemId) return null;
+		const res = await internalFetch(`${baseUrl}/Items?Ids=${encodeURIComponent(itemId)}`, {
+			headers: { 'X-Emby-Token': apiKey },
+			signal: AbortSignal.timeout(10000),
+		}).catch(() => null);
+		if (!res || !res.ok) return undefined;
+		const body = await res.json().catch(() => null);
+		if (!body) return undefined;
+		const item = (body.Items ?? [])[0];
+		if (!item) return undefined;
+		const type = item.CollectionType;
+		return typeof type === 'string' ? type.toLowerCase() : null;
+	}
+
+	/**
 	 * Create (or fix) the Jellyfin libraries for the configured wytui paths.
 	 * The video library uses the TV Shows collection type — channels become
 	 * shows and videos become episodes, ordered chronologically via NFO
@@ -218,7 +242,16 @@ class JellyfinService {
 		const warnings: string[] = [];
 
 		if (existing && (existing.CollectionType ?? '').toLowerCase() === collectionType) {
-			return { action: 'already-configured', name, collectionType, warnings };
+			// The virtual-folder listing reads the collection type from the
+			// library's config file, but child resolution uses the type persisted
+			// on the library's database item. A stale item (e.g. left behind by
+			// an older differently-typed library on the same path) silently
+			// disables TV-style resolution, so both must agree before standing
+			// down.
+			const itemType = await this.itemCollectionType(baseUrl, apiKey, existing.ItemId);
+			if (itemType === undefined || itemType === collectionType) {
+				return { action: 'already-configured', name, collectionType, warnings };
+			}
 		}
 
 		const kind = collectionType === 'tvshows' ? 'TV Shows' : 'Music';
@@ -250,10 +283,14 @@ class JellyfinService {
 		if (existing) {
 			// Jellyfin cannot change a library's collection type in place, so the
 			// virtual folder is removed and re-created with the same name and path.
+			// The delete must run with refreshLibrary=true — that is what makes
+			// Jellyfin purge the library's database item. Without it the recreated
+			// library re-adopts the stale item (same path-derived id) and keeps
+			// its old collection type, silently breaking episode resolution.
 			// Media files are untouched, but Jellyfin rebuilds its item database
 			// for the library — watch state and resume points reset.
 			const res = await internalFetch(
-				`${baseUrl}/Library/VirtualFolders?name=${encodeURIComponent(name)}&refreshLibrary=false`,
+				`${baseUrl}/Library/VirtualFolders?name=${encodeURIComponent(name)}&refreshLibrary=true`,
 				{
 					method: 'DELETE',
 					headers: { 'X-Emby-Token': apiKey },
