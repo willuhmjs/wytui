@@ -221,6 +221,13 @@ export async function ensureDefaults(): Promise<void> {
 		}
 	}
 
+	// A crash or pod replacement between the library copy and the record update
+	// leaves completed library downloads pointing at the download directory -
+	// finish those promotions so nothing mistakes them for anomalies later.
+	libraryService.resumeInterruptedPromotions().catch((error) => {
+		console.error('[Init] Promotion resume failed:', error);
+	});
+
 	// Downloads killed by the previous run (pod restart, stall watchdog) leave
 	// .part/.ytdl/sidecar files in the download root that no DB row owns —
 	// reclaim them now so a restart can't strand disk space forever.

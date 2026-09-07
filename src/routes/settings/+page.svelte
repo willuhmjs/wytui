@@ -273,7 +273,13 @@
 			});
 			if (res.ok) {
 				const result = await res.json();
-				addToast('success', `Deleted ${result.deleted} record${result.deleted === 1 ? '' : 's'}`);
+				const skippedNote = result.skipped
+					? ` — skipped ${result.skipped} whose file exists again`
+					: '';
+				addToast(
+					'success',
+					`Deleted ${result.deleted} record${result.deleted === 1 ? '' : 's'}${skippedNote}`,
+				);
 				// Re-run scan to refresh the list
 				await runRescan();
 			} else {
@@ -296,9 +302,12 @@
 			});
 			if (res.ok) {
 				const result = await res.json();
+				const skippedNote = result.skipped
+					? ` — skipped ${result.skipped} whose file exists again`
+					: '';
 				addToast(
 					'success',
-					`Marked ${result.marked} record${result.marked === 1 ? '' : 's'} as deleted`,
+					`Marked ${result.marked} record${result.marked === 1 ? '' : 's'} as deleted${skippedNote}`,
 				);
 				await runRescan();
 			} else {

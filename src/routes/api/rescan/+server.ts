@@ -66,6 +66,9 @@ export const POST = apiRoute(
 					properties: {
 						marked: { type: 'integer' },
 						deleted: { type: 'integer' },
+						skipped: {
+							type: 'integer',
+						},
 					},
 				},
 			},

@@ -96,9 +96,17 @@ class LibraryService {
 
 		let destPath = join(albumPath, filename);
 		let suffix = 1;
+		let alreadyCopied = false;
 		while (true) {
 			try {
 				await access(destPath);
+				// A promotion interrupted between the copy and the record update
+				// leaves the destination behind - same size means it is this file,
+				// so finish that promotion instead of forking a " (1)" duplicate.
+				if (await this.isSameSize(destPath, download.filepath)) {
+					alreadyCopied = true;
+					break;
+				}
 				const base = sanitizeFilename(info.title);
 				destPath = join(albumPath, `${base} (${suffix})${ext}`);
 				suffix++;
@@ -107,7 +115,23 @@ class LibraryService {
 			}
 		}
 
-		await copyFile(download.filepath, destPath);
+		if (!alreadyCopied) {
+			await copyFile(download.filepath, destPath);
+		}
+		// Point the record at the destination before removing the source: every
+		// intermediate state must leave the row describing an existing file, or a
+		// concurrent rescan reports (and reconciles) the download as missing.
+		await prisma.download.update({
+			where: { id: download.id },
+			data: {
+				storagePool: 'library',
+				filepath: destPath,
+				artist: info.artist,
+				album: info.album,
+				trackNumber: info.trackNumber,
+				releaseYear: info.year,
+			},
+		});
 		try {
 			await unlink(download.filepath);
 		} catch {}
@@ -123,18 +147,6 @@ class LibraryService {
 		}
 
 		await this.ensureChannelArt(resolve(targetLibrary, artistDir), download.channelUrl);
-
-		await prisma.download.update({
-			where: { id: download.id },
-			data: {
-				storagePool: 'library',
-				filepath: destPath,
-				artist: info.artist,
-				album: info.album,
-				trackNumber: info.trackNumber,
-				releaseYear: info.year,
-			},
-		});
 	}
 
 	private async promoteVideoToLibrary(
@@ -154,9 +166,19 @@ class LibraryService {
 		}
 
 		let suffix = 1;
+		let alreadyCopied = false;
 		while (true) {
 			try {
 				await access(videoDir);
+				// A promotion interrupted between the copy and the record update
+				// leaves the video folder behind - same title plus same file size
+				// means it is this video, so finish that promotion instead of
+				// forking a " (1)" duplicate folder.
+				const existing = join(videoDir, basename(videoDir) + ext);
+				if (await this.isSameSize(existing, download.filepath)) {
+					alreadyCopied = true;
+					break;
+				}
 				videoDir = resolve(targetLibrary, uploaderDir, `${baseFilename} (${suffix})`);
 				suffix++;
 			} catch {
@@ -169,7 +191,19 @@ class LibraryService {
 		const destFilename = basename(videoDir);
 		const destPath = join(videoDir, destFilename + ext);
 
-		await copyFile(download.filepath, destPath);
+		if (!alreadyCopied) {
+			await copyFile(download.filepath, destPath);
+		}
+		// Point the record at the destination before removing the source: every
+		// intermediate state must leave the row describing an existing file, or a
+		// concurrent rescan reports (and reconciles) the download as missing.
+		await prisma.download.update({
+			where: { id: download.id },
+			data: {
+				storagePool: 'library',
+				filepath: destPath,
+			},
+		});
 		try {
 			await unlink(download.filepath);
 		} catch {}
@@ -202,14 +236,6 @@ class LibraryService {
 			download.channelUrl,
 			settings?.generateJellyfinPosters ?? true,
 		);
-
-		await prisma.download.update({
-			where: { id: download.id },
-			data: {
-				storagePool: 'library',
-				filepath: destPath,
-			},
-		});
 
 		// Refresh the channel's NFO metadata (an older-dated video shifts the
 		// episode numbering of later same-year videos) so Jellyfin keeps
@@ -813,6 +839,16 @@ class LibraryService {
 		} catch {}
 	}
 
+	/** True when both paths exist and are regular files of identical size. */
+	private async isSameSize(a: string, b: string): Promise<boolean> {
+		try {
+			const [sa, sb] = await Promise.all([stat(a), stat(b)]);
+			return sa.isFile() && sb.isFile() && sa.size === sb.size;
+		} catch {
+			return false;
+		}
+	}
+
 	/**
 	 * Delete a media file plus every artifact yt-dlp/ffmpeg left next to it
 	 * (.part, .ytdl, fragment streams, subtitle/thumbnail sidecars). For library
@@ -860,6 +896,51 @@ class LibraryService {
 			}
 			await rmdir(dir).catch(() => {});
 		} catch {}
+	}
+
+	/**
+	 * Finish promotions that never completed: COMPLETED library downloads whose
+	 * file still sits in the download directory. A crash or pod replacement
+	 * between the library copy and the record update leaves the row pointing at
+	 * the cache while an unindexed duplicate sits in the library - and the cache
+	 * copy is pinned forever (quota ignores it, the sweeper protects it).
+	 * Promotion is idempotent (an existing same-size destination is reused), so
+	 * re-running it heals the split-brain.
+	 */
+	async resumeInterruptedPromotions(): Promise<number> {
+		const settings = await this.getSettings();
+		if (!settings.libraryPath) return 0;
+
+		const downloads = await prisma.download.findMany({
+			where: {
+				status: DownloadStatus.COMPLETED,
+				storagePool: 'library',
+				filepath: { not: null },
+			},
+			include: { profile: { select: { audioOnly: true } } },
+		});
+
+		let resumed = 0;
+		for (const download of downloads) {
+			if (!download.filepath) continue;
+			const targetRoot = resolve(
+				(download.profile?.audioOnly && settings.musicLibraryPath) || settings.libraryPath,
+			);
+			const resolvedFile = resolve(download.filepath);
+			if (resolvedFile === targetRoot || resolvedFile.startsWith(targetRoot + sep)) continue;
+
+			try {
+				await this.promoteToLibrary(download.id);
+				resumed++;
+			} catch (err) {
+				console.error(`[LibraryService] Failed to resume promotion of ${download.id}:`, err);
+			}
+		}
+
+		if (resumed > 0) {
+			console.log(`[LibraryService] Resumed ${resumed} interrupted promotion(s)`);
+		}
+		return resumed;
 	}
 
 	/**

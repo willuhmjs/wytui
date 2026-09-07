@@ -124,6 +124,9 @@ class JobScheduler {
 		// Schedule cache quota enforcement and file reconciliation (every 5 minutes)
 		this.cacheCleanupTask = cron.schedule('*/5 * * * *', async () => {
 			await this.logJobRun('cache-cleanup', async () => {
+				// Heal promotions interrupted by a restart before reconciling, so a
+				// row whose file is mid-move completes instead of being marked missing.
+				await libraryService.resumeInterruptedPromotions();
 				await libraryService.reconcileFiles();
 				await libraryService.enforceCacheQuota();
 				// Reclaim download-root files no download record owns (stale .part
@@ -184,6 +187,7 @@ class JobScheduler {
 					break;
 
 				case 'cache-cleanup':
+					await libraryService.resumeInterruptedPromotions();
 					await libraryService.reconcileFiles();
 					await libraryService.enforceCacheQuota();
 					break;
