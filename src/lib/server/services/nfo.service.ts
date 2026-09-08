@@ -3,10 +3,13 @@ import { readdir, readFile, writeFile, unlink, stat } from 'fs/promises';
 import { join, resolve, extname, basename, dirname, sep } from 'path';
 
 /**
- * NFO metadata for the Jellyfin/Emby/Kodi "TV Shows" library model:
- * each YouTube channel folder is a series, each per-video folder an episode.
- * Episodes get season = upload year and a 1-based episode number per year, so
- * releases appear in chronological order without season folders on disk.
+ * NFO metadata for the Jellyfin "Movies" library model:
+ * each YouTube channel folder is a BoxSet (collection), each per-video folder
+ * a movie. Movies carry their YouTube upload date as the premiere date, so
+ * release dates are first-class in the Movies UI instead of hidden in an
+ * episode list. The channel folder's collection.xml both flags it as a BoxSet
+ * (Jellyfin requires it for subfolder collections) and carries the channel's
+ * title and YouTube channel id.
  */
 
 /** Video extensions recognized inside per-video library folders. */
@@ -22,42 +25,36 @@ export function escapeXml(value: string): string {
 		.replace(/'/g, '&apos;');
 }
 
-export interface SeriesNfoInput {
+export interface CollectionNfoInput {
 	title: string;
 	channelId?: string | null;
 }
 
-export function buildSeriesNfo(input: SeriesNfoInput): string {
-	const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<tvshow>'];
+export function buildCollectionXml(input: CollectionNfoInput): string {
+	const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<collection>'];
 	lines.push(`\t<title>${escapeXml(input.title)}</title>`);
 	if (input.channelId) {
 		lines.push(
 			`\t<uniqueid type="youtube" default="true">${escapeXml(input.channelId)}</uniqueid>`,
 		);
 	}
-	lines.push('</tvshow>', '');
+	lines.push('</collection>', '');
 	return lines.join('\n');
 }
 
-export interface EpisodeNfoInput {
+export interface MovieNfoInput {
 	title: string;
-	showTitle?: string | null;
-	season: number;
-	episode: number;
-	aired?: Date | null;
+	premiered?: Date | null;
 	plot?: string | null;
 	runtimeSeconds?: number | null;
 	videoId?: string | null;
 }
 
-export function buildEpisodeNfo(input: EpisodeNfoInput): string {
-	const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<episodedetails>'];
+export function buildMovieNfo(input: MovieNfoInput): string {
+	const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<movie>'];
 	lines.push(`\t<title>${escapeXml(input.title)}</title>`);
-	if (input.showTitle) lines.push(`\t<showtitle>${escapeXml(input.showTitle)}</showtitle>`);
-	lines.push(`\t<season>${input.season}</season>`);
-	lines.push(`\t<episode>${input.episode}</episode>`);
-	if (input.aired) {
-		lines.push(`\t<aired>${input.aired.toISOString().slice(0, 10)}</aired>`);
+	if (input.premiered) {
+		lines.push(`\t<premiered>${input.premiered.toISOString().slice(0, 10)}</premiered>`);
 	}
 	if (input.plot) lines.push(`\t<plot>${escapeXml(input.plot)}</plot>`);
 	if (input.runtimeSeconds && input.runtimeSeconds > 0) {
@@ -66,7 +63,7 @@ export function buildEpisodeNfo(input: EpisodeNfoInput): string {
 	if (input.videoId) {
 		lines.push(`\t<uniqueid type="youtube" default="true">${escapeXml(input.videoId)}</uniqueid>`);
 	}
-	lines.push('</episodedetails>', '');
+	lines.push('</movie>', '');
 	return lines.join('\n');
 }
 
@@ -79,11 +76,11 @@ class NfoService {
 	}
 
 	/**
-	 * In a TV library a per-episode 2:3 poster.jpg would win over the landscape
-	 * cover.jpg as the episode's primary image. Covers predate the TV-library
-	 * integration, so drop legacy posters (only when a cover exists).
+	 * A legacy 2:3 poster.jpg would win over the landscape video thumbnail as
+	 * the movie's primary image. Posters predate the movies-library model, so
+	 * drop them (only when a cover exists to keep).
 	 */
-	private async removeLegacyEpisodePoster(videoDir: string): Promise<void> {
+	private async removeLegacyPoster(videoDir: string): Promise<void> {
 		const poster = join(videoDir, 'poster.jpg');
 		const cover = join(videoDir, 'cover.jpg');
 		try {
@@ -95,15 +92,16 @@ class NfoService {
 	}
 
 	/**
-	 * Recompute and rewrite all NFO files for one channel folder. Numbering is
-	 * derived from the DB rows (upload/completion date) with an mtime fallback
-	 * for files that no longer have a row, so it stays deterministic no matter
-	 * in which order videos were added.
+	 * Recompute and rewrite all NFO files for one channel folder: a movie NFO
+	 * per per-video folder and the channel's collection.xml. Content comes from
+	 * the DB rows (upload date, description, duration) keyed by the video
+	 * folder, so re-running it stays deterministic no matter when videos were
+	 * added.
 	 */
-	async syncChannel(channelDir: string): Promise<{ episodes: number; channelUrl?: string }> {
+	async syncChannel(channelDir: string): Promise<{ movies: number; channelUrl?: string }> {
 		const resolved = resolve(channelDir);
 		const channelEntries = await readdir(resolved, { withFileTypes: true }).catch(() => null);
-		if (!channelEntries) return { episodes: 0 };
+		if (!channelEntries) return { movies: 0 };
 
 		const rows = await prisma.download.findMany({
 			where: { storagePool: 'library', filepath: { startsWith: resolved + sep } },
@@ -119,13 +117,7 @@ class NfoService {
 			}
 		}
 
-		interface Episode {
-			dir: string;
-			stem: string;
-			sortDate: Date;
-			row?: (typeof rows)[number];
-		}
-		const episodes: Episode[] = [];
+		let written = 0;
 		for (const entry of channelEntries) {
 			if (!entry.isDirectory()) continue;
 			const videoDir = join(resolved, entry.name);
@@ -134,24 +126,19 @@ class NfoService {
 				(f) => !f.startsWith('.') && VIDEO_EXTENSIONS.has(extname(f).toLowerCase().slice(1)),
 			);
 			if (!media) continue;
-			const mediaPath = join(videoDir, media);
-			const mtime = await stat(mediaPath)
-				.then((s) => s.mtime)
-				.catch(() => new Date());
-			episodes.push({
-				dir: videoDir,
-				stem: basename(media, extname(media)),
-				sortDate: (rowByDir.get(resolve(videoDir))?.uploadDate ??
-					rowByDir.get(resolve(videoDir))?.completedAt ??
-					mtime) as Date,
-				row: rowByDir.get(resolve(videoDir)),
-			});
-		}
+			const row = rowByDir.get(resolve(videoDir));
 
-		// Chronological order; ties broken by folder name for stability.
-		episodes.sort(
-			(a, b) => a.sortDate.getTime() - b.sortDate.getTime() || a.dir.localeCompare(b.dir),
-		);
+			const nfo = buildMovieNfo({
+				title: row?.title ?? basename(videoDir),
+				premiered: row?.uploadDate ?? null,
+				plot: row?.description ?? null,
+				runtimeSeconds: row?.duration ?? null,
+				videoId: row?.videoId ?? null,
+			});
+			await this.writeIfChanged(join(videoDir, `${basename(media, extname(media))}.nfo`), nfo);
+			await this.removeLegacyPoster(videoDir);
+			written++;
+		}
 
 		const byCompleted = [...rows].sort(
 			(a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0),
@@ -160,33 +147,15 @@ class NfoService {
 		const channelUrl = byCompleted.find((r) => r.channelUrl)?.channelUrl ?? undefined;
 		const channelId = channelUrl?.match(/\/channel\/(UC[\w-]+)/)?.[1] ?? undefined;
 
-		let written = 0;
-		const perYear = new Map<number, number>();
-		for (const ep of episodes) {
-			const year = ep.sortDate.getUTCFullYear();
-			const episodeNumber = (perYear.get(year) ?? 0) + 1;
-			perYear.set(year, episodeNumber);
-
-			const nfo = buildEpisodeNfo({
-				title: ep.row?.title ?? basename(ep.dir),
-				showTitle: channelTitle,
-				season: year,
-				episode: episodeNumber,
-				aired: ep.row?.uploadDate ?? null,
-				plot: ep.row?.description ?? null,
-				runtimeSeconds: ep.row?.duration ?? null,
-				videoId: ep.row?.videoId ?? null,
-			});
-			await this.writeIfChanged(join(ep.dir, `${ep.stem}.nfo`), nfo);
-			await this.removeLegacyEpisodePoster(ep.dir);
-			written++;
-		}
-
 		await this.writeIfChanged(
-			join(resolved, 'tvshow.nfo'),
-			buildSeriesNfo({ title: channelTitle, channelId }),
+			join(resolved, 'collection.xml'),
+			buildCollectionXml({ title: channelTitle, channelId }),
 		);
-		return { episodes: written, channelUrl };
+		// Legacy TV-model series file: drop it so the movies library stays clean.
+		await unlink(join(resolved, 'tvshow.nfo')).catch(() => {
+			/* no legacy file (nothing to do) */
+		});
+		return { movies: written, channelUrl };
 	}
 }
 

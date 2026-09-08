@@ -9,7 +9,7 @@ export const POST = apiRoute(
 	{
 		summary: 'Write NFO metadata for the existing library',
 		description:
-			'Backfills Kodi/Jellyfin-compatible NFO files (tvshow.nfo + per-episode .nfo) for every channel folder in the video library.',
+			'Backfills Jellyfin-compatible NFO files (movie NFOs + channel collection.xml) for every channel folder in the video library.',
 		tags: ['Settings'],
 		auth: 'admin',
 		responses: {

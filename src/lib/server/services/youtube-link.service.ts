@@ -57,6 +57,7 @@ class YouTubeLinkService {
 			linked: true,
 			channelName: link.channelName,
 			cookieUpdatedAt: link.cookieUpdatedAt,
+			lastHistorySync: link.lastHistorySync,
 			lastError: link.lastError,
 			toggles: {
 				syncWatchedToYouTube: link.syncWatchedToYouTube,
@@ -64,6 +65,7 @@ class YouTubeLinkService {
 				syncWatchLater: link.syncWatchLater,
 				useFeedForNewVideos: link.useFeedForNewVideos,
 			},
+			jellyfinUserId: link.jellyfinUserId ?? null,
 			ytdlp: {
 				proxyUrl: link.proxyUrl ?? null,
 				extraFlags: link.extraFlags ?? [],
@@ -114,12 +116,23 @@ class YouTubeLinkService {
 			appriseUrl?: string | null;
 			notifyOnComplete?: boolean;
 			notifyOnFail?: boolean;
+			jellyfinUserId?: string | null;
 		},
 	): Promise<void> {
 		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
 		if (!link) throw new Error('No linked YouTube account');
 
 		const data: Record<string, string | null | boolean | string[]> = {};
+		if ('jellyfinUserId' in updates) {
+			const value = updates.jellyfinUserId;
+			if (value === null || value === '') {
+				data.jellyfinUserId = null;
+			} else if (typeof value === 'string') {
+				data.jellyfinUserId = value.trim();
+			} else {
+				throw new Error('jellyfinUserId must be a string or null');
+			}
+		}
 		if ('proxyUrl' in updates) {
 			const check = validateProxyUrlInput(updates.proxyUrl);
 			if (!check.ok) throw new Error(`Proxy URL ${check.error}`);

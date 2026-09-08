@@ -1,9 +1,58 @@
 import { prisma } from '../db';
 import { parseSubtitleFile } from '../utils/subtitle-parser';
-import { readdir, readFile } from 'fs/promises';
+import { normalizeYouTubeSubtitles } from '../utils/vtt-normalize';
+import { readdir, readFile, writeFile } from 'fs/promises';
 import { join, dirname, basename, extname } from 'path';
 
 class SubtitleService {
+	/**
+	 * Rewrite YouTube word-timed auto-caption files next to the video into
+	 * conventional stable cues (in place). Returns the number of files
+	 * rewritten. Files that are not word-timed captions are left untouched, so
+	 * this is safe to run for any download.
+	 */
+	async normalizeSubtitles(downloadId: string): Promise<number> {
+		const download = await prisma.download.findUnique({ where: { id: downloadId } });
+		if (!download?.filepath) return 0;
+
+		const dir = dirname(download.filepath);
+		const videoBase = basename(download.filepath, extname(download.filepath));
+
+		let files: string[];
+		try {
+			files = await readdir(dir);
+		} catch {
+			return 0;
+		}
+
+		const subFiles = files.filter((f) => {
+			const ext = extname(f).toLowerCase();
+			return (ext === '.vtt' || ext === '.srt') && f.startsWith(videoBase);
+		});
+
+		let normalized = 0;
+		for (const f of subFiles) {
+			const filePath = join(dir, f);
+			let content: string;
+			try {
+				content = await readFile(filePath, 'utf-8');
+			} catch {
+				continue;
+			}
+			try {
+				const format = f.toLowerCase().endsWith('.srt') ? 'srt' : 'vtt';
+				const out = normalizeYouTubeSubtitles(content, format);
+				if (out && out !== content) {
+					await writeFile(filePath, out);
+					normalized++;
+				}
+			} catch (error) {
+				console.warn(`[SubtitleService] Failed to normalize ${f}: ${error}`);
+			}
+		}
+		return normalized;
+	}
+
 	/**
 	 * After a download completes, find subtitle files next to the video and index them.
 	 */

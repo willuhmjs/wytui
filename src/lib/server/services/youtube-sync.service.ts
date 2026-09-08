@@ -1,6 +1,20 @@
 import { prisma } from '../db';
 import { youtubeService, type NeedsRelink } from './youtube.service';
 import { youtubeLinkService } from './youtube-link.service';
+import { jellyfinService, mapToJellyfinPath } from './jellyfin.service';
+
+export interface JellyfinSyncResult {
+	/** The Jellyfin user the played state was pushed to (null = skipped). */
+	user: string | null;
+	/** Items marked played in Jellyfin. */
+	marked: number;
+}
+
+export interface SyncUserResult {
+	pushed?: number;
+	marked?: number;
+	jellyfin?: JellyfinSyncResult;
+}
 
 class YouTubeSyncService {
 	/** Push wytui-watched items to YouTube for a user (best-effort). */
@@ -30,8 +44,10 @@ class YouTubeSyncService {
 		return { pushed };
 	}
 
-	/** Pull YT history → mark matching library items watched. */
-	async reconcileHistory(userId: string): Promise<{ marked: number } | NeedsRelink> {
+	/** Pull YT history → mark matching library items watched (+ Jellyfin played). */
+	async reconcileHistory(
+		userId: string,
+	): Promise<(SyncUserResult & { marked: number }) | NeedsRelink> {
 		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
 		if (!link?.syncHistoryToWytui) return { marked: 0 };
 		const result = await youtubeService.fetchHistory(userId);
@@ -49,6 +65,7 @@ class YouTubeSyncService {
 			if (d.videoId && !downloadByVideoId.has(d.videoId)) downloadByVideoId.set(d.videoId, d);
 		}
 		let marked = 0;
+		const markedDownloadIds: string[] = [];
 		for (const entry of result) {
 			const dl = downloadByVideoId.get(entry.id);
 			if (!dl) continue;
@@ -58,13 +75,92 @@ class YouTubeSyncService {
 				update: { watched: true, watchedAt: syncedAt },
 			});
 			marked++;
+			markedDownloadIds.push(dl.id);
 		}
+		const jellyfin = await this.pushPlaystateToJellyfin(link, markedDownloadIds);
 		// Advance the sync watermark past the rows we just stamped so they are
 		// excluded from the next push (best-effort; failures are non-fatal).
 		await prisma.youTubeLink
 			.update({ where: { userId }, data: { lastHistorySync: syncedAt } })
 			.catch(() => {});
-		return { marked };
+		return { marked, jellyfin };
+	}
+
+	/**
+	 * Push the just-marked downloads' played state to Jellyfin so the media
+	 * library reflects the imported YouTube history (and cleanup, which reads
+	 * Jellyfin play state, can act on it). Best-effort: failures are logged and
+	 * never fail the history sync.
+	 */
+	private async pushPlaystateToJellyfin(
+		link: { jellyfinUserId?: string | null },
+		downloadIds: string[],
+	): Promise<JellyfinSyncResult> {
+		if (downloadIds.length === 0) return { user: null, marked: 0 };
+		try {
+			const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+			if (!settings?.jellyfinUrl || !settings.jellyfinApiKey) return { user: null, marked: 0 };
+			const baseUrl = settings.jellyfinUrl.replace(/\/$/, '');
+			const apiKey = settings.jellyfinApiKey;
+
+			// Prefer the account's configured Jellyfin user; otherwise use the
+			// server's user when there is exactly one to pick.
+			let user = link.jellyfinUserId ?? null;
+			if (!user) {
+				const users = await jellyfinService.listUsers(baseUrl, apiKey);
+				user = users.length === 1 ? users[0].id : null;
+			}
+			if (!user) return { user: null, marked: 0 };
+
+			const downloads = await prisma.download.findMany({
+				where: { id: { in: downloadIds }, filepath: { not: null } },
+				select: { filepath: true },
+			});
+			let marked = 0;
+			for (const dl of downloads) {
+				if (!dl.filepath) continue;
+				const mapped = mapToJellyfinPath(
+					dl.filepath,
+					settings.jellyfinLocalPath,
+					settings.jellyfinRemotePath,
+				);
+				const itemId = await jellyfinService.findItemIdByPath(baseUrl, apiKey, mapped);
+				if (itemId && (await jellyfinService.markItemPlayed(baseUrl, apiKey, user, itemId))) {
+					marked++;
+				}
+			}
+			return { user, marked };
+		} catch (err) {
+			console.error('[YouTubeSync] Jellyfin playstate push failed:', err);
+			return { user: null, marked: 0 };
+		}
+	}
+
+	/**
+	 * One sync pass for a single linked user, honoring their toggles. Used by
+	 * the scheduler (via runOnce) and the manual "Sync now" action.
+	 */
+	async syncForUser(userId: string): Promise<SyncUserResult> {
+		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
+		if (!link) return {};
+		const result: SyncUserResult = {};
+		// Push BEFORE reconcile, and reconcile advances lastHistorySync to the
+		// timestamp it stamps its rows with. Together this stops the loop where
+		// freshly-pulled YouTube history rows (watchedAt=now) kept satisfying
+		// push's `watchedAt > lastHistorySync` filter and were re-pushed to
+		// YouTube every cycle. Push here uses the pre-reconcile watermark.
+		if (link.syncWatchedToYouTube) {
+			const pushed = await this.pushWatchedToYouTube(userId);
+			if (!('needsRelink' in pushed)) result.pushed = pushed.pushed;
+		}
+		if (link.syncHistoryToWytui) {
+			const marked = await this.reconcileHistory(userId);
+			if (!('needsRelink' in marked)) {
+				result.marked = marked.marked;
+				result.jellyfin = marked.jellyfin;
+			}
+		}
+		return result;
 	}
 
 	/** One pass over all linked users, honoring per-user toggles. Best-effort. */
@@ -72,13 +168,7 @@ class YouTubeSyncService {
 		const links = await prisma.youTubeLink.findMany();
 		for (const link of links) {
 			try {
-				// Push BEFORE reconcile, and reconcile advances lastHistorySync to the
-				// timestamp it stamps its rows with. Together this stops the loop where
-				// freshly-pulled YouTube history rows (watchedAt=now) kept satisfying
-				// push's `watchedAt > lastHistorySync` filter and were re-pushed to
-				// YouTube every cycle. Push here uses the pre-reconcile watermark.
-				if (link.syncWatchedToYouTube) await this.pushWatchedToYouTube(link.userId);
-				if (link.syncHistoryToWytui) await this.reconcileHistory(link.userId);
+				await this.syncForUser(link.userId);
 			} catch (e) {
 				await prisma.youTubeLink
 					.update({

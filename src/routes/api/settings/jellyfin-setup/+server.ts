@@ -9,7 +9,7 @@ export const POST = apiRoute(
 	{
 		summary: 'Set up Jellyfin libraries',
 		description:
-			'Creates or fixes the Jellyfin library for the configured video (and music) paths: TV Shows collection type, NFO-only metadata, no online matching.',
+			'Creates or fixes the Jellyfin library for the configured video (and music) paths: Movies collection type (channels as collections, videos as movies), NFO-only metadata, no online matching.',
 		tags: ['Settings'],
 		auth: 'admin',
 		responses: {

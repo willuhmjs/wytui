@@ -43,11 +43,14 @@ function stripFormatting(text: string): string {
 
 /**
  * Parse a VTT (WebVTT) subtitle file into entries.
+ *
+ * Blocks are separated by genuinely empty lines only — YouTube cues may
+ * contain whitespace-only lines that are part of the cue text.
  */
 export function parseVTT(content: string): SubtitleEntry[] {
 	const entries: SubtitleEntry[] = [];
 	// Split into blocks separated by blank lines
-	const blocks = content.split(/\n\s*\n/);
+	const blocks = content.replace(/\r\n/g, '\n').split(/\n{2,}/);
 
 	for (const block of blocks) {
 		const lines = block.trim().split('\n');
@@ -87,8 +90,8 @@ export function parseVTT(content: string): SubtitleEntry[] {
  */
 export function parseSRT(content: string): SubtitleEntry[] {
 	const entries: SubtitleEntry[] = [];
-	// Split into blocks separated by blank lines
-	const blocks = content.split(/\n\s*\n/);
+	// Split into blocks separated by blank lines (genuinely empty lines only)
+	const blocks = content.replace(/\r\n/g, '\n').split(/\n{2,}/);
 
 	for (const block of blocks) {
 		const lines = block.trim().split('\n');

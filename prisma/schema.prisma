@@ -643,6 +643,11 @@ model YouTubeLink {
   syncWatchLater       Boolean @default(false)
   useFeedForNewVideos  Boolean @default(false)
 
+  // Jellyfin user whose Played state this account's history is pushed to when
+  // syncHistoryToWytui marks library items watched. Null = use the server's
+  // only user when there is exactly one.
+  jellyfinUserId      String?
+
   lastFeedCheck   DateTime?
   lastHistorySync DateTime?
   lastError       String?  @db.Text

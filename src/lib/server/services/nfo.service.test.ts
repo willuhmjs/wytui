@@ -12,7 +12,7 @@ vi.mock('../db', () => ({
 	},
 }));
 
-import { escapeXml, buildSeriesNfo, buildEpisodeNfo, nfoService } from './nfo.service';
+import { escapeXml, buildCollectionXml, buildMovieNfo, nfoService } from './nfo.service';
 
 describe('NFO builders', () => {
 	it('escapes XML entities and strips control characters', () => {
@@ -20,37 +20,40 @@ describe('NFO builders', () => {
 		expect(escapeXml('bad\u0001char')).toBe('badchar');
 	});
 
-	it('builds a series NFO with youtube uniqueid', () => {
-		const nfo = buildSeriesNfo({ title: 'Chan & Co', channelId: 'UC123' });
-		expect(nfo).toContain('<tvshow>');
-		expect(nfo).toContain('<title>Chan &amp; Co</title>');
-		expect(nfo).toContain('<uniqueid type="youtube" default="true">UC123</uniqueid>');
+	it('builds a collection (BoxSet) XML with youtube uniqueid', () => {
+		const xml = buildCollectionXml({ title: 'Chan & Co', channelId: 'UC123' });
+		expect(xml).toContain('<collection>');
+		expect(xml).toContain('<title>Chan &amp; Co</title>');
+		expect(xml).toContain('<uniqueid type="youtube" default="true">UC123</uniqueid>');
 	});
 
-	it('builds an episode NFO with year season, per-year episode, and aired date', () => {
-		const nfo = buildEpisodeNfo({
-			title: 'Ep',
-			showTitle: 'Chan',
-			season: 2024,
-			episode: 3,
-			aired: new Date('2024-05-01T00:00:00Z'),
+	it('builds a movie NFO with premiered date, plot, runtime, and youtube uniqueid', () => {
+		const nfo = buildMovieNfo({
+			title: 'A Video',
+			premiered: new Date('2024-05-01T00:00:00Z'),
 			plot: 'A <plot>',
 			runtimeSeconds: 120,
 			videoId: 'vid1',
 		});
-		expect(nfo).toContain('<season>2024</season>');
-		expect(nfo).toContain('<episode>3</episode>');
-		expect(nfo).toContain('<aired>2024-05-01</aired>');
+		expect(nfo).toContain('<movie>');
+		expect(nfo).toContain('<title>A Video</title>');
+		expect(nfo).toContain('<premiered>2024-05-01</premiered>');
 		expect(nfo).toContain('<plot>A &lt;plot&gt;</plot>');
 		expect(nfo).toContain('<runtime>2</runtime>');
 		expect(nfo).toContain('>vid1</uniqueid>');
 	});
 
 	it('omits optional fields when absent', () => {
-		const nfo = buildEpisodeNfo({ title: 'Ep', season: 2025, episode: 1 });
-		expect(nfo).not.toContain('<aired>');
+		const nfo = buildMovieNfo({ title: 'A Video' });
+		expect(nfo).not.toContain('<premiered>');
 		expect(nfo).not.toContain('<plot>');
+		expect(nfo).not.toContain('<runtime>');
 		expect(nfo).not.toContain('<uniqueid');
+	});
+
+	it('omits the collection uniqueid without a channel id', () => {
+		const xml = buildCollectionXml({ title: 'Chan' });
+		expect(xml).not.toContain('<uniqueid');
 	});
 });
 
@@ -76,7 +79,7 @@ describe('nfoService.syncChannel', () => {
 		return videoDir;
 	}
 
-	it('numbers episodes chronologically with year seasons and writes tvshow.nfo', async () => {
+	it('writes a movie NFO per video and a collection.xml per channel', async () => {
 		const early = await addVideo('Early');
 		const late = await addVideo('Late');
 		dbRows = [
@@ -104,46 +107,49 @@ describe('nfoService.syncChannel', () => {
 		];
 
 		const result = await nfoService.syncChannel(dir);
-		expect(result.episodes).toBe(2);
+		expect(result.movies).toBe(2);
 		expect(result.channelUrl).toBe('https://www.youtube.com/channel/UCchan');
 
 		const earlyNfo = await readFile(join(early, 'Early.nfo'), 'utf-8');
+		expect(earlyNfo).toContain('<movie>');
 		expect(earlyNfo).toContain('<title>Early &amp; Fast</title>');
-		expect(earlyNfo).toContain('<season>2024</season>');
-		expect(earlyNfo).toContain('<episode>1</episode>');
-		expect(earlyNfo).toContain('<showtitle>Chan</showtitle>');
+		expect(earlyNfo).toContain('<premiered>2024-05-01</premiered>');
+		expect(earlyNfo).toContain('<plot>First one</plot>');
+		expect(earlyNfo).toContain('>v-early</uniqueid>');
+		expect(earlyNfo).not.toContain('<season>');
+		expect(earlyNfo).not.toContain('<episode>');
 
 		const lateNfo = await readFile(join(late, 'Late.nfo'), 'utf-8');
-		expect(lateNfo).toContain('<season>2025</season>');
-		expect(lateNfo).toContain('<episode>1</episode>');
+		expect(lateNfo).toContain('<premiered>2025-01-10</premiered>');
 
-		const series = await readFile(join(dir, 'tvshow.nfo'), 'utf-8');
-		expect(series).toContain('<title>Chan</title>');
-		expect(series).toContain('>UCchan</uniqueid>');
+		const collection = await readFile(join(dir, 'collection.xml'), 'utf-8');
+		expect(collection).toContain('<collection>');
+		expect(collection).toContain('<title>Chan</title>');
+		expect(collection).toContain('>UCchan</uniqueid>');
+
+		// Legacy TV-model series file is removed.
+		await writeFile(join(dir, 'tvshow.nfo'), 'old');
+		await nfoService.syncChannel(dir);
+		await expect(readFile(join(dir, 'tvshow.nfo'), 'utf-8')).rejects.toThrow();
 	});
 
-	it('falls back to mtime for videos without DB rows and renumbers within the year', async () => {
+	it('falls back to folder names for videos without DB rows', async () => {
 		const a = await addVideo('A');
 		const b = await addVideo('B');
 		dbRows = [];
 
 		const result = await nfoService.syncChannel(dir);
-		expect(result.episodes).toBe(2);
+		expect(result.movies).toBe(2);
 
-		// No rows at all: same-year videos numbered by mtime order.
-		const year = new Date().getUTCFullYear();
 		const nfoA = await readFile(join(a, 'A.nfo'), 'utf-8');
-		const nfoB = await readFile(join(b, 'B.nfo'), 'utf-8');
-		expect(nfoA).toContain(`<season>${year}</season>`);
-		expect(nfoB).toContain(`<season>${year}</season>`);
-		const numA = Number(/<episode>(\d+)<\/episode>/.exec(nfoA)![1]);
-		const numB = Number(/<episode>(\d+)<\/episode>/.exec(nfoB)![1]);
-		expect(Math.abs(numA - numB)).toBe(1);
+		expect(nfoA).toContain('<title>A</title>');
+		expect(nfoA).not.toContain('<premiered>');
 		// Channel title falls back to the folder name.
-		expect(nfoA).toContain(`<showtitle>${basename(dir)}</showtitle>`);
+		const collection = await readFile(join(dir, 'collection.xml'), 'utf-8');
+		expect(collection).toContain(`<title>${basename(dir)}</title>`);
 	});
 
-	it('removes legacy per-episode posters only when a cover exists', async () => {
+	it('removes legacy per-video posters only when a cover exists', async () => {
 		const withCover = await addVideo('WithCover', { 'cover.jpg': 'c', 'poster.jpg': 'p' });
 		const posterOnly = await addVideo('PosterOnly', { 'poster.jpg': 'p' });
 		dbRows = [];
@@ -161,11 +167,11 @@ describe('nfoService.syncChannel', () => {
 		dbRows = [];
 
 		const first = await nfoService.syncChannel(dir);
-		expect(first.episodes).toBe(1);
+		expect(first.movies).toBe(1);
 		const nfoPath = join(dir, 'Vid', 'Vid.nfo');
 		const before = await stat(nfoPath);
 		const second = await nfoService.syncChannel(dir);
-		expect(second.episodes).toBe(1);
+		expect(second.movies).toBe(1);
 		const after = await stat(nfoPath);
 		expect(after.mtimeMs).toBe(before.mtimeMs);
 	});

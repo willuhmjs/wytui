@@ -9,6 +9,9 @@ let settings: any = {
 // Simulated Jellyfin virtual folders + a log of outgoing API calls.
 let folders: any[] = [];
 let items: Record<string, any> = {};
+let users: any[] = [];
+let searchItems: any[] = [];
+let playedStatusStatus = 204;
 const calls: { url: string; method: string }[] = [];
 
 vi.mock('../db', () => ({
@@ -24,6 +27,9 @@ vi.mock('../utils/fetch', () => ({
 		const method = init.method ?? 'GET';
 		calls.push({ url, method });
 		if (method === 'GET') {
+			if (url.includes('/Users')) {
+				return { ok: true, status: 200, json: async () => users };
+			}
 			if (url.includes('/Items?Ids=')) {
 				const ids = decodeURIComponent(url.split('Ids=')[1]).split(',');
 				return {
@@ -32,7 +38,13 @@ vi.mock('../utils/fetch', () => ({
 					json: async () => ({ Items: ids.map((id) => items[id]).filter(Boolean) }),
 				};
 			}
+			if (url.includes('/Items?searchTerm')) {
+				return { ok: true, status: 200, json: async () => ({ Items: searchItems }) };
+			}
 			return { ok: true, status: 200, json: async () => folders };
+		}
+		if (url.includes('/PlayedStatus')) {
+			return { ok: playedStatusStatus < 300, status: playedStatusStatus };
 		}
 		return { ok: true, status: 204 };
 	}),
@@ -86,11 +98,9 @@ describe('jellyfinService.setupLibrary', () => {
 		expect(posts()).toHaveLength(1);
 
 		// Simulate Jellyfin now exposing the created library (config file and
-		// persisted database item both say tvshows).
-		folders = [
-			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
-		];
-		items = { vf1: { CollectionType: 'tvshows' } };
+		// persisted database item both say movies).
+		folders = [{ Name: 'YouTube', CollectionType: 'movies', Locations: ['/media'], ItemId: 'vf1' }];
+		items = { vf1: { CollectionType: 'movies' } };
 		calls.length = 0;
 
 		const second = await jellyfinService.setupLibrary();
@@ -110,17 +120,15 @@ describe('jellyfinService.setupLibrary', () => {
 		expect(deletes()[0].url).toContain('name=Home%20Videos');
 		expect(deletes()[0].url).toContain('refreshLibrary=true');
 		expect(posts()).toHaveLength(1);
-		expect(posts()[0].url).toContain('collectionType=tvshows');
+		expect(posts()[0].url).toContain('collectionType=movies');
 		expect(result.video.warnings.join(' ')).toContain('watch history');
 	});
 
 	it('rebuilds a library whose persisted database item kept a stale collection type', async () => {
-		// Config file says tvshows, but the library item Jellyfin actually uses
-		// for child resolution still says homevideos (e.g. an older library on
+		// Config file says movies, but the library item Jellyfin actually uses
+		// for child resolution still says homevideos (e.g. a TV shows library on
 		// the same path was removed without purging its item).
-		folders = [
-			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
-		];
+		folders = [{ Name: 'YouTube', CollectionType: 'movies', Locations: ['/media'], ItemId: 'vf1' }];
 		items = { vf1: { CollectionType: 'homevideos' } };
 
 		const result = await jellyfinService.setupLibrary();
@@ -128,13 +136,11 @@ describe('jellyfinService.setupLibrary', () => {
 		expect(deletes()).toHaveLength(1);
 		expect(deletes()[0].url).toContain('refreshLibrary=true');
 		expect(posts()).toHaveLength(1);
-		expect(posts()[0].url).toContain('collectionType=tvshows');
+		expect(posts()[0].url).toContain('collectionType=movies');
 	});
 
 	it('leaves a matching library alone when the item lookup cannot be made', async () => {
-		folders = [
-			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media'], ItemId: 'vf1' },
-		];
+		folders = [{ Name: 'YouTube', CollectionType: 'movies', Locations: ['/media'], ItemId: 'vf1' }];
 		// Items endpoint returns an empty payload — treated as unknown, not stale.
 		items = {};
 
@@ -190,9 +196,9 @@ describe('jellyfinService.setupLibrary', () => {
 		settings.jellyfinLocalPath = '/media';
 		settings.jellyfinRemotePath = '/media/youtube';
 		folders = [
-			{ Name: 'YouTube', CollectionType: 'tvshows', Locations: ['/media/youtube'], ItemId: 'vf1' },
+			{ Name: 'YouTube', CollectionType: 'movies', Locations: ['/media/youtube'], ItemId: 'vf1' },
 		];
-		items = { vf1: { CollectionType: 'tvshows' } };
+		items = { vf1: { CollectionType: 'movies' } };
 
 		const result = await jellyfinService.setupLibrary();
 		expect(result.video.action).toBe('already-configured');
@@ -207,5 +213,66 @@ describe('jellyfinService.setupLibrary', () => {
 			/overlaps with the existing "Books" library .* path mapping in Settings/,
 		);
 		expect(posts()).toHaveLength(0);
+	});
+});
+
+describe('user + playstate helpers', () => {
+	beforeEach(() => {
+		folders = [];
+		items = {};
+		calls.length = 0;
+		users = [];
+		searchItems = [];
+		playedStatusStatus = 204;
+	});
+
+	it('listUsers maps Id/Name to id/name', async () => {
+		users = [
+			{ Id: 'u1', Name: 'Ryzen' },
+			{ Id: 'u2', Name: 'Les' },
+		];
+		expect(await jellyfinService.listUsers('http://jf:8096', 'key')).toEqual([
+			{ id: 'u1', name: 'Ryzen' },
+			{ id: 'u2', name: 'Les' },
+		]);
+	});
+
+	it('findItemIdByPath returns the item whose Path matches exactly', async () => {
+		searchItems = [
+			{ Id: 'other', Path: '/media/other/abc/V.mp4' },
+			{ Id: 'right', Path: '/media/youtube/Chan/abc/V.mp4' },
+		];
+		const id = await jellyfinService.findItemIdByPath(
+			'http://jf:8096',
+			'key',
+			'/media/youtube/Chan/abc/V.mp4',
+		);
+		expect(id).toBe('right');
+		// Searches by the file stem (basename without extension), not the path.
+		const call = calls.find((c) => c.url.includes('searchTerm'));
+		expect(call?.url).toContain(`searchTerm=${encodeURIComponent('V')}`);
+	});
+
+	it('findItemIdByPath returns null when nothing matches', async () => {
+		searchItems = [{ Id: 'other', Path: '/media/other/abc/V.mp4' }];
+		const id = await jellyfinService.findItemIdByPath(
+			'http://jf:8096',
+			'key',
+			'/media/youtube/Chan/abc/V.mp4',
+		);
+		expect(id).toBeNull();
+	});
+
+	it('markItemPlayed posts the played status and reports success', async () => {
+		const ok = await jellyfinService.markItemPlayed('http://jf:8096', 'key', 'user-1', 'item-1');
+		expect(ok).toBe(true);
+		const post = posts().find((c) => c.url.includes('/PlayedStatus'));
+		expect(post?.url).toContain('/Users/user-1/Items/item-1/PlayedStatus');
+	});
+
+	it('markItemPlayed reports failure when the server errors', async () => {
+		playedStatusStatus = 500;
+		const ok = await jellyfinService.markItemPlayed('http://jf:8096', 'key', 'user-1', 'item-1');
+		expect(ok).toBe(false);
 	});
 });

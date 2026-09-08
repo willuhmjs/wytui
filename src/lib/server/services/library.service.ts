@@ -220,9 +220,9 @@ class LibraryService {
 				await writeJellyfinArtwork({
 					sourceUrl,
 					videoDir,
-					// In a TV Shows library a per-episode poster.jpg would override the
-					// landscape cover as the episode's primary image — posters belong at
-					// the channel (series) level instead.
+					// A 2:3 poster.jpg would win over the landscape cover as the
+					// movie's primary image — posters belong at the channel (BoxSet)
+					// level instead.
 					generatePoster: false,
 				});
 			}
@@ -237,9 +237,9 @@ class LibraryService {
 			settings?.generateJellyfinPosters ?? true,
 		);
 
-		// Refresh the channel's NFO metadata (an older-dated video shifts the
-		// episode numbering of later same-year videos) so Jellyfin keeps
-		// chronological order. Best-effort: never block the library move.
+		// Refresh the channel's NFO metadata (a movie NFO per video plus the
+		// channel's collection.xml) so Jellyfin keeps correct premiere dates.
+		// Best-effort: never block the library move.
 		await nfoService.syncChannel(uploaderPath).catch((err) => {
 			console.error('[LibraryService] NFO sync failed:', err);
 		});
@@ -267,8 +267,7 @@ class LibraryService {
 			}
 		}
 		if (!generatePoster) return;
-		// Series-level 2:3 poster for the TV Shows library view (poster.jpg wins
-		// over folder.jpg as the series primary image).
+		// Channel-level 2:3 poster (folder.jpg stays the BoxSet primary image).
 		const posterJpg = join(dirPath, 'poster.jpg');
 		try {
 			await access(posterJpg);
@@ -284,27 +283,27 @@ class LibraryService {
 	/**
 	 * Write/refresh NFO metadata and channel artwork for every channel folder in
 	 * the video library. Backfills libraries created before the Jellyfin
-	 * TV-library integration; also exposed as the settings "Write metadata" action.
+	 * movies-library integration; also exposed as the settings "Write metadata" action.
 	 */
-	async syncJellyfinMetadata(): Promise<{ channels: number; episodes: number }> {
+	async syncJellyfinMetadata(): Promise<{ channels: number; movies: number }> {
 		const settings = await this.getSettings();
 		if (!settings.libraryPath) throw new Error('Library path not configured');
 		const root = resolve(settings.libraryPath);
 		const entries = await readdir(root, { withFileTypes: true });
 
 		let channels = 0;
-		let episodes = 0;
+		let movies = 0;
 		for (const entry of entries) {
 			if (!entry.isDirectory()) continue;
 			const channelDir = join(root, entry.name);
 			const result = await nfoService.syncChannel(channelDir);
 			await this.ensureChannelArt(channelDir, result.channelUrl, settings.generateJellyfinPosters);
-			if (result.episodes > 0) {
+			if (result.movies > 0) {
 				channels++;
-				episodes += result.episodes;
+				movies += result.movies;
 			}
 		}
-		return { channels, episodes };
+		return { channels, movies };
 	}
 
 	/**

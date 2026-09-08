@@ -929,7 +929,7 @@
 		try {
 			const confirmed = await showConfirm(
 				'Set up Jellyfin library',
-				'Creates or fixes the Jellyfin library for your wytui paths (TV Shows, NFO-only metadata). If an existing library uses another type (e.g. Home Videos) it will be rebuilt — Jellyfin watch history for it resets. Media files are not touched.',
+				'Creates or fixes the Jellyfin library for your wytui paths (Movies, NFO-only metadata). If an existing library uses another type (e.g. Home Videos) it will be rebuilt — Jellyfin watch history for it resets. Media files are not touched.',
 			);
 			if (!confirmed) return;
 			const res = await csrfFetch('/api/settings/jellyfin-setup', { method: 'POST' });
@@ -942,7 +942,7 @@
 				return;
 			}
 			const describe = (lib: any) => {
-				const type = lib.collectionType === 'tvshows' ? 'TV Shows' : 'Music';
+				const type = lib.collectionType === 'movies' ? 'Movies' : 'Music';
 				const verb =
 					lib.action === 'created'
 						? 'Created'
@@ -980,7 +980,7 @@
 			}
 			jellyfinSetupResult = {
 				success: true,
-				message: `Wrote metadata for ${data.episodes} videos across ${data.channels} channels`,
+				message: `Wrote metadata for ${data.movies} videos across ${data.channels} channels`,
 			};
 		} catch {
 			jellyfinSetupResult = { success: false, message: 'Request failed' };
@@ -1328,6 +1328,13 @@
 				youtubeLink = await res.json();
 				applyAccountState(youtubeLink);
 			}
+			// Jellyfin user picker for the history sync (best-effort).
+			const jres = await fetch('/api/youtube/jellyfin-users');
+			if (jres.ok) {
+				const jdata = await jres.json();
+				jellyfinUsers = jdata.users ?? [];
+			}
+			jellyfinUserChoice = youtubeLink.jellyfinUserId ?? '';
 		} catch {
 			// best-effort
 		} finally {
@@ -1448,6 +1455,7 @@
 
 	let syncingWatchLater = $state(false);
 	let syncingHistory = $state(false);
+	let jellyfinUserChoice = $state('');
 	let exportingOPML = $state(false);
 	let exportingCSV = $state(false);
 
@@ -1489,7 +1497,13 @@
 					addToast('error', 'YouTube session expired — re-link via the extension');
 					youtubeLink = { linked: false };
 				} else {
-					addToast('success', 'History synced');
+					const marked = data.marked ?? 0;
+					const jf = data.jellyfin;
+					let msg = `History synced \u2014 ${marked} video${marked === 1 ? '' : 's'} marked watched`;
+					if (jf?.user && jf.marked > 0) {
+						msg += `, ${jf.marked} marked played in Jellyfin`;
+					}
+					addToast('success', msg);
 				}
 			} else {
 				addToast('error', 'Failed to sync history');
@@ -1498,6 +1512,24 @@
 			addToast('error', 'Failed to sync history');
 		} finally {
 			syncingHistory = false;
+		}
+	}
+
+	async function updateJellyfinUser(value: string) {
+		try {
+			const res = await csrfFetch('/api/youtube/link', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ jellyfinUserId: value || null }),
+			});
+			if (res.ok) {
+				youtubeLink = await res.json();
+				addToast('success', 'Jellyfin user saved');
+			} else {
+				addToast('error', 'Failed to save Jellyfin user');
+			}
+		} catch {
+			addToast('error', 'Failed to save Jellyfin user');
 		}
 	}
 
@@ -1865,6 +1897,9 @@
 								Linked as <strong>{youtubeLink.channelName}</strong> · updated {new Date(
 									youtubeLink.cookieUpdatedAt,
 								).toLocaleDateString()}
+								{#if youtubeLink.lastHistorySync}
+									· last history sync {new Date(youtubeLink.lastHistorySync).toLocaleString()}
+								{/if}
 							</p>
 						</div>
 
@@ -1913,6 +1948,27 @@
 								Use feed for new videos
 							</label>
 						</div>
+
+						{#if jellyfinUsers.length > 1}
+							<div class="form-group">
+								<label for="jellyfin-user-select">Mark history as watched for (Jellyfin user)</label
+								>
+								<select
+									id="jellyfin-user-select"
+									value={jellyfinUserChoice}
+									onchange={(e) => updateJellyfinUser((e.currentTarget as HTMLSelectElement).value)}
+								>
+									<option value="">Not set (sync skips Jellyfin)</option>
+									{#each jellyfinUsers as u (u.id)}
+										<option value={u.id}>{u.name}</option>
+									{/each}
+								</select>
+								<p class="help-text">
+									Used by "Sync YouTube history to wytui" to mark the matching library videos played
+									in Jellyfin.
+								</p>
+							</div>
+						{/if}
 
 						<h3>Per-account overrides</h3>
 						<p class="help-text">
@@ -2324,8 +2380,7 @@
 								Generate Jellyfin posters
 							</label>
 							<p class="help-text">
-								Generate a 2:3 channel poster + 16:9 episode thumbnails for Jellyfin (TV Shows
-								libraries)
+								Generate a 2:3 channel poster + 16:9 thumbnails for Jellyfin (Movies libraries)
 							</p>
 						</div>
 
@@ -2591,9 +2646,9 @@
 
 							<div class="jellyfin-library-setup nested-field">
 								<div class="info-box">
-									<strong>Library type:</strong> use <strong>TV Shows</strong> for the wytui video library
-									— each channel becomes a show and each video an episode, ordered by upload date (seasons
-									= years). "Set up library" creates or fixes the library via the API and pins it to wytui's
+									<strong>Library type:</strong> use <strong>Movies</strong> for the wytui video library
+									— each channel becomes a collection and each video a standalone movie dated by its upload
+									date. "Set up library" creates or fixes the library via the API and pins it to wytui's
 									NFO metadata (no online matching). Run "Write NFO metadata" once to backfill existing
 									videos.
 								</div>

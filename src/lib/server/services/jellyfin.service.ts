@@ -42,30 +42,23 @@ export function mapToJellyfinPath(
 /**
  * YouTube channel folders only match online providers (TheTVDB etc.) by
  * accident, so the automated setup pins both libraries to local metadata:
- * NFO files for TV shows, embedded tags / filenames for music.
+ * NFO files for movies (each channel folder is a BoxSet collection, each
+ * video a standalone movie), embedded tags / filenames for music.
  */
-const TV_LIBRARY_OPTIONS = {
+const MOVIES_LIBRARY_OPTIONS = {
 	EnableInternetProviders: false,
-	EnableAutomaticSeriesGrouping: false,
 	SaveLocalMetadata: false,
 	LocalMetadataReaderOrder: ['Nfo'],
 	TypeOptions: [
 		{
-			Type: 'Series',
+			Type: 'BoxSet',
 			MetadataFetchers: ['Nfo'],
 			MetadataFetcherOrder: ['Nfo'],
 			ImageFetchers: [],
 			ImageFetcherOrder: [],
 		},
 		{
-			Type: 'Season',
-			MetadataFetchers: ['Nfo'],
-			MetadataFetcherOrder: ['Nfo'],
-			ImageFetchers: [],
-			ImageFetcherOrder: [],
-		},
-		{
-			Type: 'Episode',
+			Type: 'Movie',
 			MetadataFetchers: ['Nfo'],
 			MetadataFetcherOrder: ['Nfo'],
 			ImageFetchers: [],
@@ -155,9 +148,9 @@ class JellyfinService {
 
 	/**
 	 * Create (or fix) the Jellyfin libraries for the configured wytui paths.
-	 * The video library uses the TV Shows collection type — channels become
-	 * shows and videos become episodes, ordered chronologically via NFO
-	 * metadata (season = upload year, episode = index within the year).
+	 * The video library uses the Movies collection type — each channel folder
+	 * is a BoxSet (collection) and each video a standalone movie whose release
+	 * date is its YouTube upload date (from the NFO metadata).
 	 * Safe to call repeatedly: an existing library on the path is reused, and
 	 * overlapping libraries are refused instead of duplicated.
 	 */
@@ -189,7 +182,7 @@ class JellyfinService {
 			baseUrl,
 			apiKey,
 			folders,
-			collectionType: 'tvshows',
+			collectionType: 'movies',
 			path: videoPath,
 			fallbackName: 'YouTube',
 			overlapHint,
@@ -217,7 +210,7 @@ class JellyfinService {
 		baseUrl: string;
 		apiKey: string;
 		folders: any[];
-		collectionType: 'tvshows' | 'music';
+		collectionType: 'movies' | 'music';
 		path: string;
 		fallbackName: string;
 		/** Paths managed by wytui in this same run: overlapping them warns instead of erroring. */
@@ -246,15 +239,15 @@ class JellyfinService {
 			// library's config file, but child resolution uses the type persisted
 			// on the library's database item. A stale item (e.g. left behind by
 			// an older differently-typed library on the same path) silently
-			// disables TV-style resolution, so both must agree before standing
-			// down.
+			// disables movie/boxset resolution, so both must agree before
+			// standing down.
 			const itemType = await this.itemCollectionType(baseUrl, apiKey, existing.ItemId);
 			if (itemType === undefined || itemType === collectionType) {
 				return { action: 'already-configured', name, collectionType, warnings };
 			}
 		}
 
-		const kind = collectionType === 'tvshows' ? 'TV Shows' : 'Music';
+		const kind = collectionType === 'movies' ? 'Movies' : 'Music';
 		const overlapWarning = (other: string) =>
 			`The ${kind} path ${path} is nested inside ${other} — Jellyfin will scan those files in both libraries. Prefer sibling library roots.`;
 
@@ -286,7 +279,7 @@ class JellyfinService {
 			// The delete must run with refreshLibrary=true — that is what makes
 			// Jellyfin purge the library's database item. Without it the recreated
 			// library re-adopts the stale item (same path-derived id) and keeps
-			// its old collection type, silently breaking episode resolution.
+			// its old collection type, silently breaking movie resolution.
 			// Media files are untouched, but Jellyfin rebuilds its item database
 			// for the library — watch state and resume points reset.
 			const res = await internalFetch(
@@ -306,7 +299,7 @@ class JellyfinService {
 		}
 
 		const libraryOptions =
-			collectionType === 'tvshows' ? TV_LIBRARY_OPTIONS : MUSIC_LIBRARY_OPTIONS;
+			collectionType === 'movies' ? MOVIES_LIBRARY_OPTIONS : MUSIC_LIBRARY_OPTIONS;
 		const res = await internalFetch(
 			`${baseUrl}/Library/VirtualFolders` +
 				`?name=${encodeURIComponent(name)}` +
@@ -324,6 +317,60 @@ class JellyfinService {
 			throw new Error(`Failed to create the "${name}" library (HTTP ${res.status})`);
 		}
 		return { action: existing ? 'converted' : 'created', name, collectionType, warnings };
+	}
+
+	/** List the server's users (id + display name) for account-level pickers. */
+	async listUsers(baseUrl: string, apiKey: string): Promise<{ id: string; name: string }[]> {
+		const res = await internalFetch(`${baseUrl}/Users`, {
+			headers: { 'X-Emby-Token': apiKey },
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!res.ok) throw new Error(`Jellyfin returned ${res.status} while listing users`);
+		const users = (await res.json()) as { Id?: string; Name?: string }[];
+		return users
+			.filter((u) => typeof u.Id === 'string')
+			.map((u) => ({ id: u.Id!, name: u.Name ?? u.Id! }));
+	}
+
+	/**
+	 * Find an item by its exact media path (in Jellyfin path space). Searches by
+	 * the file's base name and matches on the full Path — the same strategy the
+	 * cleanup service uses.
+	 */
+	async findItemIdByPath(baseUrl: string, apiKey: string, path: string): Promise<string | null> {
+		const searchTerm =
+			path
+				.replace(/\.[^.]+$/, '')
+				.split('/')
+				.pop() ?? path;
+		const res = await internalFetch(
+			`${baseUrl}/Items?searchTerm=${encodeURIComponent(searchTerm)}&Recursive=true&Fields=Path&Limit=25`,
+			{
+				headers: { 'X-Emby-Token': apiKey },
+				signal: AbortSignal.timeout(15000),
+			},
+		);
+		if (!res.ok) return null;
+		const data = (await res.json()) as { Items?: { Id?: string; Path?: string }[] };
+		for (const item of data.Items ?? []) {
+			if (item.Path === path && item.Id) return item.Id;
+		}
+		return null;
+	}
+
+	/** Mark an item played for one user. Returns false on any failure. */
+	async markItemPlayed(
+		baseUrl: string,
+		apiKey: string,
+		userId: string,
+		itemId: string,
+	): Promise<boolean> {
+		const res = await internalFetch(`${baseUrl}/Users/${userId}/Items/${itemId}/PlayedStatus`, {
+			method: 'POST',
+			headers: { 'X-Emby-Token': apiKey },
+			signal: AbortSignal.timeout(10000),
+		});
+		return res.ok;
 	}
 }
 

@@ -905,14 +905,21 @@ class DownloadService {
 			await this.addToArchive(download.url, download.title);
 		}
 
-		// Index subtitles if any exist alongside the video
+		// Normalize word-timed YouTube auto-captions, then index subtitles if
+		// any exist alongside the video
 		try {
+			const normalized = await subtitleService.normalizeSubtitles(downloadId);
+			if (normalized > 0) {
+				console.log(
+					`[DownloadService] Normalized ${normalized} subtitle file(s) for ${downloadId}`,
+				);
+			}
 			const indexedCount = await subtitleService.indexSubtitles(downloadId);
 			if (indexedCount > 0) {
 				console.log(`[DownloadService] Indexed ${indexedCount} subtitle lines for ${downloadId}`);
 			}
 		} catch (error) {
-			console.error(`[DownloadService] Failed to index subtitles: ${error}`);
+			console.error(`[DownloadService] Failed to process subtitles: ${error}`);
 		}
 
 		// Move to library if requested

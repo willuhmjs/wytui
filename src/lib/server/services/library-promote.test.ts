@@ -112,7 +112,7 @@ vi.mock('./artwork', () => ({
 	writePosterFromBuffer: vi.fn(async () => {}),
 }));
 vi.mock('./nfo.service', () => ({
-	nfoService: { syncChannel: vi.fn(async () => ({ channelUrl: null, episodes: 0 })) },
+	nfoService: { syncChannel: vi.fn(async () => ({ channelUrl: null, movies: 0 })) },
 }));
 vi.mock('./ytdlp.service', () => ({
 	ytdlpService: { fetchChannelThumbnail: vi.fn(async () => null) },

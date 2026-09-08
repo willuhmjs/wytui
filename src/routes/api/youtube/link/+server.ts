@@ -26,9 +26,23 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 
 	// Per-account yt-dlp settings ride alongside the sync toggles. Both are
 	// optional; updateToggles ignores keys it doesn't know.
-	const { proxyUrl, extraFlags, appriseUrl, notifyOnComplete, notifyOnFail, ...toggles } =
-		body ?? {};
-	const accountSettings = { proxyUrl, extraFlags, appriseUrl, notifyOnComplete, notifyOnFail };
+	const {
+		proxyUrl,
+		extraFlags,
+		appriseUrl,
+		notifyOnComplete,
+		notifyOnFail,
+		jellyfinUserId,
+		...toggles
+	} = body ?? {};
+	const accountSettings = {
+		proxyUrl,
+		extraFlags,
+		appriseUrl,
+		notifyOnComplete,
+		notifyOnFail,
+		jellyfinUserId,
+	};
 	const hasAccountSettings = Object.values(accountSettings).some((v) => v !== undefined);
 	if (hasAccountSettings) {
 		try {
