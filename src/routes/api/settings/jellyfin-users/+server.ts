@@ -44,7 +44,7 @@ export const GET = apiRoute(
 		try {
 			const baseUrl = settings.jellyfinUrl.replace(/\/$/, '');
 			const res = await internalFetch(`${baseUrl}/Users`, {
-				headers: { 'X-Emby-Token': settings.jellyfinApiKey },
+				headers: { Authorization: `MediaBrowser Token="${settings.jellyfinApiKey}"` },
 				signal: AbortSignal.timeout(10000),
 			});
 

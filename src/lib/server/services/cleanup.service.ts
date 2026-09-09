@@ -124,7 +124,7 @@ class CleanupService {
 		const res = await internalFetch(
 			`${baseUrl}/Items?searchTerm=${encodeURIComponent(searchTerm)}&Recursive=true&Fields=Path&Limit=25`,
 			{
-				headers: { 'X-Emby-Token': apiKey },
+				headers: { Authorization: `MediaBrowser Token="${apiKey}"` },
 				signal: AbortSignal.timeout(15000),
 			},
 		);
@@ -151,7 +151,7 @@ class CleanupService {
 	): Promise<boolean> {
 		for (const userId of userIds) {
 			const res = await internalFetch(`${baseUrl}/Users/${userId}/Items/${itemId}/UserData`, {
-				headers: { 'X-Emby-Token': apiKey },
+				headers: { Authorization: `MediaBrowser Token="${apiKey}"` },
 				signal: AbortSignal.timeout(10000),
 			});
 
@@ -185,7 +185,7 @@ class CleanupService {
 		try {
 			const res = await internalFetch(`${baseUrl}/Items/${jellyfinItemId}`, {
 				method: 'DELETE',
-				headers: { 'X-Emby-Token': apiKey },
+				headers: { Authorization: `MediaBrowser Token="${apiKey}"` },
 				signal: AbortSignal.timeout(10000),
 			});
 			if (!res.ok) {

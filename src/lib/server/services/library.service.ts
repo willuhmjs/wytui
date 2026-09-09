@@ -134,7 +134,7 @@ class LibraryService {
 		});
 		try {
 			await unlink(download.filepath);
-		} catch {}
+		} catch { }
 		await this.transferSidecars(download.filepath, destPath);
 
 		if (info.coverArtBuffer) {
@@ -206,7 +206,7 @@ class LibraryService {
 		});
 		try {
 			await unlink(download.filepath);
-		} catch {}
+		} catch { }
 		await this.transferSidecars(download.filepath, destPath);
 
 		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
@@ -607,40 +607,40 @@ class LibraryService {
 
 		const videoResult = settings.libraryPath
 			? await prisma.download.aggregate({
-					where: {
-						storagePool: 'library',
-						status: DownloadStatus.COMPLETED,
-						profile: { audioOnly: false },
-					},
-					_sum: { filesize: true },
-					_count: true,
-				})
+				where: {
+					storagePool: 'library',
+					status: DownloadStatus.COMPLETED,
+					profile: { audioOnly: false },
+				},
+				_sum: { filesize: true },
+				_count: true,
+			})
 			: null;
 
 		const musicResult = settings.musicLibraryPath
 			? await prisma.download.aggregate({
-					where: {
-						storagePool: 'library',
-						status: DownloadStatus.COMPLETED,
-						profile: { audioOnly: true },
-					},
-					_sum: { filesize: true },
-					_count: true,
-				})
+				where: {
+					storagePool: 'library',
+					status: DownloadStatus.COMPLETED,
+					profile: { audioOnly: true },
+				},
+				_sum: { filesize: true },
+				_count: true,
+			})
 			: null;
 
 		return {
 			video: videoResult
 				? {
-						usedBytes: (videoResult._sum.filesize ?? BigInt(0)).toString(),
-						count: videoResult._count,
-					}
+					usedBytes: (videoResult._sum.filesize ?? BigInt(0)).toString(),
+					count: videoResult._count,
+				}
 				: null,
 			music: musicResult
 				? {
-						usedBytes: (musicResult._sum.filesize ?? BigInt(0)).toString(),
-						count: musicResult._count,
-					}
+					usedBytes: (musicResult._sum.filesize ?? BigInt(0)).toString(),
+					count: musicResult._count,
+				}
 				: null,
 		};
 	}
@@ -757,7 +757,7 @@ class LibraryService {
 		) {
 			console.error(
 				`[LibraryService] Reconciliation ABORTED: ${missing.length}/${checked} files appear missing ` +
-					`(>= ${LibraryService.RECONCILE_ABORT_FRACTION * 100}%). Assuming a storage outage; no records were removed.`,
+				`(>= ${LibraryService.RECONCILE_ABORT_FRACTION * 100}%). Assuming a storage outage; no records were removed.`,
 			);
 			return 0;
 		}
@@ -831,11 +831,11 @@ class LibraryService {
 				// Jellyfin and subtitle indexing still find them next to the video.
 				if (entry.endsWith('.vtt') || entry.endsWith('.srt')) {
 					const suffix = entry.slice(stem.length);
-					await copyFile(join(sourceDir, entry), join(destDir, destStem + suffix)).catch(() => {});
+					await copyFile(join(sourceDir, entry), join(destDir, destStem + suffix)).catch(() => { });
 				}
-				await unlink(join(sourceDir, entry)).catch(() => {});
+				await unlink(join(sourceDir, entry)).catch(() => { });
 			}
-		} catch {}
+		} catch { }
 	}
 
 	/** True when both paths exist and are regular files of identical size. */
@@ -858,7 +858,7 @@ class LibraryService {
 		const resolved = resolve(filepath);
 		try {
 			await unlink(resolved);
-		} catch {}
+		} catch { }
 
 		const dir = dirname(resolved);
 		const stem = basename(resolved, extname(resolved));
@@ -867,7 +867,7 @@ class LibraryService {
 			const entries = await readdir(dir);
 			for (const entry of entries) {
 				if (entry === basename(resolved) || entry.startsWith(stem + '.')) {
-					await unlink(join(dir, entry)).catch(() => {});
+					await unlink(join(dir, entry)).catch(() => { });
 				}
 			}
 		} catch {
@@ -890,11 +890,11 @@ class LibraryService {
 			if (hasMedia) return;
 			for (const entry of entries) {
 				if (LibraryService.ARTWORK_FILES.has(entry)) {
-					await unlink(join(dir, entry)).catch(() => {});
+					await unlink(join(dir, entry)).catch(() => { });
 				}
 			}
-			await rmdir(dir).catch(() => {});
-		} catch {}
+			await rmdir(dir).catch(() => { });
+		} catch { }
 	}
 
 	/**
@@ -1047,7 +1047,7 @@ class LibraryService {
 				await unlink(fullPath);
 				deletedCount++;
 				freedBytes += BigInt(fileStat.size);
-			} catch {}
+			} catch { }
 		}
 
 		if (deletedCount > 0) {
@@ -1102,9 +1102,9 @@ class LibraryService {
 					if (hasMedia) continue;
 
 					for (const f of files) {
-						await unlink(join(videoDir, f)).catch(() => {});
+						await unlink(join(videoDir, f)).catch(() => { });
 					}
-					await rmdir(videoDir).catch(() => {});
+					await rmdir(videoDir).catch(() => { });
 					removed++;
 				}
 			}
@@ -1152,7 +1152,7 @@ class LibraryService {
 				await internalFetch(url, {
 					method: 'POST',
 					headers: {
-						'X-Emby-Token': settings.jellyfinApiKey,
+						Authorization: `MediaBrowser Token="${settings.jellyfinApiKey}"`,
 					},
 				});
 			} catch (error) {
@@ -1182,7 +1182,7 @@ class LibraryService {
 			} else if (urlObj.hostname.includes('youtu.be')) {
 				return urlObj.pathname.slice(1);
 			}
-		} catch {}
+		} catch { }
 		return null;
 	}
 

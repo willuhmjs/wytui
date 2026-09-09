@@ -32,8 +32,9 @@
 	let stats = $state<Record<string, PlaylistStat>>({});
 	let loading = $state(false);
 	let refreshing = $state(false);
-	let syncing = $state(false);
-	let syncProgress = $state<{ current: number; total: number; lastTitle: string } | null>(null);
+	// A background sync was started from this modal and its complete event is
+	// still pending (the modal closes right after the sync starts).
+	let syncInFlight = $state(false);
 	let selected = $state(new Set<string>());
 	let filter = $state('');
 
@@ -55,25 +56,22 @@
 	const titleId = uniqueId('sync-playlists-title');
 	const bodyId = uniqueId('sync-playlists-body');
 
-	// Listen for background sync progress events from the server.
+	// The modal closes right after the sync starts, so the background sync
+	// events are the user's only feedback while it runs — surface them as toasts.
 	const unsubProgress = onSSEEvent('playlist:sync:progress', (data) => {
-		if (!syncing) return;
-		syncProgress = { current: data.current, total: data.total, lastTitle: data.title };
 		if (data.rateLimited) {
 			addToast('info', `Rate limited on "${data.title}" — backing off, will continue`);
 		}
 	});
 	const unsubComplete = onSSEEvent('playlist:sync:complete', (data) => {
-		if (!syncing) return;
-		syncing = false;
-		syncProgress = null;
+		if (!syncInFlight) return;
+		syncInFlight = false;
 		if (data.needsRelink) {
 			addToast('error', 'YouTube session expired — re-link via the extension');
 			return;
 		}
 		addToast('success', `Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`);
 		onSynced?.();
-		close();
 	});
 
 	onDestroy(() => {
@@ -260,8 +258,6 @@
 			addToast('error', 'Select at least one playlist');
 			return;
 		}
-		syncing = true;
-		syncProgress = null;
 		try {
 			const chosen = playlists.filter((p) => selected.has(p.id));
 			const res = await csrfFetch('/api/youtube/playlists/sync', {
@@ -272,7 +268,6 @@
 				}),
 			});
 			if (!res.ok) {
-				syncing = false;
 				addToast('error', 'Failed to start playlist sync');
 				return;
 			}
@@ -280,15 +275,15 @@
 			// 202: sync started in background — SSE events will drive the rest.
 			// If needsRelink comes back synchronously (no cookie), handle it here.
 			if (data.needsRelink) {
-				syncing = false;
 				addToast('error', 'YouTube session expired — re-link via the extension');
 				return;
 			}
-			// Initial playlists created; show progress until SSE complete arrives.
-			syncProgress = { current: 0, total: chosen.length, lastTitle: '' };
+			// Close right away; the sync continues in the background and the
+			// playlist:sync:complete event reports the final count via toast.
+			syncInFlight = true;
 			addToast('info', `Syncing ${chosen.length} playlist(s) in background…`);
+			close();
 		} catch {
-			syncing = false;
 			addToast('error', 'Failed to start playlist sync');
 		}
 	}
@@ -298,10 +293,8 @@
 		waveRun++;
 		statsAbort?.abort();
 		statsAbort = null;
-		// Don't wait for background sync to finish before allowing close.
+		// Don't wait for a background sync to finish before allowing close.
 		// SSE handlers will still fire and show toasts even with modal closed.
-		syncing = false;
-		syncProgress = null;
 		open = false;
 	}
 
@@ -475,19 +468,9 @@
 				{/if}
 			</div>
 			<div class="modal-footer">
-				<button class="btn btn-secondary" onclick={close} disabled={syncing}>Cancel</button>
-				<button
-					class="btn btn-primary"
-					onclick={sync}
-					disabled={loading || syncing || selected.size === 0}
-				>
-					{#if syncing && syncProgress}
-						Syncing {syncProgress.current}/{syncProgress.total}…
-					{:else if syncing}
-						Starting…
-					{:else}
-						Sync {selected.size > 0 ? `(${selected.size})` : ''}
-					{/if}
+				<button class="btn btn-secondary" onclick={close}>Cancel</button>
+				<button class="btn btn-primary" onclick={sync} disabled={loading || selected.size === 0}>
+					Sync {selected.size > 0 ? `(${selected.size})` : ''}
 				</button>
 			</div>
 		</div>

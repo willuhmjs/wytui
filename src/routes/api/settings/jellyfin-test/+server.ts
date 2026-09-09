@@ -33,7 +33,12 @@ export const POST = apiRoute(
 			throw error(403, 'Admin access required');
 		}
 
-		const { url, apiKey } = await request.json();
+		let { url, apiKey } = await request.json();
+
+		if (apiKey === '***SET***') {
+			const settings = await import('$lib/server/db').then((m) => m.prisma.settings.findUnique({ where: { id: 'singleton' } }));
+			apiKey = settings?.jellyfinApiKey;
+		}
 
 		if (!url || !apiKey) {
 			return json({ success: false, error: 'URL and API key are required' });
@@ -42,7 +47,7 @@ export const POST = apiRoute(
 		try {
 			const baseUrl = url.replace(/\/$/, '');
 			const res = await internalFetch(`${baseUrl}/System/Info`, {
-				headers: { 'X-Emby-Token': apiKey },
+				headers: { Authorization: `MediaBrowser Token="${apiKey}"` },
 				signal: AbortSignal.timeout(10000),
 			});
 

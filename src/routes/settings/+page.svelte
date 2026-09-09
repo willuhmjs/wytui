@@ -98,20 +98,25 @@
 		},
 	];
 
-	// The Account and Users tabs get the same grouped quick-nav as App Settings.
-	const accountGroups = [
+	// The User Settings and Users tabs get the same grouped quick-nav as App Settings.
+	const accountGroups = $derived([
 		{
 			label: 'Profile',
 			sections: [
-				{ id: 'account', label: 'Account' },
+				{ id: 'account', label: 'User Settings' },
 				{ id: 'api-keys', label: 'API Keys' },
 			],
 		},
 		{
 			label: 'Integrations',
-			sections: [{ id: 'youtube', label: 'YouTube' }],
+			sections: isAdmin
+				? [
+						{ id: 'youtube', label: 'YouTube' },
+						{ id: 'jellyfin', label: 'Jellyfin' },
+					]
+				: [{ id: 'youtube', label: 'YouTube' }],
 		},
-	];
+	]);
 
 	const usersGroups = [
 		{
@@ -1719,7 +1724,7 @@
 				class:active={activeTab === 'account'}
 				onclick={() => selectTab('account')}
 			>
-				Account
+				User Settings
 			</button>
 			{#if isAdmin}
 				<button class="tab" class:active={activeTab === 'app'} onclick={() => selectTab('app')}>
@@ -1762,8 +1767,9 @@
 		<div class="settings-container">
 			{@render quickNav()}
 			<div class="general-settings">
+				<h3 class="category-heading">Profile</h3>
 				<div class="settings-section" id="account">
-					<h2>Account</h2>
+					<h2>User Settings</h2>
 					<p class="text-muted">Manage your account password.</p>
 					<button
 						class="btn btn-primary"
@@ -1883,6 +1889,7 @@
 					{/if}
 				</div>
 
+				<h3 class="category-heading">Integrations</h3>
 				<div class="settings-section" id="youtube">
 					<h2>YouTube</h2>
 					<p class="text-muted">
@@ -1911,6 +1918,7 @@
 							</div>
 						{/if}
 
+						<h3>Sync</h3>
 						<div class="youtube-toggles">
 							<label>
 								<input
@@ -2060,6 +2068,7 @@
 							{/if}
 						</div>
 
+						<h3>Actions</h3>
 						<div class="youtube-actions">
 							<button class="btn btn-primary" onclick={() => (showImportModal = true)}>
 								Import Subscriptions
@@ -2112,10 +2121,152 @@
 						</div>
 					</div>
 				</div>
+
+				{#if isAdmin}
+					<div class="settings-section" id="jellyfin">
+						<h2>Jellyfin</h2>
+						<p class="text-muted">
+							User-based rules for the Jellyfin integration — which users' watched status drives
+							auto-cleanup. The server connection itself lives in App Settings → Jellyfin.
+						</p>
+
+						{#if jellyfinEnabled}
+							<div class="cleanup-section">
+								<div class="form-group">
+									<label class="toggle-label">
+										<input
+											type="checkbox"
+											bind:checked={settings.cleanupEnabled}
+											onchange={() => {
+												if (settings.cleanupEnabled && jellyfinUsers.length === 0) {
+													loadJellyfinUsers();
+												}
+											}}
+										/>
+										Auto-Cleanup Watched Items
+									</label>
+									<p class="help-text">
+										Automatically delete library items after all selected users have watched them
+									</p>
+								</div>
+
+								{#if cleanupEnabled}
+									<div class="form-group nested-field">
+										<label>Watch Users</label>
+										{#if loadingJellyfinUsers}
+											<p class="text-muted">Loading users...</p>
+										{:else if jellyfinUsers.length === 0}
+											<button
+												class="btn btn-secondary btn-sm btn-with-icon"
+												onclick={loadJellyfinUsers}
+											>
+												<UsersIcon width={14} height={14} />
+												{jellyfinUsersError ? 'Retry' : 'Load Jellyfin Users'}
+											</button>
+											{#if jellyfinUsersError}
+												<span class="test-result error">{jellyfinUsersError}</span>
+											{/if}
+										{:else}
+											<div class="user-checkboxes">
+												{#each jellyfinUsers as user}
+													<label class="checkbox-label">
+														<input
+															type="checkbox"
+															checked={(settings.cleanupUserIds || []).includes(user.id)}
+															onchange={() => toggleCleanupUser(user.id)}
+														/>
+														{user.name}
+													</label>
+												{/each}
+											</div>
+											<button
+												class="btn btn-secondary btn-sm btn-with-icon"
+												onclick={loadJellyfinUsers}
+												style="margin-top: var(--spacing-sm); align-self: flex-start;"
+											>
+												<RefreshIcon width={14} height={14} />
+												Refresh
+											</button>
+										{/if}
+										<p class="help-text">
+											Item is deleted only when ALL selected users have watched it
+										</p>
+									</div>
+
+									<div class="form-row nested-field">
+										<div class="form-group">
+											<label for="cleanupInterval">Check Interval (hours)</label>
+											<input
+												type="number"
+												id="cleanupInterval"
+												value={settings.cleanupIntervalSeconds
+													? Math.round(settings.cleanupIntervalSeconds / 3600)
+													: 1}
+												oninput={(e) => {
+													const hours = parseFloat(e.currentTarget.value) || 1;
+													settings.cleanupIntervalSeconds = Math.round(hours * 3600);
+												}}
+												min="1"
+												max="24"
+												step="1"
+											/>
+										</div>
+
+										<div class="form-group">
+											<label for="cleanupGraceHours">Grace Period (hours)</label>
+											<input
+												type="number"
+												id="cleanupGraceHours"
+												bind:value={settings.cleanupGraceHours}
+												min="0"
+												max="720"
+												step="1"
+											/>
+											<p class="help-text">Wait time after all users watched before deleting</p>
+										</div>
+									</div>
+
+									<div class="form-group nested-field">
+										<label>Profile Types</label>
+										<div class="user-checkboxes">
+											<label class="checkbox-label">
+												<input
+													type="checkbox"
+													checked={(settings.cleanupProfileTypes || []).includes('video')}
+													onchange={() => {
+														const types: string[] = settings.cleanupProfileTypes || [];
+														settings.cleanupProfileTypes = types.includes('video')
+															? types.filter((t: string) => t !== 'video')
+															: [...types, 'video'];
+													}}
+												/>
+												Video
+											</label>
+											<label class="checkbox-label">
+												<input
+													type="checkbox"
+													checked={(settings.cleanupProfileTypes || []).includes('music')}
+													onchange={() => {
+														const types: string[] = settings.cleanupProfileTypes || [];
+														settings.cleanupProfileTypes = types.includes('music')
+															? types.filter((t: string) => t !== 'music')
+															: [...types, 'music'];
+													}}
+												/>
+												Music
+											</label>
+										</div>
+										<p class="help-text">Which download types to auto-clean</p>
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 	{:else if !isAdmin}
-		<!-- Non-admins only ever see the Account tab. -->
+		<!-- Non-admins only ever see the User Settings tab. -->
 	{:else if loading}
 		<div class="settings-container">
 			<nav class="settings-nav" aria-hidden="true">
@@ -2681,136 +2832,6 @@
 										</span>
 									{/if}
 								</div>
-							</div>
-
-							<div class="cleanup-section nested-field">
-								<div class="form-group">
-									<label class="toggle-label">
-										<input
-											type="checkbox"
-											bind:checked={settings.cleanupEnabled}
-											onchange={() => {
-												if (settings.cleanupEnabled && jellyfinUsers.length === 0) {
-													loadJellyfinUsers();
-												}
-											}}
-										/>
-										Auto-Cleanup Watched Items
-									</label>
-									<p class="help-text">
-										Automatically delete library items after all selected users have watched them
-									</p>
-								</div>
-
-								{#if cleanupEnabled}
-									<div class="form-group nested-field">
-										<label>Watch Users</label>
-										{#if loadingJellyfinUsers}
-											<p class="text-muted">Loading users...</p>
-										{:else if jellyfinUsers.length === 0}
-											<button
-												class="btn btn-secondary btn-sm btn-with-icon"
-												onclick={loadJellyfinUsers}
-											>
-												<UsersIcon width={14} height={14} />
-												{jellyfinUsersError ? 'Retry' : 'Load Jellyfin Users'}
-											</button>
-											{#if jellyfinUsersError}
-												<span class="test-result error">{jellyfinUsersError}</span>
-											{/if}
-										{:else}
-											<div class="user-checkboxes">
-												{#each jellyfinUsers as user}
-													<label class="checkbox-label">
-														<input
-															type="checkbox"
-															checked={(settings.cleanupUserIds || []).includes(user.id)}
-															onchange={() => toggleCleanupUser(user.id)}
-														/>
-														{user.name}
-													</label>
-												{/each}
-											</div>
-											<button
-												class="btn btn-secondary btn-sm btn-with-icon"
-												onclick={loadJellyfinUsers}
-												style="margin-top: var(--spacing-sm); align-self: flex-start;"
-											>
-												<RefreshIcon width={14} height={14} />
-												Refresh
-											</button>
-										{/if}
-										<p class="help-text">
-											Item is deleted only when ALL selected users have watched it
-										</p>
-									</div>
-
-									<div class="form-row nested-field">
-										<div class="form-group">
-											<label for="cleanupInterval">Check Interval (hours)</label>
-											<input
-												type="number"
-												id="cleanupInterval"
-												value={settings.cleanupIntervalSeconds
-													? Math.round(settings.cleanupIntervalSeconds / 3600)
-													: 1}
-												oninput={(e) => {
-													const hours = parseFloat(e.currentTarget.value) || 1;
-													settings.cleanupIntervalSeconds = Math.round(hours * 3600);
-												}}
-												min="1"
-												max="24"
-												step="1"
-											/>
-										</div>
-
-										<div class="form-group">
-											<label for="cleanupGraceHours">Grace Period (hours)</label>
-											<input
-												type="number"
-												id="cleanupGraceHours"
-												bind:value={settings.cleanupGraceHours}
-												min="0"
-												max="720"
-												step="1"
-											/>
-											<p class="help-text">Wait time after all users watched before deleting</p>
-										</div>
-									</div>
-
-									<div class="form-group nested-field">
-										<label>Profile Types</label>
-										<div class="user-checkboxes">
-											<label class="checkbox-label">
-												<input
-													type="checkbox"
-													checked={(settings.cleanupProfileTypes || []).includes('video')}
-													onchange={() => {
-														const types: string[] = settings.cleanupProfileTypes || [];
-														settings.cleanupProfileTypes = types.includes('video')
-															? types.filter((t: string) => t !== 'video')
-															: [...types, 'video'];
-													}}
-												/>
-												Video
-											</label>
-											<label class="checkbox-label">
-												<input
-													type="checkbox"
-													checked={(settings.cleanupProfileTypes || []).includes('music')}
-													onchange={() => {
-														const types: string[] = settings.cleanupProfileTypes || [];
-														settings.cleanupProfileTypes = types.includes('music')
-															? types.filter((t: string) => t !== 'music')
-															: [...types, 'music'];
-													}}
-												/>
-												Music
-											</label>
-										</div>
-										<p class="help-text">Which download types to auto-clean</p>
-									</div>
-								{/if}
 							</div>
 						{/if}
 					</div>
