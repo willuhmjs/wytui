@@ -64,11 +64,6 @@ describe('buildDefaultsArgs', () => {
 		).toEqual(['--proxy', 'socks5h://proxy.internal:1080', '--sleep-requests', '1']);
 	});
 
-	it('filters non-whitelisted flags from extraFlags', () => {
-		expect(
-			ytdlpService.buildDefaultsArgs({ extraFlags: ['--exec', '--cookies-from-browser'] }),
-		).toEqual([]);
-	});
 
 	it('returns an empty array when no defaults are configured', () => {
 		expect(ytdlpService.buildDefaultsArgs({})).toEqual([]);

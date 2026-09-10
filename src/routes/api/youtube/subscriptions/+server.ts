@@ -36,21 +36,45 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!profile.isSystem && profile.userId !== userId)
 		throw error(403, "Cannot use another user's profile");
 
+	// Dedupe against existing subscriptions and within the batch. URLs alone
+	// can't be trusted: the same channel appears as @handle and /channel/UC…
+	// URLs, so match by resolved channel ID as well.
+	const existingSubs = await prisma.subscription.findMany({
+		where: { userId, type: 'CHANNEL' },
+		select: { url: true, channelId: true },
+	});
+	const existingUrls = new Set(existingSubs.map((s) => s.url));
+	const existingChannelIds = new Set(
+		existingSubs.map((s) => s.channelId).filter((id): id is string => !!id),
+	);
+	const seenUrls = new Set<string>();
+	const seenChannelIds = new Set<string>();
+
 	const createdIds: string[] = [];
 	let skipped = 0;
 	for (const ch of body.channels) {
 		if (!ch?.url || !ch?.name) continue;
-		// Skip channels the user is already subscribed to.
-		const existing = await prisma.subscription.findFirst({ where: { url: ch.url, userId } });
-		if (existing) {
+		const channelId =
+			(typeof ch.channelId === 'string' && ch.channelId) ||
+			String(ch.url).match(/\/channel\/(UC[\w-]+)/)?.[1] ||
+			null;
+
+		if (existingUrls.has(ch.url) || seenUrls.has(ch.url)) {
 			skipped++;
 			continue;
 		}
+		if (channelId && (existingChannelIds.has(channelId) || seenChannelIds.has(channelId))) {
+			skipped++;
+			continue;
+		}
+
 		const sub = await prisma.subscription.create({
 			data: {
 				url: ch.url,
 				name: ch.name,
 				type: 'CHANNEL',
+				// Pre-seed the RSS cache so checks skip the @handle resolution call.
+				channelId,
 				enabled: body.enabled ?? true,
 				autoDownload: body.autoDownload ?? true,
 				saveToLibrary: body.saveToLibrary ?? false,
@@ -60,6 +84,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			include: { profile: true },
 		});
 		createdIds.push(sub.id);
+		seenUrls.add(ch.url);
+		if (channelId) seenChannelIds.add(channelId);
 		// Lightweight — just registers the cron task.
 		await subscriptionService.scheduleSubscription(sub);
 	}

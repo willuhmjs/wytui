@@ -173,11 +173,9 @@ export const POST = apiRoute(
 				throw error(400, 'Check interval must be between 60 and 86400 seconds');
 			}
 
-			const existing = await prisma.subscription.findFirst({
-				where: { url: data.url, userId },
-			});
+			const existing = await subscriptionService.findDuplicate(userId, { url: data.url });
 			if (existing) {
-				throw error(409, 'A subscription for this URL already exists');
+				throw error(409, 'A subscription for this channel already exists');
 			}
 
 			const customFlags = Array.isArray(data.customFlags) ? data.customFlags : [];

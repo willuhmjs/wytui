@@ -151,7 +151,7 @@ export const GET = apiRoute(
 			}
 		}
 
-		const queueStats = queueService.getStats();
+		const queueStats = await queueService.getStats();
 
 		return json({
 			connection: {

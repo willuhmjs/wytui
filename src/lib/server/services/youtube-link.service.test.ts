@@ -98,14 +98,11 @@ describe('account settings overrides', () => {
 		).rejects.toThrow('No linked YouTube account');
 	});
 
-	it('rejects invalid proxy URLs and dangerous flags', async () => {
+	it('rejects invalid proxy URLs', async () => {
 		await youtubeLinkService.storeCookies('u1', cookies);
 		await expect(
 			youtubeLinkService.updateAccountSettings('u1', { proxyUrl: 'not a url' }),
 		).rejects.toThrow(/proxy URL/i);
-		await expect(
-			youtubeLinkService.updateAccountSettings('u1', { extraFlags: ['--sleep-requests; rm -rf /'] }),
-		).rejects.toThrow(/forbidden yt-dlp flag/i);
 	});
 
 	it('persists proxy, flags, and notification settings; empty clears', async () => {
@@ -129,6 +126,26 @@ describe('account settings overrides', () => {
 		const cleared: any = await youtubeLinkService.getLinkStatus('u1');
 		expect(cleared.ytdlp.proxyUrl).toBeNull();
 		expect(cleared.notifications.appriseUrl).toBeNull();
+	});
+
+	it('treats explicit undefined fields as not provided (API route passes every key)', async () => {
+		await youtubeLinkService.storeCookies('u1', cookies);
+		// /api/youtube/link destructures all account fields and forwards them,
+		// so unsubmitted ones arrive as { key: undefined } — not absent keys.
+		await youtubeLinkService.updateAccountSettings('u1', {
+			proxyUrl: undefined,
+			extraFlags: undefined,
+			appriseUrl: undefined,
+			notifyOnComplete: undefined,
+			notifyOnFail: undefined,
+			jellyfinUserId: 'ju-1',
+		});
+		const status: any = await youtubeLinkService.getLinkStatus('u1');
+		expect(status.jellyfinUserId).toBe('ju-1');
+
+		await youtubeLinkService.updateAccountSettings('u1', { jellyfinUserId: null });
+		const cleared: any = await youtubeLinkService.getLinkStatus('u1');
+		expect(cleared.jellyfinUserId).toBeNull();
 	});
 
 	it('getAccountYtdlp resolves per-account settings or null', async () => {

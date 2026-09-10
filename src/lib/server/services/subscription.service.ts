@@ -4,7 +4,8 @@ import { ytdlpService } from './ytdlp.service';
 import { youtubeService } from './youtube.service';
 import { youtubeLinkService } from './youtube-link.service';
 import { sseEmitter } from '../sse/emitter';
-import cron, { type ScheduledTask } from 'node-cron';
+import { queueService } from './queue.service';
+import { CronExpressionParser } from 'cron-parser';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
 import { access } from 'fs/promises';
@@ -12,7 +13,7 @@ import { RateLimitError, isRateLimitedError, runYtdlpJson } from '../utils/ytdlp
 
 class SubscriptionService {
 	private static readonly CHECK_DEPTH = 15;
-	private scheduledTasks = new Map<string, ScheduledTask>();
+	
 	private activeChecks = new Set<string>();
 
 	/**
@@ -29,10 +30,22 @@ class SubscriptionService {
 	async startScheduler(): Promise<void> {
 		console.log('[Subscriptions] Starting scheduler...');
 
+		queueService.registerHandler('subscription', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.subscriptionId) return;
+			
+			await this.checkSubscription(payload.subscriptionId);
+			
+			// Reschedule for next time
+			const sub = await prisma.subscription.findUnique({ where: { id: payload.subscriptionId } });
+			if (sub && sub.enabled) {
+				await this.scheduleSubscription(sub);
+			}
+		});
+
 		// Load all enabled subscriptions
 		const subscriptions = await prisma.subscription.findMany({
-			where: { enabled: true },
-			include: { profile: true },
+			where: { enabled: true }
 		});
 
 		for (const subscription of subscriptions) {
@@ -46,22 +59,21 @@ class SubscriptionService {
 	 * Schedule a subscription
 	 */
 	async scheduleSubscription(subscription: any): Promise<void> {
-		// Remove existing task if any
-		this.unscheduleSubscription(subscription.id);
-
-		// Hash the subscription ID to a stable per-subscription minute offset so
-		// that subscriptions with the same check interval don't all fire at minute 0.
-		// This spreads load across the interval window and reduces the chance of
-		// hitting YouTube's rate limits when many subscriptions check simultaneously.
 		const offset = this.idToMinuteOffset(subscription.id);
 		const cronExpr = this.secondsToCron(subscription.checkInterval, offset);
-
-		const task = cron.schedule(cronExpr, async () => {
-			await this.checkSubscription(subscription.id);
-		});
-
-		this.scheduledTasks.set(subscription.id, task);
-		console.log(`[Subscriptions] Scheduled ${subscription.name} (${cronExpr})`);
+		
+		try {
+			const interval = CronExpressionParser.parse(cronExpr);
+			const nextRun = interval.next().toDate();
+			
+			// Clear any existing job
+			await this.unscheduleSubscription(subscription.id);
+			
+			await queueService.enqueue('subscription', { subscriptionId: subscription.id }, { runAt: nextRun });
+			console.log(`[Subscriptions] Scheduled ${subscription.name} at ${nextRun} (${cronExpr})`);
+		} catch (e) {
+			console.error(`[Subscriptions] Failed to schedule ${subscription.name}:`, e);
+		}
 	}
 
 	/**
@@ -79,11 +91,15 @@ class SubscriptionService {
 	/**
 	 * Unschedule a subscription
 	 */
-	unscheduleSubscription(subscriptionId: string): void {
-		const task = this.scheduledTasks.get(subscriptionId);
-		if (task) {
-			task.stop();
-			this.scheduledTasks.delete(subscriptionId);
+	async unscheduleSubscription(subscriptionId: string): Promise<void> {
+		// Prisma cannot filter nicely by JSON contents, so we fetch and filter in JS
+		// Since subscriptions are not thousands, this is acceptable.
+		const jobs = await prisma.jobQueue.findMany({
+			where: { type: 'subscription' }
+		});
+		const toDelete = jobs.filter(j => (j.payload as any)?.subscriptionId === subscriptionId);
+		for (const job of toDelete) {
+			await prisma.jobQueue.delete({ where: { id: job.id } });
 		}
 	}
 
@@ -327,9 +343,89 @@ class SubscriptionService {
 	}
 
 	/**
+	 * Find an existing subscription that already covers the given channel.
+	 *
+	 * URL equality alone is not enough: the same channel can be referenced as
+	 * @handle, /channel/UC…, or /c/… URLs, so also match by resolved channel ID
+	 * (either provided by the caller or embedded in a /channel/UC… URL).
+	 */
+	async findDuplicate(
+		userId: string,
+		{ url, channelId }: { url: string; channelId?: string | null },
+	): Promise<Subscription | null> {
+		const byUrl = await prisma.subscription.findFirst({ where: { url, userId } });
+		if (byUrl) return byUrl;
+
+		const ids = [channelId, url?.match(/\/channel\/(UC[\w-]+)/)?.[1]].filter(
+			(v): v is string => !!v,
+		);
+		for (const id of ids) {
+			const byChannel = await prisma.subscription.findFirst({
+				where: { channelId: id, userId, type: 'CHANNEL' },
+			});
+			if (byChannel) return byChannel;
+		}
+		return null;
+	}
+
+	/**
+	 * Fetch a channel's identity (UC… id) and total video count with a single
+	 * flat yt-dlp browse call. Returns null when the fetch or parse fails.
+	 */
+	private async fetchChannelMeta(
+		url: string,
+		userId?: string | null,
+	): Promise<{ channelId: string | null; videoCount: number | null } | null> {
+		const defaults = await this.getYtdlpDefaults({ userId });
+		try {
+			const json = await runYtdlpJson(url, {
+				proxyUrl: defaults.proxyUrl,
+				extraArgs: [
+					'--playlist-items',
+					'0',
+					...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
+				],
+				timeoutMs: 30000,
+			});
+			const data = JSON.parse(json);
+			const channelId = typeof data?.channel_id === 'string' ? data.channel_id : null;
+			const count = data?.playlist_count;
+			const videoCount =
+				typeof count === 'number' && Number.isFinite(count) && count >= 0
+					? Math.floor(count)
+					: null;
+			return { channelId, videoCount };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Refresh a subscription's cached channel ID and video count (one background
+	 * browse call). Fire-and-forget from creation paths so the card's
+	 * "N videos" and RSS lookups work without waiting for a check cycle.
+	 */
+	async refreshChannelMeta(subscriptionId: string): Promise<void> {
+		const subscription = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+		if (!subscription) return;
+		const meta = await this.fetchChannelMeta(subscription.url, subscription.userId);
+		if (!meta) return;
+		await prisma.subscription
+			.update({
+				where: { id: subscription.id },
+				data: {
+					...(meta.channelId && !subscription.channelId ? { channelId: meta.channelId } : {}),
+					...(meta.videoCount !== null ? { videoCount: meta.videoCount } : {}),
+				},
+			})
+			.catch(() => {});
+	}
+
+	/**
 	 * Resolve a subscription URL to a YouTube channel ID (UC…) for RSS lookups.
 	 * The result is cached on the subscription row; @handle URLs are resolved
-	 * once via a single flat yt-dlp browse request.
+	 * once via a single flat yt-dlp browse request, which also yields the
+	 * channel's video count.
 	 */
 	private async resolveChannelId(subscription: any): Promise<string | null> {
 		if (subscription.channelId) return subscription.channelId;
@@ -342,29 +438,20 @@ class SubscriptionService {
 			return fromUrl;
 		}
 
-		const defaults = await this.getYtdlpDefaults(subscription);
-		const json = await runYtdlpJson(subscription.url, {
-			proxyUrl: defaults.proxyUrl,
-			extraArgs: [
-				'--playlist-items',
-				'0',
-				...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
-			],
-			timeoutMs: 30000,
-		});
-		const channelId = (() => {
-			try {
-				return JSON.parse(json)?.channel_id ?? null;
-			} catch {
-				return null;
-			}
-		})();
-		if (channelId) {
+		const meta = await this.fetchChannelMeta(subscription.url, subscription.userId);
+		if (meta?.channelId) {
 			await prisma.subscription
-				.update({ where: { id: subscription.id }, data: { channelId } })
+				.update({
+					where: { id: subscription.id },
+					data: {
+						channelId: meta.channelId,
+						...(meta.videoCount !== null ? { videoCount: meta.videoCount } : {}),
+					},
+				})
 				.catch(() => {});
+			return meta.channelId;
 		}
-		return channelId;
+		return null;
 	}
 
 	/**
@@ -523,6 +610,10 @@ class SubscriptionService {
 		}
 
 		console.log(`[Subscriptions] Seeded archive with ${seeded} videos for ${subscription.name}`);
+
+		// Populate the card's video count (and the cached channel ID) from the
+		// same browse call shape — fire-and-forget so seeding isn't slowed down.
+		void this.refreshChannelMeta(subscriptionId);
 		return seeded;
 	}
 
@@ -736,11 +827,8 @@ class SubscriptionService {
 	 * Stop all scheduled tasks
 	 */
 	stopAll(): void {
-		for (const [id, task] of this.scheduledTasks.entries()) {
-			task.stop();
-		}
-		this.scheduledTasks.clear();
-		console.log('[Subscriptions] Stopped all tasks');
+		// DB queue tasks are stopped by stopping the QueueService
+		console.log('[Subscriptions] stopAll called');
 	}
 }
 

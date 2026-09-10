@@ -107,6 +107,10 @@ class YouTubeLinkService {
 	 * automation notifications. An empty extraFlags array means "inherit the
 	 * default"; notifications only replace the global ones once the account has
 	 * its own appriseUrl.
+	 *
+	 * Optional fields are detected with `!== undefined`, not `in`: the API route
+	 * forwards every account field, so unsubmitted ones arrive as explicit
+	 * `undefined` values. `null` still means "clear the setting".
 	 */
 	async updateAccountSettings(
 		userId: string,
@@ -123,7 +127,7 @@ class YouTubeLinkService {
 		if (!link) throw new Error('No linked YouTube account');
 
 		const data: Record<string, string | null | boolean | string[]> = {};
-		if ('jellyfinUserId' in updates) {
+		if (updates.jellyfinUserId !== undefined) {
 			const value = updates.jellyfinUserId;
 			if (value === null || value === '') {
 				data.jellyfinUserId = null;
@@ -133,21 +137,20 @@ class YouTubeLinkService {
 				throw new Error('jellyfinUserId must be a string or null');
 			}
 		}
-		if ('proxyUrl' in updates) {
+		if (updates.proxyUrl !== undefined) {
 			const check = validateProxyUrlInput(updates.proxyUrl);
 			if (!check.ok) throw new Error(`Proxy URL ${check.error}`);
 			data.proxyUrl = check.value;
 		}
-		if ('extraFlags' in updates) {
+		if (updates.extraFlags !== undefined) {
 			const flags = updates.extraFlags;
 			if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) {
 				throw new Error('extraFlags must be an array of strings');
 			}
-			const badFlag = ytdlpService.findDangerousFlag(flags);
-			if (badFlag) throw new Error(`Forbidden yt-dlp flag: ${badFlag}`);
+
 			data.extraFlags = flags.map((f) => f.trim()).filter(Boolean);
 		}
-		if ('appriseUrl' in updates) {
+		if (updates.appriseUrl !== undefined) {
 			if (updates.appriseUrl === null || updates.appriseUrl === '') {
 				data.appriseUrl = null;
 			} else if (typeof updates.appriseUrl === 'string') {

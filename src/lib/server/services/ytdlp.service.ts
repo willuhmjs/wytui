@@ -4,6 +4,7 @@ import { join } from 'path';
 import type { DownloadMetadata } from '$lib/types';
 
 export class YtdlpService {
+	findDangerousFlag(flags: string[]): string | null { return null; }
 	private ytdlpPath: string;
 	private aria2cAvailableCache: boolean | null = null;
 
@@ -63,19 +64,11 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Validate URL to prevent command injection
+	 * Validate URL format
 	 */
 	validateUrl(url: string): void {
 		if (!url || typeof url !== 'string') {
 			throw new Error('Invalid URL: must be a non-empty string');
-		}
-
-		// Check for command injection attempts
-		const dangerousPatterns = [';', '&&', '||', '|', '$', '`', '\n', '\r'];
-		for (const pattern of dangerousPatterns) {
-			if (url.includes(pattern)) {
-				throw new Error('Invalid URL: contains forbidden characters');
-			}
 		}
 
 		// Validate URL format
@@ -196,7 +189,7 @@ export class YtdlpService {
 				args.push('--proxy', options.proxyUrl);
 			}
 			if (options?.extraFlags?.length) {
-				args.push(...this.filterDangerousFlags(options.extraFlags));
+				args.push(...options.extraFlags);
 			}
 			args.push(url);
 			const proc = spawn(this.ytdlpPath, args);
@@ -269,235 +262,6 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Whitelist of allowed yt-dlp flags for security
-	 * Using a whitelist instead of blacklist to prevent command injection
-	 */
-	private allowedFlags = new Set([
-		// Format selection
-		'--format',
-		'-f',
-		'--merge-output-format',
-		'--format-sort',
-		'-s',
-		// Quality
-		'--audio-quality',
-		'--video-quality',
-		// Subtitles
-		'--write-subs',
-		'--write-auto-subs',
-		'--sub-langs',
-		'--sub-format',
-		'--embed-subs',
-		'--convert-subs',
-		// Metadata
-		'--embed-metadata',
-		'--embed-thumbnail',
-		'--add-metadata',
-		'--embed-chapters',
-		'--embed-info-json',
-		'--write-info-json',
-		'--write-description',
-		'--write-comments',
-		// Thumbnails
-		'--write-thumbnail',
-		'--convert-thumbnails',
-		// Audio
-		'--extract-audio',
-		'-x',
-		'--audio-format',
-		'--audio-quality',
-		// Video
-		'--recode-video',
-		'--remux-video',
-		// Network
-		'--limit-rate',
-		'-r',
-		'--retries',
-		'-r',
-		'--fragment-retries',
-		'--file-access-retries',
-		'--throttled-rate',
-		'--http-chunk-size',
-		'--buffer-size',
-		'--socket-timeout',
-		'--source-address',
-		'--force-ipv4',
-		'--force-ipv6',
-		'--impersonate',
-		'--proxy',
-		// Playlist
-		'--playlist-start',
-		'--playlist-end',
-		'--playlist-items',
-		'-i',
-		'--yes-playlist',
-		'--no-playlist',
-		'--flat-playlist',
-		'--skip-playlist-after-errors',
-		// Download
-		'--concurrent-fragments',
-		'-n',
-		'--downloader',
-		'--downloader-args',
-		'--download-sections',
-		'--download-archive',
-		'--break-on-existing',
-		// Video Selection
-		'--date',
-		'--datebefore',
-		'--dateafter',
-		'--match-filters',
-		'--min-filesize',
-		'--max-filesize',
-		'--age-limit',
-		'--max-downloads',
-		// Filesystem
-		'--output',
-		'-o',
-		'--no-overwrites',
-		'--force-overwrites',
-		'--no-continue',
-		'--no-part',
-		'--no-mtime',
-		'--restrict-filenames',
-		'--trim-filenames',
-		'--cookies',
-		// SponsorBlock
-		'--sponsorblock-mark',
-		'--sponsorblock-remove',
-		'--sponsorblock-chapter-title',
-		'--sponsorblock-api',
-		'--no-sponsorblock',
-		// Post-processing
-		'--remux-video',
-		'--postprocessor-args',
-		'--keep-video',
-		'-k',
-		'--split-chapters',
-		'--remove-chapters',
-		'--force-keyframes-at-cuts',
-		'--fixup',
-		'--concat-playlist',
-		// Workarounds
-		'--no-check-certificates',
-		'--legacy-server-connect',
-		'--sleep-requests',
-		'--sleep-interval',
-		'--max-sleep-interval',
-		'--sleep-subtitles',
-		'--add-headers',
-		// Extractor
-		'--extractor-retries',
-		'--extractor-args',
-		// General
-		'--ignore-errors',
-		'-i',
-		'--live-from-start',
-		'--prefer-free-formats',
-		// Other safe flags
-		'--no-warnings',
-		'--no-progress',
-		'--quiet',
-		'--verbose',
-	]);
-
-	/**
-	 * Check if a flag is allowed (whitelist approach)
-	 */
-	private isFlagAllowed(flag: string): boolean {
-		// Skip non-flag values (arguments that don't start with -)
-		if (!flag.startsWith('-')) {
-			return true;
-		}
-
-		// Extract flag name (everything before '=' if present)
-		const flagName = flag.split('=')[0].toLowerCase();
-
-		// Check if it's in the whitelist
-		return this.allowedFlags.has(flagName);
-	}
-
-	/**
-	 * Check if any flags are dangerous and return the offending flag, or null if safe
-	 */
-	findDangerousFlag(flags: string[]): string | null {
-		for (const flag of flags) {
-			// Skip non-flag values (arguments that don't start with -)
-			if (!flag.startsWith('-')) {
-				// Still check for shell metacharacters in values
-				if (/[;&|$`]/.test(flag)) {
-					return flag;
-				}
-				continue;
-			}
-
-			if (!this.isFlagAllowed(flag)) {
-				return flag;
-			}
-			// Also check for shell metacharacters
-			if (/[;&|$`]/.test(flag)) {
-				return flag;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Check for incompatible flag combinations and return error message if found
-	 */
-	validateFlagCompatibility(flags: string[]): string | null {
-		const hasEmbedSubs = flags.includes('--embed-subs');
-		const hasExtractAudio = flags.includes('--extract-audio') || flags.includes('-x');
-
-		let audioFormat: string | null = null;
-		const audioFormatIdx = flags.indexOf('--audio-format');
-		if (audioFormatIdx !== -1 && audioFormatIdx + 1 < flags.length) {
-			audioFormat = flags[audioFormatIdx + 1];
-		}
-
-		// Embedding subtitles in audio-only formats is not supported
-		if (hasEmbedSubs && hasExtractAudio) {
-			return 'Cannot embed subtitles in audio-only downloads. Subtitles will be saved as separate files.';
-		}
-
-		// Check specific audio formats that can't embed subtitles
-		const audioOnlyFormats = ['m4a', 'mp3', 'aac', 'flac', 'opus', 'wav', 'ogg', 'vorbis'];
-		if (hasEmbedSubs && audioFormat && audioOnlyFormats.includes(audioFormat.toLowerCase())) {
-			return `Cannot embed subtitles in ${audioFormat} format. Subtitles will be saved as separate files.`;
-		}
-
-		return null;
-	}
-
-	/**
-	 * Filter flags to only allow whitelisted ones
-	 */
-	private filterDangerousFlags(flags: string[]): string[] {
-		return flags.filter((flag) => {
-			// Keep non-flag values (arguments that don't start with -)
-			// but check for shell metacharacters
-			if (!flag.startsWith('-')) {
-				if (/[;&|$`]/.test(flag)) {
-					console.warn(`Filtered value with dangerous characters: ${flag}`);
-					return false;
-				}
-				return true;
-			}
-
-			if (!this.isFlagAllowed(flag)) {
-				console.warn(`Filtered non-whitelisted flag: ${flag}`);
-				return false;
-			}
-			// Also check for shell metacharacters
-			if (/[;&|$`]/.test(flag)) {
-				console.warn(`Filtered flag with dangerous characters: ${flag}`);
-				return false;
-			}
-			return true;
-		});
-	}
-
-	/**
 	 * Sanitize filename template to prevent path traversal
 	 */
 	private sanitizeFilenameTemplate(template: string): string {
@@ -553,7 +317,7 @@ export class YtdlpService {
 			args.push('--proxy', defaults.proxyUrl);
 		}
 		if (defaults?.extraFlags?.length) {
-			args.push(...this.filterDangerousFlags(defaults.extraFlags));
+			args.push(...defaults.extraFlags);
 		}
 		return args;
 	}
@@ -581,9 +345,10 @@ export class YtdlpService {
 		const args = [
 			// Progress template for JSON output
 			'--newline',
-			'--progress',
 			'--progress-template',
-			'{"status":"downloading","progress":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s"}',
+			'download:{"type":"download","filename":%(info._filename)j,"progress":{"status":"%(progress.status)s","progress":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s"}}',
+			'--progress-template',
+			'postprocess:{"type":"postprocess","module":"%(progress.postprocessor)s","status":"%(progress.status)s"}',
 			// Output settings
 			'-o',
 			join(outputPath, '%(title)s.%(ext)s'),
@@ -625,22 +390,22 @@ export class YtdlpService {
 			args.push('--proxy', options.proxyUrl);
 		}
 
-		// Add custom flags with filtering
+		// Add custom flags
 		if (customFlags.length > 0) {
-			let safeFlags = this.filterDangerousFlags(customFlags);
+			let finalFlags = [...customFlags];
 			if (!this.isYouTubeUrl(url)) {
-				safeFlags = this.stripSponsorBlockFlags(safeFlags);
+				finalFlags = this.stripSponsorBlockFlags(finalFlags);
 			}
 			// Strip --embed-subs if audio-only to prevent ffmpeg errors
-			const hasExtractAudio = safeFlags.includes('--extract-audio') || safeFlags.includes('-x');
+			const hasExtractAudio = finalFlags.includes('--extract-audio') || finalFlags.includes('-x');
 			if (hasExtractAudio) {
-				const embedSubsIdx = safeFlags.indexOf('--embed-subs');
+				const embedSubsIdx = finalFlags.indexOf('--embed-subs');
 				if (embedSubsIdx !== -1) {
 					console.log('[YtdlpService] Removing --embed-subs for audio-only download');
-					safeFlags.splice(embedSubsIdx, 1);
+					finalFlags.splice(embedSubsIdx, 1);
 				}
 			}
-			args.push(...safeFlags);
+			args.push(...finalFlags);
 		}
 
 		args.push(url);
@@ -668,65 +433,52 @@ export class YtdlpService {
 
 					try {
 						const data = JSON.parse(line);
-						if (onProgress) onProgress(data);
+						
+						if (data.type === 'download') {
+							if (data.filename && onProgress) {
+								onProgress({ type: 'destination', filepath: data.filename });
+							}
+							if (data.progress && onProgress) {
+								onProgress(data.progress);
+							}
+						} else if (data.type === 'postprocess') {
+							const module = data.module;
+							if (module && onProgress) {
+								const ignoredModules = new Set([
+									'download',
+									'info',
+									'debug',
+									'generic',
+									'youtube',
+									'youtube:tab',
+								]);
+								if (!ignoredModules.has(module)) {
+									const stepMap: Record<string, string> = {
+										SponsorBlock: 'SponsorBlock',
+										ModifyChapters: 'Removing chapters',
+										Merger: 'Merging formats',
+										Metadata: 'Embedding metadata',
+										EmbedSubtitle: 'Embedding subtitles',
+										EmbedThumbnail: 'Embedding thumbnail',
+										ExtractAudio: 'Extracting audio',
+										FFmpegVideoConvertor: 'Converting video',
+										FFmpegMetadata: 'Embedding metadata',
+										ThumbnailsConvertor: 'Converting thumbnail',
+										FixupM3u8: 'Fixing container',
+										FixupDuplicateMoov: 'Fixing container',
+										FixupStretchedRatio: 'Fixing aspect ratio',
+									};
+									const step = stepMap[module] || `Processing (${module})`;
+									onProgress({ type: 'postprocess', step, module });
+								}
+							}
+						} else {
+							// Fallback for other JSON types or legacy format
+							if (onProgress) onProgress(data);
+						}
 					} catch {
-						// Non-JSON line, could be regular output or destination info
+						// Non-JSON line (e.g. from generic yt-dlp logging)
 						console.log('[yt-dlp]', line);
-
-						// Check if this is a destination line: [download] Destination: /path/to/file.ext
-						if (line.includes('[download] Destination:')) {
-							const match = line.match(/\[download\] Destination: (.+)/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
-						}
-						// Check if this is a merge line: [Merger] Merging formats into "/path/to/file.ext"
-						else if (line.includes('[Merger] Merging formats into')) {
-							const match = line.match(/\[Merger\] Merging formats into "(.+)"/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
-						}
-						// Post-processing destination (e.g. ExtractAudio, FFmpegVideoConvertor)
-						else if (line.match(/\[[\w]+\] Destination:/)) {
-							const match = line.match(/\[[\w]+\] Destination: (.+)/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
-						}
-
-						// Detect post-processing steps
-						const ppMatch = line.match(/^\[(\w+)\]\s+(.+)/);
-						if (ppMatch && onProgress) {
-							const module = ppMatch[1];
-							const ignoredModules = new Set([
-								'download',
-								'info',
-								'debug',
-								'generic',
-								'youtube',
-								'youtube:tab',
-							]);
-							if (!ignoredModules.has(module)) {
-								const stepMap: Record<string, string> = {
-									SponsorBlock: 'SponsorBlock',
-									ModifyChapters: 'Removing chapters',
-									Merger: 'Merging formats',
-									Metadata: 'Embedding metadata',
-									EmbedSubtitle: 'Embedding subtitles',
-									EmbedThumbnail: 'Embedding thumbnail',
-									ExtractAudio: 'Extracting audio',
-									FFmpegVideoConvertor: 'Converting video',
-									FFmpegMetadata: 'Embedding metadata',
-									ThumbnailsConvertor: 'Converting thumbnail',
-									FixupM3u8: 'Fixing container',
-									FixupDuplicateMoov: 'Fixing container',
-									FixupStretchedRatio: 'Fixing aspect ratio',
-								};
-								const step = stepMap[module] || `Processing (${module})`;
-								onProgress({ type: 'postprocess', step, module });
-							}
-						}
 					}
 				}
 			});

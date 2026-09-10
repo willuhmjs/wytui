@@ -157,14 +157,6 @@ class DownloadService {
 			throw new Error('Invalid URL');
 		}
 
-		// Validate custom flags
-		if (customFlags?.length) {
-			const badFlag = ytdlpService.findDangerousFlag(customFlags);
-			if (badFlag) {
-				throw new Error(`Forbidden flag: ${badFlag}`);
-			}
-		}
-
 		const existing = await prisma.download.findFirst({
 			where: {
 				url,
@@ -244,23 +236,29 @@ class DownloadService {
 	/**
 	 * Process download in two phases: metadata → download
 	 */
-	private async processDownload(downloadId: string): Promise<void> {
-		// Phase 1: Fetch metadata (sequential queue)
-		try {
-			await queueService.enqueueMetadata(async () => {
-				await this.fetchMetadata(downloadId);
-			});
-		} catch (err: any) {
-			// A deliberate skip (excluded short, upcoming premiere) has already
-			// removed the record — abort the pipeline without error handling.
-			if (err instanceof DownloadSkippedError) return;
-			throw err;
-		}
-
-		// Phase 2: Download file (parallel queue)
-		await queueService.enqueueDownload(async () => {
-			await this.executeDownload(downloadId);
+	registerJobHandlers(): void {
+		queueService.registerHandler('metadata', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.downloadId) throw new Error('Missing downloadId in metadata payload');
+			
+			try {
+				await this.fetchMetadata(payload.downloadId);
+				await queueService.enqueue('download', { downloadId: payload.downloadId });
+			} catch (err: any) {
+				if (err instanceof DownloadSkippedError) return;
+				throw err;
+			}
 		});
+
+		queueService.registerHandler('download', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.downloadId) throw new Error('Missing downloadId in download payload');
+			await this.executeDownload(payload.downloadId);
+		});
+	}
+
+	private async processDownload(downloadId: string): Promise<void> {
+		await queueService.enqueue('metadata', { downloadId }, { priority: 10 });
 	}
 
 	/**

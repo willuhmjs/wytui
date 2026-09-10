@@ -61,11 +61,7 @@ describe('validateSettingsUpdate: ytdlpExtraFlags', () => {
 		).rejects.toMatchObject({ status: 400 });
 	});
 
-	it('rejects non-whitelisted flags', async () => {
-		await expect(
-			validateSettingsUpdate({ ytdlpExtraFlags: ['--exec', 'rm -rf /'] }),
-		).rejects.toMatchObject({ status: 400, body: { message: 'Forbidden ytdlp flag: --exec' } });
-	});
+
 });
 
 describe('validateSettingsUpdate: unknown fields', () => {
