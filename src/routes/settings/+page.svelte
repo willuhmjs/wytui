@@ -1471,19 +1471,23 @@
 			const res = await csrfFetch('/api/youtube/watch-later', {
 				method: 'POST',
 			});
-			if (res.ok) {
-				const data = await res.json();
-				if (data.needsRelink) {
-					addToast('error', 'YouTube session expired — re-link via the extension');
-					youtubeLink = { linked: false };
-				} else {
-					addToast('success', 'Playlists synced');
-				}
+			const data = await res.json().catch(() => null);
+			if (data?.needsRelink) {
+				addToast('error', 'YouTube session expired — re-link via the extension');
+				youtubeLink = { linked: false };
+			} else if (!res.ok) {
+				addToast('error', data?.error ?? 'Failed to sync Watch Later');
 			} else {
-				addToast('error', 'Failed to sync playlists');
+				const added = data.added ?? 0;
+				addToast(
+					'success',
+					added > 0
+						? `Watch Later synced — ${added} new video${added === 1 ? '' : 's'} added`
+						: 'Watch Later synced — nothing new',
+				);
 			}
 		} catch {
-			addToast('error', 'Failed to sync playlists');
+			addToast('error', 'Failed to sync Watch Later');
 		} finally {
 			syncingWatchLater = false;
 		}
@@ -1501,14 +1505,21 @@
 				if (data.needsRelink) {
 					addToast('error', 'YouTube session expired — re-link via the extension');
 					youtubeLink = { linked: false };
-				} else {
-					const marked = data.marked ?? 0;
-					const jf = data.jellyfin;
-					let msg = `History synced \u2014 ${marked} video${marked === 1 ? '' : 's'} marked watched`;
-					if (jf?.user && jf.marked > 0) {
-						msg += `, ${jf.marked} marked played in Jellyfin`;
-					}
-					addToast('success', msg);
+					return;
+				}
+				if (data.errors?.length) {
+					addToast('error', data.errors[0]);
+					return;
+				}
+				const marked = data.marked ?? 0;
+				const jf = data.jellyfin;
+				let msg = `History synced \u2014 ${marked} video${marked === 1 ? '' : 's'} marked watched`;
+				if (jf?.user && jf.marked > 0) {
+					msg += `, ${jf.marked} marked played in Jellyfin`;
+				}
+				addToast('success', msg);
+				if (data.watchLaterAdded > 0) {
+					addToast('info', `Watch Later synced — ${data.watchLaterAdded} new video(s) added`);
 				}
 			} else {
 				addToast('error', 'Failed to sync history');
@@ -1944,7 +1955,7 @@
 									checked={youtubeLink.toggles?.syncWatchLater ?? false}
 									onchange={(e) => updateYouTubeToggle('syncWatchLater', e.currentTarget.checked)}
 								/>
-								Sync playlists
+								Sync Watch Later
 							</label>
 							<label>
 								<input
@@ -2092,7 +2103,7 @@
 								onclick={syncWatchLater}
 								disabled={syncingWatchLater}
 							>
-								{syncingWatchLater ? 'Syncing…' : 'Sync playlists'}
+								{syncingWatchLater ? 'Syncing…' : 'Sync Watch Later'}
 							</button>
 							<button class="btn btn-secondary" onclick={syncHistory} disabled={syncingHistory}>
 								{syncingHistory ? 'Syncing…' : 'Sync History Now'}

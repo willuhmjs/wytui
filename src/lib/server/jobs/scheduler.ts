@@ -146,6 +146,10 @@ class JobScheduler {
 		this.youtubeSyncTask = cron.schedule('*/30 * * * *', async () => {
 			await this.logJobRun('youtube-sync', async () => {
 				await youtubeSyncService.runOnce();
+			}).catch((e) => {
+				// logJobRun has already recorded the failed run; keep the error
+				// out of node-cron's callback so it can't crash the process.
+				console.error('[Scheduler] youtube-sync failed:', e);
 			});
 		});
 
@@ -153,7 +157,7 @@ class JobScheduler {
 			name: 'youtube-sync',
 			cron: '*/30 * * * *',
 			enabled: true,
-			description: 'Sync YouTube watch history and watched status',
+			description: 'Sync YouTube watch history, watched status, and Watch Later',
 		});
 
 		// Schedule automated backups if enabled

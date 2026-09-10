@@ -61,6 +61,8 @@
 	const unsubProgress = onSSEEvent('playlist:sync:progress', (data) => {
 		if (data.rateLimited) {
 			addToast('info', `Rate limited on "${data.title}" — backing off, will continue`);
+		} else if (data.error) {
+			addToast('error', `Failed to fetch "${data.title}"${data.message ? `: ${data.message}` : ''}`);
 		}
 	});
 	const unsubComplete = onSSEEvent('playlist:sync:complete', (data) => {
@@ -70,7 +72,15 @@
 			addToast('error', 'YouTube session expired — re-link via the extension');
 			return;
 		}
-		addToast('success', `Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`);
+		const failed = data.failed ?? 0;
+		if (failed > 0) {
+			addToast(
+				'error',
+				`Synced ${data.totalAdded ?? 0} video(s), but ${failed} of ${data.total} playlist(s) failed — check server logs`,
+			);
+		} else {
+			addToast('success', `Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`);
+		}
 		onSynced?.();
 	});
 

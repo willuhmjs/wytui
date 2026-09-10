@@ -16,5 +16,5 @@ export const POST: RequestHandler = async ({ locals }) => {
 		return json({ needsRelink: true });
 	}
 	const result = await youtubeSyncService.syncForUser(userId);
-	return json({ success: true, ...result });
+	return json({ success: !result.needsRelink && !result.errors?.length, ...result });
 };

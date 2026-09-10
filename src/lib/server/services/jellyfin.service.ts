@@ -264,8 +264,8 @@ class JellyfinService {
 				}
 				throw new Error(
 					`The path ${path} overlaps with the existing "${vf.Name}" library (${resolve(loc)}). ` +
-					`Remove that library in Jellyfin or use a dedicated path — creating another one would scan the same files twice.` +
-					(overlapHint ? ` ${overlapHint}` : ''),
+						`Remove that library in Jellyfin or use a dedicated path — creating another one would scan the same files twice.` +
+						(overlapHint ? ` ${overlapHint}` : ''),
 				);
 			}
 		}
@@ -302,13 +302,16 @@ class JellyfinService {
 			collectionType === 'movies' ? MOVIES_LIBRARY_OPTIONS : MUSIC_LIBRARY_OPTIONS;
 		const res = await internalFetch(
 			`${baseUrl}/Library/VirtualFolders` +
-			`?name=${encodeURIComponent(name)}` +
-			`&collectionType=${collectionType}` +
-			`&paths=${encodeURIComponent(path)}` +
-			`&refreshCollection=true`,
+				`?name=${encodeURIComponent(name)}` +
+				`&collectionType=${collectionType}` +
+				`&paths=${encodeURIComponent(path)}` +
+				`&refreshCollection=true`,
 			{
 				method: 'POST',
-				headers: { Authorization: `MediaBrowser Token="${apiKey}"`, 'Content-Type': 'application/json' },
+				headers: {
+					Authorization: `MediaBrowser Token="${apiKey}"`,
+					'Content-Type': 'application/json',
+				},
 				body: JSON.stringify({ LibraryOptions: libraryOptions }),
 				signal: AbortSignal.timeout(30000),
 			},

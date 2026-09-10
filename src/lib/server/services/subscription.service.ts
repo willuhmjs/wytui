@@ -129,21 +129,32 @@ class SubscriptionService {
 					where: { userId: subscription.userId },
 				});
 				if (link?.useFeedForNewVideos) {
-					const feed = await youtubeService.fetchSubscriptionFeed(subscription.userId);
-					if (!('needsRelink' in feed)) {
-						const matched = this.matchFeedToSubscription(feed, subscription);
-						if (matched.length > 0) {
-							videos = matched;
-							// The linked-account feed only surfaces recent uploads, so an
-							// archived entry reappearing there is almost certainly new.
-							trustUndatedEntries = true;
-							console.log(
-								`[Subscriptions] Using YouTube feed for ${subscription.name}: ${videos.length} candidate(s)`,
-							);
+					try {
+						const feed = await youtubeService.fetchSubscriptionFeed(subscription.userId);
+						if (!('needsRelink' in feed)) {
+							const matched = this.matchFeedToSubscription(feed, subscription);
+							if (matched.length > 0) {
+								videos = matched;
+								// The linked-account feed only surfaces recent uploads, so an
+								// archived entry reappearing there is almost certainly new.
+								trustUndatedEntries = true;
+								console.log(
+									`[Subscriptions] Using YouTube feed for ${subscription.name}: ${videos.length} candidate(s)`,
+								);
+							}
+							// if matched.length === 0 we leave videos = null and fall through to polling
 						}
-						// if matched.length === 0 we leave videos = null and fall through to polling
+						// needsRelink → leave videos = null, fall through to normal polling (graceful degradation)
+					} catch (err: any) {
+						// Rate limits are IP-wide — don't fall back to more yt-dlp traffic.
+						if (err?.isRateLimit) throw err;
+						// A dead session or a transient fetch failure degrades to normal
+						// polling rather than failing the whole check.
+						console.warn(
+							`[Subscriptions] Feed unavailable for ${subscription.name}, falling back to polling:`,
+							err?.message ?? err,
+						);
 					}
-					// needsRelink → leave videos = null, fall through to normal polling (graceful degradation)
 				}
 			}
 			if (videos === null) {

@@ -3,7 +3,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { youtubeLinkService } from './youtube-link.service';
-import { runYtdlpJson, RateLimitError } from '../utils/ytdlp-json';
+import { runYtdlpJson, RateLimitError, YtdlpAuthError } from '../utils/ytdlp-json';
 import { prisma } from '../db';
 
 export interface YtEntry {
@@ -134,10 +134,12 @@ class YouTubeService {
 				});
 				return parseFlatEntries(json);
 			} catch (err) {
-				// Surface rate-limit errors to callers so they can back off rather than
-				// silently treating them as an auth failure.
+				// Rate limits and transient failures (timeouts, proxy/network errors)
+				// propagate so callers can back off or retry; only a genuine
+				// dead-session error means the account must be re-linked.
 				if (err instanceof RateLimitError) throw err;
-				return { needsRelink: true } as NeedsRelink;
+				if (err instanceof YtdlpAuthError) return { needsRelink: true } as NeedsRelink;
+				throw err;
 			}
 		});
 	}
@@ -162,11 +164,11 @@ class YouTubeService {
 	fetchSubscriptionFeed(userId: string) {
 		return this.fetchList(userId, 'https://www.youtube.com/feed/subscriptions');
 	}
-	fetchWatchLater(userId: string) {
-		return this.fetchList(userId, ':ytwatchlater');
+	fetchWatchLater(userId: string, opts: { timeoutMs?: number } = {}) {
+		return this.fetchList(userId, ':ytwatchlater', opts);
 	}
-	fetchHistory(userId: string) {
-		return this.fetchList(userId, ':ythistory');
+	fetchHistory(userId: string, opts: { timeoutMs?: number } = {}) {
+		return this.fetchList(userId, ':ythistory', opts);
 	}
 	fetchPlaylist(userId: string, url: string, opts: { timeoutMs?: number } = {}) {
 		return this.fetchList(userId, url, opts);
@@ -176,8 +178,8 @@ class YouTubeService {
 	 * Enumerate the user's YouTube playlists: their created/saved playlists (from
 	 * the library feed) plus the special Liked and Watch Later lists, which the
 	 * feed does not always surface. Returns a deduped list; the special lists are
-	 * pinned to the top. Best-effort — a failure to read the feed still returns
-	 * the special lists.
+	 * pinned to the top. Auth failures resolve to {@link NeedsRelink}; transient
+	 * fetch failures throw so callers can surface the real reason.
 	 */
 	async enumeratePlaylists(
 		userId: string,

@@ -10,9 +10,14 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const userId = requireAuth(locals);
 	const refresh = url.searchParams.get('refresh') === '1';
-	const result = await youtubeService.fetchSubscriptions(userId, { refresh });
-	if ('needsRelink' in result) return json({ needsRelink: true });
-	return json({ channels: result });
+	try {
+		const result = await youtubeService.fetchSubscriptions(userId, { refresh });
+		if ('needsRelink' in result) return json({ needsRelink: true });
+		return json({ channels: result });
+	} catch (err: any) {
+		console.error('[YouTube Subscriptions] Failed to list subscriptions:', err?.message ?? err);
+		return json({ error: err?.message ?? 'Failed to load subscriptions' }, { status: 502 });
+	}
 };
 
 // POST: create wytui subscriptions for the chosen channels. Each one is scheduled

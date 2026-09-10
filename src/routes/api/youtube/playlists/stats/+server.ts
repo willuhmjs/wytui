@@ -22,6 +22,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		if (err instanceof RateLimitError) {
 			return json({ rateLimited: true }, { status: 429 });
 		}
-		throw error(500, 'Failed to fetch playlist stats');
+		console.error('[YouTube Playlists] Failed to fetch playlist stats:', err);
+		return json({ error: 'Failed to fetch playlist stats' }, { status: 502 });
 	}
 };

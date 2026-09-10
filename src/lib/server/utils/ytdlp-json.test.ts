@@ -106,6 +106,53 @@ describe('runYtdlpJson', () => {
 		await expect(promise).rejects.toThrow('ERROR: boom');
 	});
 
+	it('rejects with RateLimitError on HTTP 429', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson, RateLimitError } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET');
+		p.stderr.emit('data', 'ERROR: [youtube:tab] HTTP Error 429: Too Many Requests');
+		p.emit('close', 1);
+		await expect(promise).rejects.toBeInstanceOf(RateLimitError);
+	});
+
+	it('rejects with RateLimitError on bot-check prompts', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson, RateLimitError } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET');
+		p.stderr.emit('data', 'ERROR: Sign in to confirm you\u2019re not a bot');
+		p.emit('close', 1);
+		await expect(promise).rejects.toBeInstanceOf(RateLimitError);
+	});
+
+	it('rejects with YtdlpAuthError on dead-session errors', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson, YtdlpAuthError } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET');
+		p.stderr.emit(
+			'data',
+			'ERROR: [youtube] This account has been terminated due to a claim of copyright infringement',
+		);
+		p.emit('close', 1);
+		await expect(promise).rejects.toBeInstanceOf(YtdlpAuthError);
+	});
+
+	it('keeps network/transient failures as plain errors with stderr text', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson, RateLimitError, YtdlpAuthError } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET');
+		p.stderr.emit('data', 'ERROR: Unable to download webpage: FooBar (caused by ProxyError)');
+		p.emit('close', 1);
+		const err = await promise.catch((e) => e);
+		expect(err).toBeInstanceOf(Error);
+		expect(err).not.toBeInstanceOf(RateLimitError);
+		expect(err).not.toBeInstanceOf(YtdlpAuthError);
+		expect(err.message).toContain('Unable to download webpage');
+	});
+
 	it('kills the process and rejects when the timeout elapses', async () => {
 		vi.useFakeTimers();
 		const p = fakeProc();
