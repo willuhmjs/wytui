@@ -5,21 +5,12 @@
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
 	import { trapFocus } from '$lib/utils/a11y';
-	import PathBrowser from '$lib/components/ui/PathBrowser.svelte';
 	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
 	import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
-	import BellIcon from '$lib/components/icons/BellIcon.svelte';
-	import UsersIcon from '$lib/components/icons/UsersIcon.svelte';
-	import LockIcon from '$lib/components/icons/LockIcon.svelte';
-	import ShieldIcon from '$lib/components/icons/ShieldIcon.svelte';
-	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
-	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
 	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
-	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
-	import { REPO_URL } from '$lib/extension-links';
 
 	interface Props {
 		data: {
@@ -31,9 +22,10 @@
 				};
 			} | null;
 		};
+		children: import('svelte').Snippet;
 	}
 
-	let { data, children }: { data: any, children: import("svelte").Snippet } = $props();
+	let { data, children }: Props = $props();
 
 	let settings = $state<any>(null);
 	let settingsError = $state<string | null>(null);
@@ -61,19 +53,22 @@
 import { untrack } from 'svelte';
 $effect(() => {
     const tab = activeTab;
+    const urlSection = $page.url.searchParams.get('section');
     const valid = settingsSections.map((s) => s.id);
     
     untrack(() => {
-        if (!activeSection || !valid.includes(activeSection)) {
+        if (urlSection && valid.includes(urlSection)) {
+            activeSection = urlSection;
+        } else if (!activeSection || !valid.includes(activeSection)) {
             if (tab === 'account') activeSection = 'account';
-            else if (tab === 'app') activeSection = 'storage';
+            else if (tab === 'app' && settingsLoaded) activeSection = 'storage';
             else if (tab === 'users') activeSection = 'user-management';
         }
     });
 });
 
 	// Settings sections grouped into labeled categories. The flat list of
-	// section ids (derived below) is used for scroll-spy / IntersectionObserver.
+	// section ids (derived below) is used for quick navigation.
 	let settingsGroups = [
 		{
 			label: 'Storage & Library',
@@ -156,7 +151,7 @@ $effect(() => {
 	// Flat list of section ids for the current tab (used by the scroll-spy observer).
 	let settingsSections = $derived(navGroups.flatMap((g) => g.sections));
 
-	// Switching tabs swaps the quick-nav out, so point the scroll-spy at the new
+	// Switching tabs swaps the quick-nav out, so point the active section at the new
 	// tab's first section rather than leaving it on a section that is gone.
 	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
@@ -166,14 +161,9 @@ $effect(() => {
 		goto(`/settings/${tab}`);
 	}
 
-	// Scroll-spy suppression: while a nav link is being clicked we smooth-scroll
-	// and pin the active section so the observer doesn't flash through
-	// intermediate sections. Cleared once the scroll settles (scrollend / fallback).
-	let suppressSpy = false;
-	let suppressSpyTimeout: ReturnType<typeof setTimeout> | undefined;
-
 	function selectSection(sectionId: string) {
 		activeSection = sectionId;
+		goto(`?section=${sectionId}`, { keepFocus: true, replaceState: true });
 	}
 
 	// Create user form
@@ -777,6 +767,7 @@ $effect(() => {
 				return;
 			}
 			settings = data.settings;
+			ytdlpExtraFlagsText = (data.settings.ytdlpExtraFlags ?? []).join('\n');
 			addToast('success', 'Config imported');
 			closeImportPreview();
 		} catch {
@@ -1188,7 +1179,6 @@ $effect(() => {
 
 			if (res.ok) {
 				await loadUsers();
-				usersTotal += 1;
 				showCreateUser = false;
 				newUser = { email: '', password: '', name: '', isAdmin: false };
 			} else {
@@ -1594,6 +1584,11 @@ $effect(() => {
 
 	async function saveUserQuota(user: any) {
 		const raw = (userQuotaDrafts[user.id] ?? '').trim();
+		const gb = Number(raw);
+		if (raw !== '' && (!Number.isFinite(gb) || gb < 0)) {
+			addToast('error', 'Cache override must be zero or more GB');
+			return;
+		}
 		const cacheQuotaBytes =
 			raw === '' ? null : String(Math.round(parseFloat(raw) * 1024 * 1024 * 1024));
 		try {
@@ -2303,20 +2298,21 @@ $effect(() => {
 			>
 		</a>
 		<div class="tabs">
-			<button
+			<a
+				href="/settings/account"
 				class="tab"
 				class:active={activeTab === 'account'}
 				onclick={() => selectTab('account')}
 			>
 				User Settings
-			</button>
+			</a>
 			{#if isAdmin}
-				<button class="tab" class:active={activeTab === 'app'} onclick={() => selectTab('app')}>
+				<a href="/settings/app" class="tab" class:active={activeTab === 'app'} onclick={() => selectTab('app')}>
 					App Settings
-				</button>
-				<button class="tab" class:active={activeTab === 'users'} onclick={() => selectTab('users')}>
+				</a>
+				<a href="/settings/users" class="tab" class:active={activeTab === 'users'} onclick={() => selectTab('users')}>
 					Admin
-				</button>
+				</a>
 			{/if}
 		</div>
 	</div>
@@ -2352,10 +2348,189 @@ $effect(() => {
 	<div class="settings-container">
 		{@render quickNav()}
 		<div class="general-settings">
-			
-			{@render children?.()}
+			{#if activeTab === 'account' || (isAdmin && (activeTab === 'users' || settings))}
+				{@render children?.()}
+			{:else if settingsError}
+				<EmptyState
+					icon={ZapIcon}
+					title="Failed to load settings"
+					description={settingsError}
+				>
+					<button class="btn btn-primary" onclick={loadSettings}>
+						<RefreshIcon /> Retry
+					</button>
+				</EmptyState>
+			{:else}
+				<div style="display: flex; flex-direction: column; gap: 2rem; margin-top: 1rem;">
+					<Skeleton height="200px" />
+					<Skeleton height="300px" />
+					<Skeleton height="150px" />
+				</div>
+			{/if}
 		</div>
 	</div>
 
 	</div>
 
+<!-- Password Change Modal -->
+{#if passwordChangeUserId}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div class="modal-overlay" onclick={closePasswordChange}>
+		<div
+			bind:this={passwordModalEl}
+			class="modal-content"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Change password"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') closePasswordChange();
+			}}
+		>
+			<div class="modal-header">
+				<h3>Change Password</h3>
+				<button class="modal-close" onclick={closePasswordChange}>&times;</button>
+			</div>
+
+			<div class="modal-body">
+				{#if passwordError}
+					<div class="error-message">{passwordError}</div>
+				{/if}
+
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						changePassword();
+					}}
+				>
+					<div class="form-group">
+						<label for="change-new-password">New Password</label>
+						<PasswordInput
+							id="change-new-password"
+							bind:value={passwordForm.newPassword}
+							placeholder="Enter new password"
+							required
+						/>
+						{#if passwordForm.newPassword.length > 0}
+							<div class="password-suggestions">
+								<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}
+									>8+ characters</span
+								>
+								<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}
+									>lowercase</span
+								>
+								<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}
+									>uppercase</span
+								>
+								<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}
+									>number</span
+								>
+								<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}
+									>special character</span
+								>
+							</div>
+						{/if}
+					</div>
+
+					<div class="form-group">
+						<label for="confirm-password">Confirm New Password</label>
+						<PasswordInput
+							id="confirm-password"
+							bind:value={passwordForm.confirmPassword}
+							placeholder="Re-enter new password"
+							required
+						/>
+					</div>
+
+					<div class="modal-actions">
+						<button type="button" class="btn btn-secondary" onclick={closePasswordChange}>
+							Cancel
+						</button>
+						<button type="submit" class="btn btn-primary"> Change Password </button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<ImportSubscriptionsModal bind:open={showImportModal} />
+
+<!-- Import Config Preview Modal -->
+{#if importPreview}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div class="modal-overlay" onclick={closeImportPreview}>
+		<div
+			class="modal-content"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Confirm config import"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') closeImportPreview();
+			}}
+		>
+			<div class="modal-header">
+				<h3>Review Config Import</h3>
+				<button class="modal-close" onclick={closeImportPreview}>&times;</button>
+			</div>
+
+			<div class="modal-body">
+				{#if importError}
+					<div class="error-message">{importError}</div>
+				{/if}
+
+				{#if importPreview.changes.length === 0}
+					<p class="help-text">No changes — this file matches the current settings.</p>
+				{:else}
+					<p class="help-text" style="margin-bottom: var(--spacing-md);">
+						{importPreview.changes.length} setting{importPreview.changes.length === 1 ? '' : 's'} will
+						change. Review carefully before applying — this includes anything affecting login/auth.
+					</p>
+					<table class="import-diff-table">
+						<thead>
+							<tr>
+								<th>Setting</th>
+								<th>Current</th>
+								<th>New</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each importPreview.changes as change (change.field)}
+								<tr>
+									<td class="import-diff-field">{change.field}</td>
+									<td class="import-diff-from">{formatSettingValue(change.from)}</td>
+									<td class="import-diff-to">{formatSettingValue(change.to)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+
+				{#if importPreview.skipped?.length}
+					<p class="help-text" style="margin-top: var(--spacing-md);">
+						Ignored (managed by environment variables): {importPreview.skipped.join(', ')}
+					</p>
+				{/if}
+
+				<div class="modal-actions">
+					<button type="button" class="btn btn-secondary" onclick={closeImportPreview}>
+						Cancel
+					</button>
+					{#if importPreview.changes.length > 0}
+						<button
+							type="button"
+							class="btn btn-danger"
+							onclick={applyImport}
+							disabled={applyingImport}
+						>
+							{applyingImport ? 'Applying...' : 'Apply Changes'}
+						</button>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}

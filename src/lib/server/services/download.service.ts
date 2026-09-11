@@ -15,7 +15,7 @@ import { notificationService } from './notification.service';
 import { subtitleService } from './subtitle.service';
 import { extractVideoId } from '$lib/utils/youtube';
 import { libraryAccessStatus, type LibraryAccess } from '$lib/server/permissions';
-import { ffmpegPercent } from './download-progress';
+
 
 /**
  * Thrown when a download is deliberately abandoned before any bytes are
@@ -155,6 +155,13 @@ class DownloadService {
 		// Validate URL
 		if (!url || !url.startsWith('http')) {
 			throw new Error('Invalid URL');
+		}
+
+		if (customFlags && customFlags.length > 0) {
+			const dangerous = ytdlpService.findDangerousFlag(customFlags);
+			if (dangerous) {
+				throw new Error(`Flag not allowed: ${dangerous}`);
+			}
 		}
 
 		const existing = await prisma.download.findFirst({
@@ -736,54 +743,7 @@ class DownloadService {
 			return;
 		}
 
-		// Handle ffmpeg progress during post-processing
-		if (data.type === 'ffmpeg_progress') {
-			const step = this.processingSteps.get(downloadId) || 'Processing';
-			const duration = this.downloadDurations.get(downloadId);
-			let detail = '';
-			const pctOrNull = data.timeSeconds ? ffmpegPercent(data.timeSeconds, duration) : null;
-			let pct: number | undefined = pctOrNull ?? undefined;
-			if (pct !== undefined) {
-				detail = data.speed ? `${pct}% · ${data.speed}` : `${pct}%`;
-			} else if (data.speed) {
-				detail = data.speed;
-			}
-			const processingStep = detail ? `${step} (${detail})` : step;
 
-			// Update in-progress task with ffmpeg progress percentage
-			if (pct !== undefined) {
-				const taskMap = this.downloadTaskIds.get(downloadId);
-				if (taskMap) {
-					for (const [type, taskId] of taskMap) {
-						// Find the currently in_progress task and update its progress
-						// We use the last known step to infer the current task type
-						const currentModule = this.lastPostProcessModule.get(downloadId);
-						const taskType = currentModule ? MODULE_TO_TASK_TYPE[currentModule] : undefined;
-						if (taskType && type === taskType) {
-							this.updateTask(downloadId, taskType, {
-								progress: pct,
-								message: processingStep,
-							});
-							break;
-						}
-					}
-				}
-			}
-
-			const progressData: any = {
-				id: downloadId,
-				status: 'PROCESSING',
-				processingStep,
-				indeterminate: pct === undefined,
-			};
-			// Only emit top-level progress field when we have a known percent
-			if (pct !== undefined) {
-				progressData.progress = pct;
-			}
-
-			this.emitToOwner('download:progress', progressData, downloadId);
-			return;
-		}
 
 		// Handle post-processing step
 		if (data.type === 'postprocess' && data.step) {

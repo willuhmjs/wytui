@@ -72,8 +72,11 @@ class JobScheduler {
 			const payload = job.payload as any;
 			if (!payload?.name) return;
 			
-			await this.runJob(payload.name);
-			await this.scheduleNextRun(payload.name);
+			try {
+				await this.runJob(payload.name);
+			} finally {
+				await this.scheduleNextRun(payload.name);
+			}
 		});
 
 		// Initialize recurring jobs mapping
@@ -160,7 +163,8 @@ class JobScheduler {
 
 		// Start subscription and monitor scheduling
 		await subscriptionService.startScheduler();
-		// await monitorService.startMonitoring(); // typically relies on similar intervals or own loops
+		await monitorService.startMonitoring();
+		await this.scheduleNextRun('monitor-check');
 
 		console.log('[Scheduler] All background jobs started');
 	}
@@ -303,6 +307,16 @@ class JobScheduler {
 				description: 'Clean up watched items',
 			});
 			await this.scheduleNextRun('watched-cleanup');
+		} else {
+			this.jobRegistry.set('watched-cleanup', {
+				name: 'watched-cleanup',
+				cron: this.secondsToCronInterval(settings?.cleanupIntervalSeconds || 3600),
+				enabled: false,
+				description: 'Clean up watched items',
+			});
+			await prisma.jobQueue.deleteMany({
+				where: { type: 'system', status: 'PENDING', payload: { path: ['name'], equals: 'watched-cleanup' } },
+			});
 		}
 	}
 

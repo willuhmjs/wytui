@@ -39,6 +39,13 @@ export class QueueService {
 			data: { status: 'PENDING', startedAt: null }
 		});
 
+		await prisma.jobQueue.deleteMany({ 
+			where: { 
+				status: { in: ['COMPLETED', 'FAILED'] }, 
+				completedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } 
+			} 
+		});
+
 		this.poll();
 		this.pollingTimer = setInterval(() => this.poll(), 5000);
 	}
@@ -61,13 +68,8 @@ export class QueueService {
 		this.isPolling = true;
 
 		try {
-			// Calculate how many download jobs we can start
-			const availableDownloadSlots = this.maxConcurrentDownloads - this.activeDownloads;
-			
-			// If we have available slots, we can fetch downloads.
-			// Metadata tasks use the same or separate limit? 
-			// We can limit metadata to e.g. 1 at a time to not overwhelm YouTube.
-			const availableMetadataSlots = 1 - this.activeMetadata;
+			let availableDownloadSlots = this.maxConcurrentDownloads - this.activeDownloads;
+			let availableMetadataSlots = 1 - this.activeMetadata;
 
 			// Fetch pending jobs that are due
 			const jobs = await prisma.jobQueue.findMany({
@@ -100,8 +102,14 @@ export class QueueService {
 
 				// Track active stats
 				this.activeJobs.add(job.id);
-				if (job.type === 'download') this.activeDownloads++;
-				if (job.type === 'metadata') this.activeMetadata++;
+				if (job.type === 'download') {
+					this.activeDownloads++;
+					availableDownloadSlots--;
+				}
+				if (job.type === 'metadata') {
+					this.activeMetadata++;
+					availableMetadataSlots--;
+				}
 
 				// Execute in background
 				this.executeJob(updatedJob);

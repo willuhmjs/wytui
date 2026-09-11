@@ -4,7 +4,76 @@ import { join } from 'path';
 import type { DownloadMetadata } from '$lib/types';
 
 export class YtdlpService {
-	findDangerousFlag(flags: string[]): string | null { return null; }
+	private readonly WHITELISTED_FLAGS = new Set([
+		'-f', '--format',
+		'-S', '--format-sort',
+		'--audio-format',
+		'--audio-quality',
+		'--remux-video',
+		'--recode-video',
+		'--embed-subs',
+		'--sub-langs',
+		'--embed-thumbnail',
+		'--embed-metadata',
+		'--embed-chapters',
+		'--write-auto-subs',
+		'--write-subs',
+		'--sub-format',
+		'--sponsorblock-mark',
+		'--sponsorblock-remove',
+		'--sponsorblock-chapter-title',
+		'--sponsorblock-api',
+		'--sleep-requests',
+		'--sleep-interval',
+		'--max-sleep-interval',
+		'--limit-rate',
+		'--fragment-retries',
+		'--retries',
+		'--file-access-retries',
+		'--force-ipv4',
+		'--force-ipv6',
+		'--geo-verification-proxy',
+		'--geo-bypass',
+		'--geo-bypass-country',
+		'--geo-bypass-ip-block',
+		'--yes-playlist',
+		'--no-playlist',
+		'--playlist-items',
+		'--min-filesize',
+		'--max-filesize',
+		'--date',
+		'--datebefore',
+		'--dateafter',
+		'--match-filter',
+		'--extract-audio',
+		'-x',
+		'--split-chapters',
+		'--concurrent-fragments',
+		'-N',
+		'--downloader',
+		'--downloader-args',
+		'--http-chunk-size'
+	]);
+
+	private isFlagAllowed(flag: string): boolean {
+		if (!flag.startsWith('-')) return true;
+		const baseFlag = flag.split('=')[0];
+		return this.WHITELISTED_FLAGS.has(baseFlag);
+	}
+
+	findDangerousFlag(flags: string[]): string | null {
+		for (const flag of flags) {
+			if (/[;&|$`]/.test(flag)) {
+				return flag;
+			}
+		}
+		for (const flag of flags) {
+			if (flag.startsWith('-') && !this.isFlagAllowed(flag)) {
+				return flag;
+			}
+		}
+		return null;
+	}
 	private ytdlpPath: string;
 	private aria2cAvailableCache: boolean | null = null;
 
@@ -490,17 +559,7 @@ export class YtdlpService {
 				for (const line of lines) {
 					if (!line.trim()) continue;
 
-					const timeMatch = line.match(/time=(\d+):(\d+):(\d+\.\d+)/);
-					if (timeMatch) {
-						const timeSeconds =
-							parseInt(timeMatch[1]) * 3600 +
-							parseInt(timeMatch[2]) * 60 +
-							parseFloat(timeMatch[3]);
-						const speedMatch = line.match(/speed=\s*([\d.]+)x/);
-						const speed = speedMatch ? speedMatch[1] + 'x' : null;
-						if (onProgress) onProgress({ type: 'ffmpeg_progress', timeSeconds, speed });
-						continue;
-					}
+
 
 					console.error('[yt-dlp error]', line);
 					if (onError) onError(line);

@@ -185,8 +185,6 @@
 	.general-settings {
 		flex: 1;
 		min-width: 0;
-		contain: layout style;
-		isolation: isolate;
 	}
 
 	.settings-section {
@@ -310,22 +308,23 @@
 		margin-bottom: 0;
 	}
 
-	label {
+	.settings-container label {
 		display: block;
 		margin-bottom: var(--spacing-sm);
 		color: var(--color-text-primary);
 		font-weight: 500;
 	}
 
-	label input[type='checkbox'] {
+	.settings-container label input[type='checkbox'] {
 		width: auto;
 		margin-right: var(--spacing-sm);
 	}
 
-	input[type='text'],
-	input[type='number'],
-	input[type='email'],
-	textarea {
+	.settings-container input[type='text'],
+	.settings-container input[type='password'],
+	.settings-container input[type='number'],
+	.settings-container input[type='email'],
+	.settings-container textarea {
 		width: 100%;
 		padding: var(--spacing-md);
 		background: var(--color-bg-tertiary);
@@ -337,7 +336,7 @@
 		resize: vertical;
 	}
 
-	select {
+	.settings-container select {
 		width: 100%;
 		padding: var(--spacing-md);
 		padding-right: calc(var(--spacing-md) + 20px);
@@ -348,18 +347,18 @@
 		font-size: 1rem;
 	}
 
-	select:focus,
-	input:focus {
+	.settings-container select:focus,
+	.settings-container input:focus {
 		outline: none;
 		border-color: var(--color-accent-primary);
 	}
 
-	input.invalid,
-	input.invalid:focus {
+	.settings-container input.invalid,
+	.settings-container input.invalid:focus {
 		border-color: var(--color-status-error);
 	}
 
-	input[readonly] {
+	.settings-container input[readonly] {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
@@ -728,7 +727,7 @@
 		gap: var(--spacing-xs);
 	}
 
-	.btn-with-icon :global(svg) {
+	.btn-with-icon svg {
 		flex-shrink: 0;
 	}
 

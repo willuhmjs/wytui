@@ -399,6 +399,12 @@ export async function validateSettingsUpdate(
 		) {
 			throw error(400, 'ytdlpExtraFlags must be an array of strings');
 		}
+		
+		const { ytdlpService } = await import('./ytdlp.service');
+		const dangerous = ytdlpService.findDangerousFlag(updates.ytdlpExtraFlags);
+		if (dangerous) {
+			throw error(400, `Flag not allowed: ${dangerous}`);
+		}
 	}
 
 	return updates;

@@ -175,7 +175,8 @@ export const POST = apiRoute(
 
 			const existing = await subscriptionService.findDuplicate(userId, { url: data.url });
 			if (existing) {
-				throw error(409, 'A subscription for this channel already exists');
+				const typeName = data.type ? data.type.toLowerCase() : 'source';
+				throw error(409, `A subscription for this ${typeName} already exists`);
 			}
 
 			const customFlags = Array.isArray(data.customFlags) ? data.customFlags : [];

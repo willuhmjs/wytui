@@ -50,9 +50,9 @@ describe('validateSettingsUpdate: ytdlpProxyUrl', () => {
 describe('validateSettingsUpdate: ytdlpExtraFlags', () => {
 	it('accepts an array of whitelisted flag strings', async () => {
 		const updates = await validateSettingsUpdate({
-			ytdlpExtraFlags: ['--sleep-requests', '1', '--no-warnings'],
+			ytdlpExtraFlags: ['--sleep-requests', '1', '--write-auto-subs'],
 		});
-		expect(updates.ytdlpExtraFlags).toEqual(['--sleep-requests', '1', '--no-warnings']);
+		expect(updates.ytdlpExtraFlags).toEqual(['--sleep-requests', '1', '--write-auto-subs']);
 	});
 
 	it('rejects a non-array value', async () => {
@@ -61,7 +61,11 @@ describe('validateSettingsUpdate: ytdlpExtraFlags', () => {
 		).rejects.toMatchObject({ status: 400 });
 	});
 
-
+	it('rejects an array containing a non-whitelisted flag', async () => {
+		await expect(
+			validateSettingsUpdate({ ytdlpExtraFlags: ['--exec', 'rm -rf /'] }),
+		).rejects.toMatchObject({ status: 400, body: { message: 'Flag not allowed: --exec' } });
+	});
 });
 
 describe('validateSettingsUpdate: unknown fields', () => {
