@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { youtubeLinkService } from './youtube-link.service';
 import { runYtdlpJson, RateLimitError, YtdlpAuthError } from '../utils/ytdlp-json';
+import { armRateLimitCooldown } from '../utils/rate-limit-cooldown';
 import { prisma } from '../db';
 
 export interface YtEntry {
@@ -240,7 +241,17 @@ class YouTubeService {
 	 */
 	async fetchPlaylistFlat(url: string): Promise<{ title: string | null; entries: YtEntry[] }> {
 		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
-		const json = await runYtdlpJson(url, { proxyUrl: settings?.ytdlpProxyUrl ?? null });
+		const json = await runYtdlpJson(url, { proxyUrl: settings?.ytdlpProxyUrl ?? null }).catch(
+			(err) => {
+				// A playlist fetch hitting the rate limit means the IP is blocked
+				// for everything — arm the shared cooldown so subscription
+				// checks back off too.
+				if (err instanceof RateLimitError) {
+					armRateLimitCooldown();
+				}
+				throw err;
+			},
+		);
 		let title: string | null = null;
 		try {
 			const t = JSON.parse(json)?.title;

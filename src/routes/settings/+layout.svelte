@@ -5,12 +5,21 @@
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
 	import { trapFocus } from '$lib/utils/a11y';
+	import PathBrowser from '$lib/components/ui/PathBrowser.svelte';
 	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
 	import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
+	import BellIcon from '$lib/components/icons/BellIcon.svelte';
+	import UsersIcon from '$lib/components/icons/UsersIcon.svelte';
+	import LockIcon from '$lib/components/icons/LockIcon.svelte';
+	import ShieldIcon from '$lib/components/icons/ShieldIcon.svelte';
+	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
+	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
 	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
+	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
+	import { REPO_URL } from '$lib/extension-links';
 
 	interface Props {
 		data: {
@@ -22,10 +31,9 @@
 				};
 			} | null;
 		};
-		children: import('svelte').Snippet;
 	}
 
-	let { data, children }: Props = $props();
+	let { data, children }: { data: any, children: import("svelte").Snippet } = $props();
 
 	let settings = $state<any>(null);
 	let settingsError = $state<string | null>(null);
@@ -53,22 +61,19 @@
 import { untrack } from 'svelte';
 $effect(() => {
     const tab = activeTab;
-    const urlSection = $page.url.searchParams.get('section');
     const valid = settingsSections.map((s) => s.id);
     
     untrack(() => {
-        if (urlSection && valid.includes(urlSection)) {
-            activeSection = urlSection;
-        } else if (!activeSection || !valid.includes(activeSection)) {
+        if (!activeSection || !valid.includes(activeSection)) {
             if (tab === 'account') activeSection = 'account';
-            else if (tab === 'app' && settingsLoaded) activeSection = 'storage';
+            else if (tab === 'app') activeSection = 'storage';
             else if (tab === 'users') activeSection = 'user-management';
         }
     });
 });
 
 	// Settings sections grouped into labeled categories. The flat list of
-	// section ids (derived below) is used for quick navigation.
+	// section ids (derived below) is used for scroll-spy / IntersectionObserver.
 	let settingsGroups = [
 		{
 			label: 'Storage & Library',
@@ -151,7 +156,7 @@ $effect(() => {
 	// Flat list of section ids for the current tab (used by the scroll-spy observer).
 	let settingsSections = $derived(navGroups.flatMap((g) => g.sections));
 
-	// Switching tabs swaps the quick-nav out, so point the active section at the new
+	// Switching tabs swaps the quick-nav out, so point the scroll-spy at the new
 	// tab's first section rather than leaving it on a section that is gone.
 	import { goto } from '$app/navigation';
 	import { setContext } from 'svelte';
@@ -161,9 +166,14 @@ $effect(() => {
 		goto(`/settings/${tab}`);
 	}
 
+	// Scroll-spy suppression: while a nav link is being clicked we smooth-scroll
+	// and pin the active section so the observer doesn't flash through
+	// intermediate sections. Cleared once the scroll settles (scrollend / fallback).
+	let suppressSpy = false;
+	let suppressSpyTimeout: ReturnType<typeof setTimeout> | undefined;
+
 	function selectSection(sectionId: string) {
 		activeSection = sectionId;
-		goto(`?section=${sectionId}`, { keepFocus: true, replaceState: true });
 	}
 
 	// Create user form
@@ -767,7 +777,6 @@ $effect(() => {
 				return;
 			}
 			settings = data.settings;
-			ytdlpExtraFlagsText = (data.settings.ytdlpExtraFlags ?? []).join('\n');
 			addToast('success', 'Config imported');
 			closeImportPreview();
 		} catch {
@@ -1179,6 +1188,7 @@ $effect(() => {
 
 			if (res.ok) {
 				await loadUsers();
+				usersTotal += 1;
 				showCreateUser = false;
 				newUser = { email: '', password: '', name: '', isAdmin: false };
 			} else {
@@ -1584,11 +1594,6 @@ $effect(() => {
 
 	async function saveUserQuota(user: any) {
 		const raw = (userQuotaDrafts[user.id] ?? '').trim();
-		const gb = Number(raw);
-		if (raw !== '' && (!Number.isFinite(gb) || gb < 0)) {
-			addToast('error', 'Cache override must be zero or more GB');
-			return;
-		}
 		const cacheQuotaBytes =
 			raw === '' ? null : String(Math.round(parseFloat(raw) * 1024 * 1024 * 1024));
 		try {
@@ -2302,15 +2307,34 @@ $effect(() => {
 				href="/settings/account"
 				class="tab"
 				class:active={activeTab === 'account'}
-				onclick={() => selectTab('account')}
+				onclick={(e) => {
+					e.preventDefault();
+					selectTab('account');
+				}}
 			>
 				User Settings
 			</a>
 			{#if isAdmin}
-				<a href="/settings/app" class="tab" class:active={activeTab === 'app'} onclick={() => selectTab('app')}>
+				<a
+					href="/settings/app"
+					class="tab"
+					class:active={activeTab === 'app'}
+					onclick={(e) => {
+						e.preventDefault();
+						selectTab('app');
+					}}
+				>
 					App Settings
 				</a>
-				<a href="/settings/users" class="tab" class:active={activeTab === 'users'} onclick={() => selectTab('users')}>
+				<a
+					href="/settings/users"
+					class="tab"
+					class:active={activeTab === 'users'}
+					onclick={(e) => {
+						e.preventDefault();
+						selectTab('users');
+					}}
+				>
 					Admin
 				</a>
 			{/if}
@@ -2348,23 +2372,22 @@ $effect(() => {
 	<div class="settings-container">
 		{@render quickNav()}
 		<div class="general-settings">
-			{#if activeTab === 'account' || (isAdmin && (activeTab === 'users' || settings))}
+			<!-- Account tab content is per-user (API keys, YouTube link) and doesn't
+			     need the admin settings singleton. App/Users tabs render their
+			     sections bound to `settings`, so wait for it (or show the error). -->
+			{#if activeTab === 'account' || (settings && !settingsError)}
 				{@render children?.()}
 			{:else if settingsError}
 				<EmptyState
-					icon={ZapIcon}
 					title="Failed to load settings"
 					description={settingsError}
-				>
-					<button class="btn btn-primary" onclick={loadSettings}>
-						<RefreshIcon /> Retry
-					</button>
-				</EmptyState>
+					actionLabel="Retry"
+					onAction={loadSettings}
+				/>
 			{:else}
-				<div style="display: flex; flex-direction: column; gap: 2rem; margin-top: 1rem;">
-					<Skeleton height="200px" />
-					<Skeleton height="300px" />
-					<Skeleton height="150px" />
+				<div class="settings-loading">
+					<Skeleton variant="row" count={4} />
+					<Skeleton variant="text" count={5} />
 				</div>
 			{/if}
 		</div>
@@ -2372,7 +2395,7 @@ $effect(() => {
 
 	</div>
 
-<!-- Password Change Modal -->
+<!-- Password Change Modal (triggered from Account and Users tabs) -->
 {#if passwordChangeUserId}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div class="modal-overlay" onclick={closePasswordChange}>
@@ -2414,21 +2437,11 @@ $effect(() => {
 						/>
 						{#if passwordForm.newPassword.length > 0}
 							<div class="password-suggestions">
-								<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}
-									>8+ characters</span
-								>
-								<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}
-									>lowercase</span
-								>
-								<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}
-									>uppercase</span
-								>
-								<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}
-									>number</span
-								>
-								<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}
-									>special character</span
-								>
+								<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}>8+ characters</span>
+								<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}>lowercase</span>
+								<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}>uppercase</span>
+								<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}>number</span>
+								<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}>special character</span>
 							</div>
 						{/if}
 					</div>
@@ -2457,7 +2470,7 @@ $effect(() => {
 
 <ImportSubscriptionsModal bind:open={showImportModal} />
 
-<!-- Import Config Preview Modal -->
+<!-- Import Config Preview Modal (triggered from the App tab's Import / Export section) -->
 {#if importPreview}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div class="modal-overlay" onclick={closeImportPreview}>

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/guards';
 import { prisma } from '$lib/server/db';
-import { youtubeService } from '$lib/server/services/youtube.service';
+import { youtubeService, isYouTubeUrl } from '$lib/server/services/youtube.service';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import type { RequestHandler } from './$types';
 
@@ -54,6 +54,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	let skipped = 0;
 	for (const ch of body.channels) {
 		if (!ch?.url || !ch?.name) continue;
+		// These URLs are handed to yt-dlp by the background seeder — only
+		// YouTube hosts are acceptable for channel subscriptions.
+		if (!isYouTubeUrl(ch.url)) {
+			skipped++;
+			continue;
+		}
 		const channelId =
 			(typeof ch.channelId === 'string' && ch.channelId) ||
 			String(ch.url).match(/\/channel\/(UC[\w-]+)/)?.[1] ||

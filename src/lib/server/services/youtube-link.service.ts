@@ -147,6 +147,10 @@ class YouTubeLinkService {
 			if (!Array.isArray(flags) || !flags.every((f) => typeof f === 'string')) {
 				throw new Error('extraFlags must be an array of strings');
 			}
+			const badFlag = ytdlpService.findDangerousFlag(flags);
+			if (badFlag) {
+				throw new Error(`Forbidden flag: ${badFlag}`);
+			}
 
 			data.extraFlags = flags.map((f) => f.trim()).filter(Boolean);
 		}

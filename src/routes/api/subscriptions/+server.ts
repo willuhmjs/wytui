@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
+import { isYouTubeUrl } from '$lib/server/services/youtube.service';
 import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
@@ -151,6 +152,12 @@ export const POST = apiRoute(
 			} catch (urlErr: any) {
 				if (urlErr.status) throw urlErr;
 				throw error(400, 'Invalid URL format');
+			}
+
+			// Subscriptions poll YouTube channels/playlists — their URLs are fed
+			// to yt-dlp by the scheduler, so restrict them to YouTube hosts.
+			if (!isYouTubeUrl(data.url)) {
+				throw error(400, 'Only YouTube channel or playlist URLs are supported');
 			}
 
 			const validTypes = ['CHANNEL', 'PLAYLIST', 'USER'];

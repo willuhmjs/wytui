@@ -4,19 +4,46 @@ import type { JobQueue } from '@prisma/client';
 
 export type JobHandler = (job: JobQueue) => Promise<void>;
 
+/**
+ * Read a positive integer env var, clamped to the same 1-20 range the
+ * settings validation enforces. Falls back when unset or malformed.
+ */
+function envInt(name: string, fallback: number): number {
+	const raw = parseInt(process.env[name] ?? '', 10);
+	if (Number.isFinite(raw) && raw >= 1) return Math.min(raw, 20);
+	return fallback;
+}
+
 export class QueueService {
-	private maxConcurrentDownloads: number;
+	/**
+	 * Per-type concurrency limits, overridable via env vars
+	 * (QUEUE_MAX_DOWNLOADS, QUEUE_MAX_METADATA, QUEUE_MAX_SUBSCRIPTIONS,
+	 * QUEUE_MAX_SYSTEM, QUEUE_MAX_UNLISTED). The download limit is also
+	 * controllable from app settings; an explicitly set QUEUE_MAX_DOWNLOADS
+	 * takes precedence over the stored setting at startup. Types without an
+	 * entry get QUEUE_MAX_UNLISTED so a new job type can't silently run
+	 * unbounded.
+	 */
+	private maxConcurrentByType: Record<string, number> = {
+		download: envInt('QUEUE_MAX_DOWNLOADS', 2),
+		metadata: envInt('QUEUE_MAX_METADATA', 1),
+		subscription: envInt('QUEUE_MAX_SUBSCRIPTIONS', 3),
+		system: envInt('QUEUE_MAX_SYSTEM', 2),
+	};
+	private static readonly DEFAULT_TYPE_LIMIT = envInt('QUEUE_MAX_UNLISTED', 5);
+
 	private handlers = new Map<string, JobHandler>();
 	private pollingTimer: NodeJS.Timeout | null = null;
-	
+
 	// Active state tracking
 	private activeJobs = new Set<string>();
-	private activeDownloads = 0;
-	private activeMetadata = 0;
+	private activeByType = new Map<string, number>();
 	private isPolling = false;
 
-	constructor(maxConcurrent = 3) {
-		this.maxConcurrentDownloads = maxConcurrent;
+	constructor(maxConcurrent?: number) {
+		if (maxConcurrent !== undefined) {
+			this.maxConcurrentByType.download = maxConcurrent;
+		}
 	}
 
 	/**
@@ -37,13 +64,6 @@ export class QueueService {
 		await prisma.jobQueue.updateMany({
 			where: { status: 'RUNNING' },
 			data: { status: 'PENDING', startedAt: null }
-		});
-
-		await prisma.jobQueue.deleteMany({ 
-			where: { 
-				status: { in: ['COMPLETED', 'FAILED'] }, 
-				completedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } 
-			} 
 		});
 
 		this.poll();
@@ -68,9 +88,6 @@ export class QueueService {
 		this.isPolling = true;
 
 		try {
-			let availableDownloadSlots = this.maxConcurrentDownloads - this.activeDownloads;
-			let availableMetadataSlots = 1 - this.activeMetadata;
-
 			// Fetch pending jobs that are due
 			const jobs = await prisma.jobQueue.findMany({
 				where: {
@@ -86,12 +103,12 @@ export class QueueService {
 			});
 
 			for (const job of jobs) {
-				// Concurrency limits logic
-				if (job.type === 'download' && availableDownloadSlots <= 0) continue;
-				if (job.type === 'metadata' && availableMetadataSlots <= 0) continue;
-				// Other types like system/subscription don't have explicit strict limits here, 
-				// but we can let them run concurrently up to some safe number or just unbounded.
-				
+				// Concurrency limits logic: every type has a cap so one poll batch
+				// can't launch an unbounded number of yt-dlp-hitting jobs at once.
+				const limit = this.maxConcurrentByType[job.type] ?? QueueService.DEFAULT_TYPE_LIMIT;
+				const active = this.activeByType.get(job.type) ?? 0;
+				if (active >= limit) continue;
+
 				// Mark as RUNNING
 				const updatedJob = await prisma.jobQueue.update({
 					where: { id: job.id, status: 'PENDING' },
@@ -102,14 +119,7 @@ export class QueueService {
 
 				// Track active stats
 				this.activeJobs.add(job.id);
-				if (job.type === 'download') {
-					this.activeDownloads++;
-					availableDownloadSlots--;
-				}
-				if (job.type === 'metadata') {
-					this.activeMetadata++;
-					availableMetadataSlots--;
-				}
+				this.activeByType.set(job.type, active + 1);
 
 				// Execute in background
 				this.executeJob(updatedJob);
@@ -145,9 +155,10 @@ export class QueueService {
 		} finally {
 			// Cleanup tracking
 			this.activeJobs.delete(job.id);
-			if (job.type === 'download') this.activeDownloads--;
-			if (job.type === 'metadata') this.activeMetadata--;
-			
+			const active = this.activeByType.get(job.type) ?? 0;
+			if (active <= 1) this.activeByType.delete(job.type);
+			else this.activeByType.set(job.type, active - 1);
+
 			// Trigger next poll immediately to pick up more tasks
 			setImmediate(() => this.poll());
 		}
@@ -189,7 +200,7 @@ export class QueueService {
 		return {
 			metadata: queuedMetadata,
 			downloads: queuedDownloads,
-			active: this.activeDownloads + this.activeMetadata,
+			active: Array.from(this.activeByType.values()).reduce((sum, n) => sum + n, 0),
 		};
 	}
 
@@ -197,10 +208,11 @@ export class QueueService {
 	 * Update concurrent download limit
 	 */
 	setMaxConcurrent(max: number): void {
+		// Bounds match the settings validation (1-20).
 		if (max < 1) max = 1;
-		if (max > 10) max = 10;
-		this.maxConcurrentDownloads = max;
-		
+		if (max > 20) max = 20;
+		this.maxConcurrentByType.download = max;
+
 		if (!this.isPolling) {
 			setImmediate(() => this.poll());
 		}
@@ -210,7 +222,7 @@ export class QueueService {
 	 * Get current max concurrent downloads
 	 */
 	getMaxConcurrent(): number {
-		return this.maxConcurrentDownloads;
+		return this.maxConcurrentByType.download;
 	}
 
 	/**
@@ -224,4 +236,4 @@ export class QueueService {
 }
 
 // Singleton instance
-export const queueService = new QueueService(2);
+export const queueService = new QueueService();

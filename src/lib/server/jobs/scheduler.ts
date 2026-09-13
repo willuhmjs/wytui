@@ -71,7 +71,9 @@ class JobScheduler {
 		queueService.registerHandler('system', async (job) => {
 			const payload = job.payload as any;
 			if (!payload?.name) return;
-			
+
+			// Always reschedule, even after a failed run — otherwise one bad
+			// run permanently kills the recurring job until the next restart.
 			try {
 				await this.runJob(payload.name);
 			} finally {
@@ -128,6 +130,18 @@ class JobScheduler {
 			description: 'Automated database backup',
 		});
 
+		// Apply the persisted concurrency limit at startup — without this the
+		// worker keeps its env-derived default after every restart until the
+		// next settings save. An explicitly set QUEUE_MAX_DOWNLOADS env var
+		// wins over the stored setting (operator intent for deployments that
+		// configure via environment).
+		if (
+			settings?.maxConcurrentDownloads &&
+			process.env.QUEUE_MAX_DOWNLOADS === undefined
+		) {
+			queueService.setMaxConcurrent(settings.maxConcurrentDownloads);
+		}
+
 		if (settings?.cleanupEnabled) {
 			const intervalSeconds = settings.cleanupIntervalSeconds || 3600;
 			this.jobRegistry.set('watched-cleanup', {
@@ -163,8 +177,9 @@ class JobScheduler {
 
 		// Start subscription and monitor scheduling
 		await subscriptionService.startScheduler();
+		// Livestream monitors are long-lived yt-dlp --wait-for-video processes;
+		// without this startup call no monitor ever checks its stream.
 		await monitorService.startMonitoring();
-		await this.scheduleNextRun('monitor-check');
 
 		console.log('[Scheduler] All background jobs started');
 	}
@@ -224,6 +239,7 @@ class JobScheduler {
 					await libraryService.reconcileFiles();
 					await libraryService.enforceCacheQuota();
 					await libraryService.sweepOrphanedDownloads();
+					await this.pruneJobHistory();
 					break;
 
 				case 'subscription-check': {
@@ -261,6 +277,42 @@ class JobScheduler {
 					throw new Error(`Unknown job: ${jobName}`);
 			}
 		});
+	}
+
+	/**
+	 * Delete finished job rows and stale history so the queue tables don't grow
+	 * forever. Recurring jobs enqueue a fresh row every cycle and the runs table
+	 * only ever appends, so without pruning both grow unboundedly.
+	 */
+	private async pruneJobHistory(): Promise<void> {
+		const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+		const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+		// Terminal job rows past retention, plus PENDING rows that have been due
+		// for a month without being claimed (dead jobs from removed handlers).
+		const jobs = await prisma.jobQueue.deleteMany({
+			where: {
+				OR: [
+					{ status: { in: ['COMPLETED', 'FAILED'] }, completedAt: { lt: weekAgo } },
+					{ status: 'PENDING', runAt: { lt: monthAgo } },
+				],
+			},
+		});
+		const runs = await prisma.scheduledJobRun.deleteMany({
+			where: { startedAt: { lt: monthAgo } },
+		});
+		// Old failed downloads keep their failure record in the archive, so the
+		// retry affordance can age out of the list without losing the history.
+		const failedDownloads = await prisma.download.deleteMany({
+			where: { status: 'FAILED', createdAt: { lt: monthAgo } },
+		});
+
+		if (jobs.count > 0 || runs.count > 0 || failedDownloads.count > 0) {
+			console.log(
+				`[Scheduler] Pruned ${jobs.count} job rows, ${runs.count} run rows, ` +
+					`${failedDownloads.count} stale failed download(s)`,
+			);
+		}
 	}
 
 	private async checkYtdlpUpdate(): Promise<void> {
@@ -315,7 +367,11 @@ class JobScheduler {
 				description: 'Clean up watched items',
 			});
 			await prisma.jobQueue.deleteMany({
-				where: { type: 'system', status: 'PENDING', payload: { path: ['name'], equals: 'watched-cleanup' } },
+				where: {
+					type: 'system',
+					status: 'PENDING',
+					payload: { path: ['name'], equals: 'watched-cleanup' },
+				},
 			});
 		}
 	}

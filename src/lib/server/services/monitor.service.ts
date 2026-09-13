@@ -1,8 +1,10 @@
 import { prisma } from '../db';
 import { downloadService } from './download.service';
 import { ytdlpService } from './ytdlp.service';
+import { subscriptionService } from './subscription.service';
 import { sseEmitter } from '../sse/emitter';
 import { spawn, type ChildProcess } from 'child_process';
+import { isRateLimitedError, isAuthError } from '../utils/ytdlp-json';
 import type { Monitor } from '@prisma/client';
 
 class MonitorService {
@@ -57,7 +59,21 @@ class MonitorService {
 	private async startYouTubeMonitor(monitor: any): Promise<void> {
 		ytdlpService.validateUrl(monitor.url);
 
-		const args = ['--wait-for-video', '30', '--simulate', '--no-warnings', monitor.url];
+		// Route monitor traffic through the same per-account proxy/flags as
+		// subscriptions and downloads — unproxied monitor polls from the bare
+		// server IP are a classic bot-check trigger.
+		const defaults = await subscriptionService
+			.getYtdlpDefaults({ userId: monitor.userId })
+			.catch(() => ({ proxyUrl: null, extraFlags: [] }));
+
+		const args = [
+			'--wait-for-video',
+			'30',
+			'--simulate',
+			'--no-warnings',
+			...ytdlpService.buildDefaultsArgs(defaults),
+			monitor.url,
+		];
 
 		const proc = spawn(ytdlpService.getPath(), args, {
 			detached: true,
@@ -66,27 +82,25 @@ class MonitorService {
 
 		this.activeMonitors.set(monitor.id, proc);
 
-		proc.stdout.on('data', async (data) => {
+		proc.stdout.on('data', (data) => {
 			const output = data.toString();
 			console.log(`[Monitor ${monitor.name}] ${output}`);
 
-			this.restartCounts.delete(monitor.id);
-
-			if (output.includes('is live')) {
-				await this.handleStreamLive(monitor);
-			} else if (output.includes('Remaining time until next attempt')) {
-				const waitTime = this.parseWaitTime(output);
-				if (waitTime) {
-					await this.updateMonitorStatus(monitor.id, {
-						waitTime,
-						liveDate: new Date(Date.now() + waitTime * 1000),
-					});
-				}
-			}
+			// Async work in an event callback becomes an unhandled rejection
+			// if it throws — route it through .catch explicitly.
+			void this.handleMonitorOutput(monitor, output).catch((err) => {
+				console.error(`[Monitor ${monitor.name}] Output handling failed:`, err);
+			});
 		});
 
 		proc.stderr.on('data', (data) => {
-			console.error(`[Monitor ${monitor.name}] Error: ${data.toString()}`);
+			const text = data.toString();
+			console.error(`[Monitor ${monitor.name}] Error: ${text}`);
+			if (isRateLimitedError(text) || isAuthError(text)) {
+				console.error(
+					`[Monitor ${monitor.name}] yt-dlp reported ${isRateLimitedError(text) ? 'a rate limit' : 'an auth failure'} — monitor polling is degraded`,
+				);
+			}
 		});
 
 		proc.on('close', (code) => {
@@ -104,6 +118,26 @@ class MonitorService {
 			// Restart if still enabled (same cleanup path as 'close')
 			this.restartMonitorIfEnabled(monitor.id);
 		});
+	}
+
+	/**
+	 * React to a --wait-for-video stdout chunk: detect the stream going live
+	 * and surface the next-attempt countdown.
+	 */
+	private async handleMonitorOutput(monitor: any, output: string): Promise<void> {
+		this.restartCounts.delete(monitor.id);
+
+		if (output.includes('is live')) {
+			await this.handleStreamLive(monitor);
+		} else if (output.includes('Remaining time until next attempt')) {
+			const waitTime = this.parseWaitTime(output);
+			if (waitTime) {
+				await this.updateMonitorStatus(monitor.id, {
+					waitTime,
+					liveDate: new Date(Date.now() + waitTime * 1000),
+				});
+			}
+		}
 	}
 
 	/**
@@ -233,21 +267,56 @@ class MonitorService {
 	private async checkTwitchStream(monitor: any): Promise<void> {
 		try {
 			ytdlpService.validateUrl(monitor.url);
-			const args = ['--simulate', '--get-title', monitor.url];
+			const defaults = await subscriptionService
+				.getYtdlpDefaults({ userId: monitor.userId })
+				.catch(() => ({ proxyUrl: null, extraFlags: [] }));
+			const args = [
+				'--simulate',
+				'--get-title',
+				'--no-warnings',
+				...ytdlpService.buildDefaultsArgs(defaults),
+				monitor.url,
+			];
 			const proc = spawn(ytdlpService.getPath(), args);
 
-			let success = false;
+			let error = '';
+			proc.stderr.on('data', (data) => {
+				error += data.toString();
+			});
+
+			// Bound the check: a hung spawn would hold this monitor's state.
+			const timeout = setTimeout(() => {
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
+			}, 60000);
+			proc.on('close', () => clearTimeout(timeout));
 
 			proc.on('close', async (code) => {
-				if (code === 0 && !monitor.isLive) {
+				// A failed check is not evidence the stream ended — a rate limit,
+				// auth failure, or network blip must not flip an active stream
+				// to offline. Only a clean "no title" exit counts.
+				if (code !== 0) {
+					if (isRateLimitedError(error) || isAuthError(error)) {
+						console.error(
+							`[Monitor ${monitor.name}] Check failed (${isRateLimitedError(error) ? 'rate limited' : 'auth failure'}), keeping state`,
+						);
+					} else {
+						console.error(
+							`[Monitor ${monitor.name}] Check failed: ${error.trim().slice(-300) || `exit code ${code}`}`,
+						);
+						if (monitor.isLive) {
+							await prisma.monitor.update({
+								where: { id: monitor.id },
+								data: { isLive: false },
+							});
+						}
+					}
+					return;
+				}
+				if (!monitor.isLive) {
 					// Stream is live and wasn't before
 					await this.handleStreamLive(monitor);
-				} else if (code !== 0 && monitor.isLive) {
-					// Stream ended
-					await prisma.monitor.update({
-						where: { id: monitor.id },
-						data: { isLive: false },
-					});
 				}
 			});
 

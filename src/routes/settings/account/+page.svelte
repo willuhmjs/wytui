@@ -1,18 +1,8 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import PathBrowser from '$lib/components/ui/PathBrowser.svelte';
-	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
-	import Skeleton from '$lib/components/ui/Skeleton.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
-	import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
-	import BellIcon from '$lib/components/icons/BellIcon.svelte';
 	import UsersIcon from '$lib/components/icons/UsersIcon.svelte';
-	import LockIcon from '$lib/components/icons/LockIcon.svelte';
-	import ShieldIcon from '$lib/components/icons/ShieldIcon.svelte';
-	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
 	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
-	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
 	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
 
 	const s = getContext<any>('settingsState');
@@ -20,8 +10,7 @@
 	const activeSection = getContext<() => string>('activeSection');
 </script>
 
-{#if activeSection() === 'account'}
-<div class="settings-section" id="account" >
+<div class="settings-section" id="account" class:active={activeSection() === 'account'}>
 					<h2>User Settings</h2>
 					<p class="text-muted">Manage your account password.</p>
 					<button
@@ -31,9 +20,8 @@
 						Change Password
 					</button>
 				</div>
-{/if}
-{#if activeSection() === 'api-keys'}
-				<div class="settings-section api-keys-section" id="api-keys">
+
+<div class="settings-section api-keys-section" id="api-keys" class:active={activeSection() === 'api-keys'}>
 					<h2>API Keys</h2>
 					<p class="text-muted">
 						Create keys for programmatic access. Use as <code
@@ -142,10 +130,9 @@
 						<p class="text-muted">No API keys yet.</p>
 					{/if}
 				</div>
-{/if}
 
-{#if activeSection() === 'youtube'}
-<div class="settings-section" id="youtube" >
+
+<div class="settings-section" id="youtube" class:active={activeSection() === 'youtube'}>
 					<h2>YouTube</h2>
 					<p class="text-muted">
 						Link your YouTube account to sync watch history, subscriptions, and playlists.
@@ -376,10 +363,11 @@
 						</div>
 					</div>
 				</div>
-{/if}
 
-{#if activeSection() === 'jellyfin'}
-<div class="settings-section" id="jellyfin" >
+
+<!-- Admin-only section; non-admins never load the settings singleton, so gate on both. -->
+{#if s.isAdmin && s.settings}
+<div class="settings-section" id="jellyfin" class:active={activeSection() === 'jellyfin'}>
 						<h2>Jellyfin</h2>
 						<p class="text-muted">
 							User-based rules for the Jellyfin integration — which users' watched status drives
@@ -519,3 +507,4 @@
 						{/if}
 					</div>
 {/if}
+

@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { validateProxyUrlInput } from '../utils/proxy-url';
 import { prisma } from '$lib/server/db';
 import { queueService } from '$lib/server/services/queue.service';
+import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { isOidcManagedByEnv } from '$lib/server/oidc';
 import { isLdapManagedByEnv } from '$lib/server/ldap';
 import { encryptSecret } from '$lib/server/utils/crypto-box';
@@ -399,11 +400,9 @@ export async function validateSettingsUpdate(
 		) {
 			throw error(400, 'ytdlpExtraFlags must be an array of strings');
 		}
-		
-		const { ytdlpService } = await import('./ytdlp.service');
-		const dangerous = ytdlpService.findDangerousFlag(updates.ytdlpExtraFlags);
-		if (dangerous) {
-			throw error(400, `Flag not allowed: ${dangerous}`);
+		const badFlag = ytdlpService.findDangerousFlag(updates.ytdlpExtraFlags);
+		if (badFlag) {
+			throw error(400, `Forbidden flag: ${badFlag}`);
 		}
 	}
 

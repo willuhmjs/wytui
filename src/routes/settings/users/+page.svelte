@@ -1,27 +1,18 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import PathBrowser from '$lib/components/ui/PathBrowser.svelte';
 	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
-	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
-	import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
-	import BellIcon from '$lib/components/icons/BellIcon.svelte';
-	import UsersIcon from '$lib/components/icons/UsersIcon.svelte';
 	import LockIcon from '$lib/components/icons/LockIcon.svelte';
 	import ShieldIcon from '$lib/components/icons/ShieldIcon.svelte';
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
-	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
-	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
-	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
 
 	const s = getContext<any>('settingsState');
 
 	const activeSection = getContext<() => string>('activeSection');
 </script>
 
-{#if activeSection() === 'user-management'}
-<div class="settings-section" id="user-management" >
+<div class="settings-section" id="user-management" class:active={activeSection() === 'user-management'}>
 						<div class="section-header">
 							<h2>User Management</h2>
 							<button class="btn btn-secondary" onclick={() => (s.showCreateUser = !s.showCreateUser)}>
@@ -240,10 +231,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'library-requests'}
-<div class="settings-section" id="library-requests" >
+
+<div class="settings-section" id="library-requests" class:active={activeSection() === 'library-requests'}>
 						<div class="section-header">
 							<h2>Library Requests</h2>
 							<button
@@ -307,9 +297,8 @@
 						{/if}
 					</div>
 
-					{/if}
-					{#if activeSection() === 'danger-zone'}
-					<div class="settings-section danger-zone" id="danger-zone">
+					
+					<div class="settings-section danger-zone" id="danger-zone" class:active={activeSection() === 'danger-zone'}>
 						<h2>Danger Zone</h2>
 						<div class="danger-row">
 							<div class="danger-info">
@@ -330,4 +319,4 @@
 						</div>
 					</div>
 
-{/if}
+

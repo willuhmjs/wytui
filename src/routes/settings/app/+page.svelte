@@ -2,26 +2,17 @@
 	import { getContext } from 'svelte';
 	import PathBrowser from '$lib/components/ui/PathBrowser.svelte';
 	import PasswordInput from '$lib/components/ui/PasswordInput.svelte';
-	import Skeleton from '$lib/components/ui/Skeleton.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
 	import ZapIcon from '$lib/components/icons/ZapIcon.svelte';
 	import BellIcon from '$lib/components/icons/BellIcon.svelte';
-	import UsersIcon from '$lib/components/icons/UsersIcon.svelte';
-	import LockIcon from '$lib/components/icons/LockIcon.svelte';
-	import ShieldIcon from '$lib/components/icons/ShieldIcon.svelte';
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
-	import ExternalLinkIcon from '$lib/components/icons/ExternalLinkIcon.svelte';
-	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
-	import ExtensionMenu from '$lib/components/ExtensionMenu.svelte';
 
 	const s = getContext<any>('settingsState');
 
 	const activeSection = getContext<() => string>('activeSection');
 </script>
 
-{#if activeSection() === 'storage'}
-<div class="settings-section" id="storage" >
+<div class="settings-section" id="storage" class:active={activeSection() === 'storage'}>
 						<h2>Storage</h2>
 
 						<div class="form-row">
@@ -265,10 +256,9 @@
 							</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'library-access'}
-<div class="settings-section" id="library-access" >
+
+<div class="settings-section" id="library-access" class:active={activeSection() === 'library-access'}>
 						<h2>Access</h2>
 						<div class="form-group">
 							<label for="libraryAccessMode">Library Access Mode</label>
@@ -283,10 +273,9 @@
 							</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'ytdlp'}
-<div class="settings-section" id="ytdlp" >
+
+<div class="settings-section" id="ytdlp" class:active={activeSection() === 'ytdlp'}>
 						<h2>yt-dlp</h2>
 						<div class="form-group">
 							<label>
@@ -356,10 +345,9 @@
 							</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'cookies'}
-<div class="settings-section" id="cookies" >
+
+<div class="settings-section" id="cookies" class:active={activeSection() === 'cookies'}>
 						<h2>Cookies</h2>
 						<p class="help-text" style="margin-bottom: var(--spacing-lg);">
 							Upload a Netscape-format cookies.txt file to access member-only and age-restricted
@@ -407,10 +395,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'ryd'}
-<div class="settings-section" id="ryd" >
+
+<div class="settings-section" id="ryd" class:active={activeSection() === 'ryd'}>
 						<h2>Return YouTube Dislike</h2>
 						<div class="form-group">
 							<label>
@@ -427,10 +414,9 @@
 							</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'jellyfin'}
-<div class="settings-section" id="jellyfin" >
+
+<div class="settings-section" id="jellyfin" class:active={activeSection() === 'jellyfin'}>
 						<h2>Jellyfin</h2>
 
 						<div class="form-group">
@@ -564,10 +550,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'plex'}
-<div class="settings-section" id="plex" >
+
+<div class="settings-section" id="plex" class:active={activeSection() === 'plex'}>
 						<h2>Plex</h2>
 
 						<div class="form-group">
@@ -626,10 +611,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'auto-delete'}
-<div class="settings-section" id="auto-delete" >
+
+<div class="settings-section" id="auto-delete" class:active={activeSection() === 'auto-delete'}>
 						<h2>Auto-Delete</h2>
 						<div class="form-group">
 							<label for="autoDeleteDays">Delete watched videos after (days)</label>
@@ -646,10 +630,9 @@
 							</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'rescan'}
-<div class="settings-section" id="rescan" >
+
+<div class="settings-section" id="rescan" class:active={activeSection() === 'rescan'}>
 						<h2>Rescan Library</h2>
 						<p class="help-text" style="margin-bottom: var(--spacing-lg);">
 							Check that downloaded files still exist on disk. Finds completed downloads whose files
@@ -720,10 +703,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'backup'}
-<div class="settings-section" id="backup" >
+
+<div class="settings-section" id="backup" class:active={activeSection() === 'backup'}>
 						<h2>Backup</h2>
 						<div class="form-group">
 							<label>
@@ -756,10 +738,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'notifications'}
-<div class="settings-section" id="notifications" >
+
+<div class="settings-section" id="notifications" class:active={activeSection() === 'notifications'}>
 						<h2>Notifications</h2>
 						<div class="form-group">
 							<label for="appriseUrl">Apprise URL</label>
@@ -810,10 +791,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'ldap'}
-<div class="settings-section" id="ldap" >
+
+<div class="settings-section" id="ldap" class:active={activeSection() === 'ldap'}>
 						<h2>LDAP</h2>
 						{#if s.settings.ldapManagedByEnv}
 							<div class="info-box managed-box" style="margin-bottom: var(--spacing-lg);">
@@ -890,10 +870,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'proxy-auth'}
-<div class="settings-section" id="proxy-auth" >
+
+<div class="settings-section" id="proxy-auth" class:active={activeSection() === 'proxy-auth'}>
 						<h2>Reverse Proxy Auth</h2>
 						<div class="form-group">
 							<label>
@@ -930,10 +909,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'oidc'}
-<div class="settings-section" id="oidc" >
+
+<div class="settings-section" id="oidc" class:active={activeSection() === 'oidc'}>
 						<h2>OIDC / SSO</h2>
 						{#if s.settings.oidcManagedByEnv}
 							<div class="info-box managed-box" style="margin-bottom: var(--spacing-lg);">
@@ -1002,10 +980,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'auth-mode'}
-<div class="settings-section" id="auth-mode" >
+
+<div class="settings-section" id="auth-mode" class:active={activeSection() === 'auth-mode'}>
 						<h2>Authentication</h2>
 						<div class="form-group">
 							<label for="authMode">Login Method</label>
@@ -1042,10 +1019,9 @@
 							</div>
 						{/if}
 					</div>
-{/if}
 
-{#if activeSection() === 'privacy'}
-<div class="settings-section" id="privacy" >
+
+<div class="settings-section" id="privacy" class:active={activeSection() === 'privacy'}>
 						<h2>Stats &amp; Privacy</h2>
 						<div class="form-group">
 							<label class="toggle-label">
@@ -1062,10 +1038,9 @@
 							<p class="help-text">Reveal the aggregate library/storage size to non-admin users.</p>
 						</div>
 					</div>
-{/if}
 
-{#if activeSection() === 'config'}
-<div class="settings-section" id="config" >
+
+<div class="settings-section" id="config" class:active={activeSection() === 'config'}>
 						<h2>Import / Export</h2>
 						<p class="help-text" style="margin-bottom: var(--spacing-lg);">
 							Back up the full app configuration as YAML, or restore it on this or another instance.
@@ -1161,4 +1136,4 @@
 						</a>
 
 </div>
-{/if}
+

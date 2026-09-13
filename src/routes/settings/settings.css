@@ -49,6 +49,7 @@
 		font-weight: 500;
 		font-size: 0.875rem;
 		cursor: pointer;
+		text-decoration: none;
 		transition: all var(--transition-fast);
 	}
 
@@ -112,8 +113,8 @@
 	   two levels of the quick-nav read as a hierarchy rather than a flat list. */
 	.settings-nav ul {
 		list-style: none;
-		padding: 0 0 0 var(--spacing-sm);
-		margin: 0 0 0 var(--spacing-md);
+		padding: 0 0 0 var(--spacing-xs);
+		margin: 0 0 0 var(--spacing-sm);
 		border-left: 1px solid var(--color-overlay-white-10);
 		display: flex;
 		flex-direction: column;
@@ -127,7 +128,7 @@
 	.settings-nav .nav-link {
 		display: block;
 		width: 100%;
-		padding: var(--spacing-sm) var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) var(--spacing-sm);
 		background: transparent;
 		border: none;
 		border-radius: var(--radius-md);
@@ -167,7 +168,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		color: var(--color-text-tertiary);
-		padding: 0 var(--spacing-md);
+		padding: 0 var(--spacing-sm);
 		margin-bottom: var(--spacing-xs);
 	}
 
@@ -196,6 +197,22 @@
 		scroll-margin-top: var(--spacing-2xl);
 		contain: layout;
 		position: relative;
+	}
+
+	/* Desktop keeps the quick-nav's one-section-at-a-time focus: inactive
+	   sections are hidden via the .active class. On mobile the quick-nav is
+	   hidden (see the 768px block below), so every section stays stacked and
+	   the user scrolls instead — otherwise settings would be unreachable. */
+	@media (min-width: 769px) {
+		.general-settings > .settings-section:not(.active) {
+			display: none;
+		}
+	}
+
+	.settings-loading {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
 	}
 
 	.section-header {

@@ -51,6 +51,7 @@ coverage/
 .nyc_output/
 /wytui/
 .claude/worktrees/
+/scripts/
 
 # Browser extension build output
 extension-artifacts/

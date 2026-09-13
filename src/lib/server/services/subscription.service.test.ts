@@ -47,6 +47,7 @@ vi.mock('../sse/emitter', () => ({
 
 import { subscriptionService } from './subscription.service';
 import { RateLimitError } from '../utils/ytdlp-json';
+import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 const SUB_ID = 'sub-check-1';
 
@@ -92,6 +93,16 @@ describe('fetchChannelFeed', () => {
 		await expect((subscriptionService as any).fetchChannelFeed('UCtest')).rejects.toThrow(
 			'HTTP 404',
 		);
+	});
+
+	it('classifies HTTP 429 as a rate limit so the cooldown arms and no fallback traffic fires', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response('slow down', { status: 429 })),
+		);
+		await expect((subscriptionService as any).fetchChannelFeed('UCtest')).rejects.toMatchObject({
+			isRateLimit: true,
+		});
 	});
 });
 
@@ -164,7 +175,7 @@ describe('checkSubscription rate-limit cooldown', () => {
 			customFlags: [],
 			createdAt: new Date('2020-01-01'),
 		};
-		(subscriptionService as any).rateLimitCooldownUntil = 0;
+		resetRateLimitCooldown();
 		vi.restoreAllMocks();
 	});
 
@@ -177,7 +188,7 @@ describe('checkSubscription rate-limit cooldown', () => {
 
 		expect(getLatest).toHaveBeenCalledTimes(1);
 		expect(subsDb[SUB_ID].lastError).toContain('rate limit');
-		expect((subscriptionService as any).rateLimitCooldownUntil).toBeGreaterThan(Date.now());
+		expect(isRateLimitCooldownActive()).toBe(true);
 
 		// Non-forced check during cooldown: skipped without touching yt-dlp.
 		await subscriptionService.checkSubscription(SUB_ID);
@@ -189,6 +200,54 @@ describe('checkSubscription rate-limit cooldown', () => {
 		expect(getLatest).toHaveBeenCalledTimes(2);
 		// A successful check clears the error.
 		expect(subsDb[SUB_ID].lastError).toBeNull();
+	});
+});
+
+describe('mapPlaylistEntries', () => {
+	const map = (info: any, dateAfter?: string) =>
+		(subscriptionService as any).constructor.mapPlaylistEntries(info, dateAfter);
+
+	it('maps flat playlist entries to id/title/url', () => {
+		const videos = map({
+			entries: [
+				{ id: 'a', title: 'Video A', url: 'https://www.youtube.com/watch?v=a' },
+				{ id: 'b', title: 'Video B', webpage_url: 'https://www.youtube.com/watch?v=b' },
+			],
+		});
+		expect(videos).toHaveLength(2);
+		expect(videos[0]).toMatchObject({
+			id: 'a',
+			title: 'Video A',
+			url: 'https://www.youtube.com/watch?v=a',
+		});
+		expect(videos[1].url).toBe('https://www.youtube.com/watch?v=b');
+	});
+
+	it('skips entries without an id and fills missing title/url safely', () => {
+		const videos = map({
+			entries: [{ title: 'no id' }, { id: 'c' }],
+		});
+		expect(videos).toHaveLength(1);
+		expect(videos[0]).toMatchObject({
+			id: 'c',
+			title: 'c',
+			url: 'https://www.youtube.com/watch?v=c',
+		});
+	});
+
+	it('parses upload dates and re-applies the dateAfter cutoff client-side', () => {
+		const videos = map(
+			{
+				entries: [
+					{ id: 'new', title: 'New', webpage_url: 'u1', upload_date: '20260601' },
+					{ id: 'old', title: 'Old', webpage_url: 'u2', upload_date: '20250101' },
+					{ id: 'undated', title: 'Undated', webpage_url: 'u3' },
+				],
+			},
+			'20260101',
+		);
+		expect(videos.map((v: any) => v.id)).toEqual(['new']);
+		expect(videos[0].uploadedAt?.toISOString()).toContain('2026-06-01');
 	});
 });
 
