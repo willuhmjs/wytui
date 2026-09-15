@@ -19,6 +19,7 @@ class ChannelOverrideService {
 		channelName?: string;
 		profileId?: string;
 		autoDeleteDays?: number;
+		protected?: boolean;
 		sponsorblock?: boolean;
 		customFlags?: string[];
 	}) {
@@ -28,6 +29,7 @@ class ChannelOverrideService {
 				channelName: data.channelName,
 				profileId: data.profileId,
 				autoDeleteDays: data.autoDeleteDays,
+				protected: data.protected ?? false,
 				sponsorblock: data.sponsorblock,
 				customFlags: data.customFlags ?? [],
 			},
@@ -45,6 +47,7 @@ class ChannelOverrideService {
 			channelName?: string;
 			profileId?: string | null;
 			autoDeleteDays?: number | null;
+			protected?: boolean;
 			sponsorblock?: boolean;
 			customFlags?: string[];
 		},

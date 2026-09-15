@@ -166,6 +166,13 @@ export const PATCH = apiRoute(
 				nullable: true,
 				minimum: 0,
 			},
+			autoDeleteLibraryDays: {
+				type: 'integer',
+				description:
+					'Auto-delete watched library items after N days (null = disabled; protected items are never deleted)',
+				nullable: true,
+				minimum: 0,
+			},
 			appriseUrl: {
 				type: 'string',
 				description: 'Apprise notification server URL',

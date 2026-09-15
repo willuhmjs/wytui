@@ -73,3 +73,30 @@ describe('validateSettingsUpdate: unknown fields', () => {
 		await expect(validateSettingsUpdate({ nope: 1 })).rejects.toMatchObject({ status: 400 });
 	});
 });
+
+describe('validateSettingsUpdate: autoDeleteLibraryDays', () => {
+	it('accepts a non-negative integer (0 = keep forever)', async () => {
+		const updates = await validateSettingsUpdate({ autoDeleteLibraryDays: 30 });
+		expect(updates.autoDeleteLibraryDays).toBe(30);
+		const zero = await validateSettingsUpdate({ autoDeleteLibraryDays: 0 });
+		expect(zero.autoDeleteLibraryDays).toBe(0);
+	});
+
+	it('clears the retention on empty string or null (disabled)', async () => {
+		expect(
+			(await validateSettingsUpdate({ autoDeleteLibraryDays: '' })).autoDeleteLibraryDays,
+		).toBeNull();
+		expect(
+			(await validateSettingsUpdate({ autoDeleteLibraryDays: null })).autoDeleteLibraryDays,
+		).toBeNull();
+	});
+
+	it('rejects negative and non-integer values', async () => {
+		await expect(validateSettingsUpdate({ autoDeleteLibraryDays: -1 })).rejects.toMatchObject({
+			status: 400,
+		});
+		await expect(validateSettingsUpdate({ autoDeleteLibraryDays: 1.5 })).rejects.toMatchObject({
+			status: 400,
+		});
+	});
+});

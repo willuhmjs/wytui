@@ -36,6 +36,7 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'cleanupProfileTypes',
 	'cleanupGraceHours',
 	'autoDeleteWatchedDays',
+	'autoDeleteLibraryDays',
 	'appriseUrl',
 	'notifyOnComplete',
 	'notifyOnFail',
@@ -299,6 +300,18 @@ export async function validateSettingsUpdate(
 		const val = Number(updates.cleanupGraceHours);
 		if (!Number.isInteger(val) || val < 0 || val > 720) {
 			throw error(400, 'cleanupGraceHours must be between 0 and 720');
+		}
+	}
+
+	if (updates.autoDeleteLibraryDays !== undefined) {
+		// Empty string or null clears the setting (library auto-delete disabled).
+		if (updates.autoDeleteLibraryDays === null || updates.autoDeleteLibraryDays === '') {
+			updates.autoDeleteLibraryDays = null;
+		} else {
+			const val = Number(updates.autoDeleteLibraryDays);
+			if (!Number.isInteger(val) || val < 0) {
+				throw error(400, 'autoDeleteLibraryDays must be a non-negative integer');
+			}
 		}
 	}
 

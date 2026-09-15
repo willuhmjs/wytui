@@ -184,6 +184,9 @@ model Download {
 
   // Storage pool
   storagePool String    @default("cache") // "cache" | "library"
+  // Pinned by the user: excluded from every automated deletion path
+  // (watched-threshold auto-delete and the Jellyfin watched-cleanup).
+  protected   Boolean   @default(false)
 
   // Relations
   downloadTasks  DownloadTask[]
@@ -418,6 +421,10 @@ model Settings {
 
   // Auto-delete watched videos
   autoDeleteWatchedDays Int?
+  // Same, but for library items. Deliberately separate from the cache setting:
+  // enabling library auto-deletion must be an explicit choice, never a
+  // side effect of the existing cache retention value. null/0 = disabled.
+  autoDeleteLibraryDays Int?
 
   // Notifications (Apprise)
   appriseUrl       String?
@@ -575,6 +582,9 @@ model ChannelOverride {
   profileId      String?
   profile        DownloadProfile? @relation(fields: [profileId], references: [id])
   autoDeleteDays Int?
+  // Exclude this channel from every automated deletion path, in both storage
+  // pools, regardless of the per-channel/global retention settings.
+  protected      Boolean  @default(false)
   sponsorblock   Boolean  @default(true)
   customFlags    String[]
   createdAt      DateTime @default(now())

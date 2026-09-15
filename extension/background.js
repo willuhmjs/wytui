@@ -79,6 +79,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		linkYouTube().then(sendResponse);
 		return true;
 	}
+	if (message.action === 'youtubeLinkStatus') {
+		youtubeLinkStatus().then(sendResponse);
+		return true;
+	}
 });
 
 // Cookies are sensitive credentials. Allow sending them over plain http:// only
@@ -304,5 +308,33 @@ async function linkYouTube() {
 		return { success: true, channelName: result.channelName || null };
 	} catch (err) {
 		return { success: false, error: 'Connection failed: ' + err.message };
+	}
+}
+
+// Whether the configured server already has a linked YouTube account for this
+// user, so the popup can show the linked state instead of a perpetual
+// "Link YouTube" button.
+async function youtubeLinkStatus() {
+	try {
+		const data = await chrome.storage.local.get(['serverUrl', 'apiKey']);
+		if (!data.serverUrl) return { success: false, linked: false };
+
+		const res = await fetch(
+			`${data.serverUrl.replace(/\/+$/, '')}/api/youtube/link`,
+			{
+				credentials: authCredentials(data.apiKey),
+				headers: authHeaders(data.apiKey),
+			},
+		);
+
+		if (!res.ok) return { success: false, linked: false };
+		const status = await res.json();
+		return {
+			success: true,
+			linked: !!status.linked,
+			channelName: status.channelName || null,
+		};
+	} catch {
+		return { success: false, linked: false };
 	}
 }

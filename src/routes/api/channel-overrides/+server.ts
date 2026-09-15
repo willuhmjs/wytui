@@ -63,6 +63,10 @@ export const POST = apiRoute(
 			channelName: { type: 'string', description: 'Channel display name' },
 			profileId: { type: 'string', description: 'Download profile ID to use for this channel' },
 			autoDeleteDays: { type: 'integer', description: 'Auto-delete after N days' },
+			protected: {
+				type: 'boolean',
+				description: 'Exclude this channel from all automated deletion',
+			},
 			sponsorblock: { type: 'boolean', description: 'Enable SponsorBlock for this channel' },
 			customFlags: { type: 'array', description: 'Custom yt-dlp flags for this channel' },
 		},
@@ -101,6 +105,7 @@ export const POST = apiRoute(
 				channelName: data.channelName,
 				profileId: data.profileId,
 				autoDeleteDays: data.autoDeleteDays,
+				protected: typeof data.protected === 'boolean' ? data.protected : undefined,
 				sponsorblock: data.sponsorblock,
 				customFlags: data.customFlags,
 			});

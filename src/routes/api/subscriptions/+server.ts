@@ -214,22 +214,9 @@ export const POST = apiRoute(
 
 			await subscriptionService.scheduleSubscription(subscription);
 
-			// Resolve the channel name in the background so the response is immediate
-			if (data.name === data.url) {
-				ytdlpService
-					.fetchChannelName(data.url)
-					.then(async (channelName) => {
-						if (channelName && channelName !== data.url) {
-							await prisma.subscription
-								.update({
-									where: { id: subscription.id },
-									data: { name: channelName },
-								})
-								.catch(() => {});
-						}
-					})
-					.catch(() => {});
-			}
+			// Resolve the channel identity (display name, avatar, channel ID,
+			// video count) in the background so the response is immediate
+			void subscriptionService.refreshChannelMeta(subscription.id);
 
 			subscriptionService
 				.seedArchive(subscription.id)

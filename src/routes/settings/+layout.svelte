@@ -446,6 +446,7 @@ $effect(() => {
 		'cleanupProfileTypes',
 		'cleanupGraceHours',
 		'autoDeleteWatchedDays',
+		'autoDeleteLibraryDays',
 		'appriseUrl',
 		'notifyOnComplete',
 		'notifyOnFail',

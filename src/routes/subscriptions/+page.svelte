@@ -219,6 +219,22 @@
 		return `${months}mo ago`;
 	}
 
+	/**
+	 * Initials for the avatar placeholder. When the display name hasn't
+	 * resolved yet (name is still the raw creation URL), derive them from the
+	 * @handle or /channel|c|user path segment instead of the protocol chars.
+	 */
+	function subInitials(sub: any): string {
+		const url = String(sub.url ?? '');
+		const fromUrl =
+			url.match(/@([\w-]+)/)?.[1] ?? url.match(/\/(?:channel|c|user)\/([\w-]+)/)?.[1] ?? null;
+		const source =
+			sub.name && sub.name !== sub.url
+				? String(sub.name)
+				: (fromUrl ?? url.replace(/^https?:\/\//, ''));
+		return (source.trim().slice(0, 2) || '??').toUpperCase();
+	}
+
 	async function checkYoutubeLink() {
 		try {
 			const res = await fetch('/api/youtube/link');
@@ -844,6 +860,13 @@
 									</div>
 								{:else}
 									<div class="card-header">
+										<div class="sub-avatar">
+											{#if sub.thumbnail}
+												<img src={sub.thumbnail} alt={sub.name} loading="lazy" />
+											{:else}
+												<div class="sub-avatar-placeholder">{subInitials(sub)}</div>
+											{/if}
+										</div>
 										<h3>{sub.name}</h3>
 										<span class="status" class:enabled={sub.enabled}>
 											{sub.enabled ? 'Active' : 'Paused'}
@@ -1315,9 +1338,38 @@
 		margin-bottom: var(--spacing-md);
 	}
 
+	.sub-avatar {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		overflow: hidden;
+		flex-shrink: 0;
+	}
+
+	.sub-avatar img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.sub-avatar-placeholder {
+		width: 100%;
+		height: 100%;
+		background: var(--color-accent-primary);
+		color: #fff;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.875rem;
+		font-weight: 700;
+	}
+
 	.card-header h3 {
 		font-size: 1rem;
 		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.status {

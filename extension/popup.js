@@ -110,6 +110,7 @@ chrome.storage.local.get(['serverUrl', 'apiKey'], async (data) => {
 	setConfigured(true);
 	applyLibraryVisibility(profileResult);
 	populateProfiles(profileResult);
+	refreshYouTubeLinkState();
 	if (currentTabUrl) lookupExisting(currentTabUrl);
 });
 
@@ -381,6 +382,7 @@ saveBtn.addEventListener('click', () => {
 		setConfigured(true);
 		applyLibraryVisibility(profileResult);
 		populateProfiles(profileResult);
+		refreshYouTubeLinkState();
 		if (currentTabUrl) lookupExisting(currentTabUrl);
 	});
 });
@@ -441,6 +443,31 @@ function showMessage(text, type) {
 	if (type === 'error') viewLink.style.display = 'none';
 }
 
+// Reflect the server's YouTube link state in the settings panel: show the
+// linked account and turn the button into "Re-link" (cookies expire; re-linking
+// is the remedy), instead of always offering a fresh link.
+async function refreshYouTubeLinkState() {
+	const wrap = document.getElementById('yt-linked');
+	const nameEl = document.getElementById('yt-linked-name');
+	const linkBtn = document.getElementById('link-youtube');
+
+	let res = null;
+	try {
+		res = await chrome.runtime.sendMessage({ action: 'youtubeLinkStatus' });
+	} catch {
+		res = null;
+	}
+
+	if (res?.success && res.linked) {
+		nameEl.textContent = res.channelName ? `Linked as ${res.channelName}` : 'Linked';
+		wrap.style.display = 'flex';
+		linkBtn.textContent = 'Re-link YouTube';
+	} else {
+		wrap.style.display = 'none';
+		linkBtn.textContent = 'Link YouTube to wytui';
+	}
+}
+
 // Link YouTube
 document.getElementById('link-youtube').addEventListener('click', async () => {
 	const status = document.getElementById('yt-status');
@@ -451,6 +478,7 @@ document.getElementById('link-youtube').addEventListener('click', async () => {
 	if (res?.success) {
 		status.textContent = 'Linked as ' + (res.channelName || 'YouTube user');
 		status.className = 'message success';
+		refreshYouTubeLinkState();
 	} else {
 		status.className = 'message error';
 		status.textContent = (res?.error || 'Linking failed.') + ' ';

@@ -5,6 +5,7 @@ const archiveDb: Record<string, any> = {};
 const downloadsDb: any[] = [];
 const subsDb: Record<string, any> = {};
 const jobQueueDb: any[] = [];
+let settingsDb: Record<string, any> | null = null;
 
 vi.mock('../db', () => ({
 	prisma: {
@@ -48,6 +49,9 @@ vi.mock('../db', () => ({
 		youTubeLink: {
 			findUnique: vi.fn(async () => null),
 		},
+		settings: {
+			findUnique: vi.fn(async () => settingsDb),
+		},
 	},
 }));
 
@@ -59,8 +63,15 @@ vi.mock('../sse/emitter', () => ({
 	},
 }));
 
+// Channel-identity backfill goes through one flat yt-dlp browse call; stub the
+// process spawn while keeping RateLimitError (used by the cooldown tests).
+vi.mock('../utils/ytdlp-json', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../utils/ytdlp-json')>();
+	return { ...actual, runYtdlpJson: vi.fn() };
+});
+
 import { subscriptionService } from './subscription.service';
-import { RateLimitError } from '../utils/ytdlp-json';
+import { RateLimitError, runYtdlpJson } from '../utils/ytdlp-json';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 const SUB_ID = 'sub-check-1';
@@ -226,15 +237,39 @@ describe('unscheduleSubscription', () => {
 		const future = new Date(Date.now() + 60 * 60 * 1000);
 		jobQueueDb.push(
 			// The next scheduled run — this is what a reschedule replaces.
-			{ id: 'pending-1', type: 'subscription', status: 'PENDING', runAt: future, payload: { subscriptionId: 'sub-1' } },
+			{
+				id: 'pending-1',
+				type: 'subscription',
+				status: 'PENDING',
+				runAt: future,
+				payload: { subscriptionId: 'sub-1' },
+			},
 			// The row for the check that is currently executing (scheduleSubscription
 			// runs from inside its own job handler). Deleting it made the queue
 			// worker's completion update fail and crashed the process.
-			{ id: 'running-1', type: 'subscription', status: 'RUNNING', startedAt: new Date(), payload: { subscriptionId: 'sub-1' } },
+			{
+				id: 'running-1',
+				type: 'subscription',
+				status: 'RUNNING',
+				startedAt: new Date(),
+				payload: { subscriptionId: 'sub-1' },
+			},
 			// Terminal history — pruned by the weekly job-history prune instead.
-			{ id: 'done-1', type: 'subscription', status: 'COMPLETED', completedAt: new Date(), payload: { subscriptionId: 'sub-1' } },
+			{
+				id: 'done-1',
+				type: 'subscription',
+				status: 'COMPLETED',
+				completedAt: new Date(),
+				payload: { subscriptionId: 'sub-1' },
+			},
 			// Another subscription's row must not be touched.
-			{ id: 'other-1', type: 'subscription', status: 'PENDING', runAt: future, payload: { subscriptionId: 'sub-2' } },
+			{
+				id: 'other-1',
+				type: 'subscription',
+				status: 'PENDING',
+				runAt: future,
+				payload: { subscriptionId: 'sub-2' },
+			},
 		);
 
 		await subscriptionService.unscheduleSubscription('sub-1');
@@ -349,5 +384,122 @@ describe('filterNewVideos failure cooldown', () => {
 		const result = await (subscriptionService as any).filterNewVideos([video('vid1')], sub);
 
 		expect(result).toHaveLength(1);
+	});
+});
+
+describe('pickChannelAvatarUrl', () => {
+	const pick = (thumbnails: any) =>
+		(subscriptionService as any).constructor.pickChannelAvatarUrl(thumbnails);
+
+	it('returns null when only banner crops are available', () => {
+		expect(pick([{ url: 'banner', width: 1920, height: 1080 }])).toBeNull();
+		expect(pick([])).toBeNull();
+		expect(pick(undefined)).toBeNull();
+	});
+
+	it('picks the square avatar over the banner crops listed first', () => {
+		expect(
+			pick([
+				{ url: 'banner', width: 1920, height: 1080 },
+				{ url: 'avatar.jpg', width: 900, height: 900 },
+			]),
+		).toBe('avatar.jpg');
+	});
+
+	it('prefers the largest near-square entry', () => {
+		expect(
+			pick([
+				{ url: 'small.jpg', width: 88, height: 88 },
+				{ url: 'large.jpg', width: 900, height: 900 },
+			]),
+		).toBe('large.jpg');
+	});
+
+	it('ignores entries without usable dimensions', () => {
+		expect(pick([{ url: 'no-dims' }, { url: 'half', width: 900 }])).toBeNull();
+	});
+});
+
+describe('refreshChannelMeta', () => {
+	const RAW_URL = 'https://www.youtube.com/@testchannel';
+
+	beforeEach(() => {
+		for (const k of Object.keys(subsDb)) delete subsDb[k];
+		vi.mocked(runYtdlpJson).mockReset();
+	});
+
+	it('backfills id, name, and avatar while the subscription still shows its raw URL', async () => {
+		subsDb[SUB_ID] = {
+			id: SUB_ID,
+			url: RAW_URL,
+			name: RAW_URL,
+			thumbnail: null,
+			channelId: null,
+			userId: null,
+		};
+		vi.mocked(runYtdlpJson).mockResolvedValue(
+			JSON.stringify({
+				channel_id: 'UCresolved',
+				playlist_count: 42,
+				channel: 'Test Channel',
+				thumbnails: [
+					{ url: 'banner', width: 1920, height: 1080 },
+					{ url: 'avatar.jpg', width: 900, height: 900 },
+				],
+			}),
+		);
+
+		await subscriptionService.refreshChannelMeta(SUB_ID);
+
+		expect(subsDb[SUB_ID]).toMatchObject({
+			channelId: 'UCresolved',
+			videoCount: 42,
+			name: 'Test Channel',
+			thumbnail: 'avatar.jpg',
+		});
+	});
+
+	it('never overwrites a user rename, resolved id, or existing avatar', async () => {
+		subsDb[SUB_ID] = {
+			id: SUB_ID,
+			url: RAW_URL,
+			name: 'My Custom Name',
+			thumbnail: 'existing.jpg',
+			channelId: 'UCoriginal',
+			userId: null,
+		};
+		vi.mocked(runYtdlpJson).mockResolvedValue(
+			JSON.stringify({
+				channel_id: 'UCdifferent',
+				playlist_count: 43,
+				channel: 'Test Channel',
+				thumbnails: [{ url: 'new.jpg', width: 900, height: 900 }],
+			}),
+		);
+
+		await subscriptionService.refreshChannelMeta(SUB_ID);
+
+		expect(subsDb[SUB_ID].name).toBe('My Custom Name');
+		expect(subsDb[SUB_ID].thumbnail).toBe('existing.jpg');
+		expect(subsDb[SUB_ID].channelId).toBe('UCoriginal');
+		// The video count is live data — it always refreshes.
+		expect(subsDb[SUB_ID].videoCount).toBe(43);
+	});
+
+	it('leaves the subscription untouched when the channel browse fails', async () => {
+		subsDb[SUB_ID] = {
+			id: SUB_ID,
+			url: RAW_URL,
+			name: RAW_URL,
+			thumbnail: null,
+			channelId: null,
+			userId: null,
+		};
+		vi.mocked(runYtdlpJson).mockRejectedValue(new Error('yt-dlp failed'));
+
+		await subscriptionService.refreshChannelMeta(SUB_ID);
+
+		expect(subsDb[SUB_ID].name).toBe(RAW_URL);
+		expect(subsDb[SUB_ID].thumbnail).toBeNull();
 	});
 });

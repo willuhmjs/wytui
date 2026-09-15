@@ -32,11 +32,23 @@ class CleanupService {
 		const profileFilter = this.buildProfileFilter(settings.cleanupProfileTypes);
 		if (!profileFilter) return;
 
+		// Protected downloads (user pin) and protected channels never qualify
+		// for automated deletion, whatever their watch state.
+		const protectedChannels = new Set(
+			(
+				await prisma.channelOverride.findMany({
+					where: { protected: true },
+					select: { channelUrl: true },
+				})
+			).map((o) => o.channelUrl),
+		);
+
 		const downloads = await prisma.download.findMany({
 			where: {
 				status: DownloadStatus.COMPLETED,
 				storagePool: 'library',
 				filepath: { not: null },
+				protected: false,
 				profile: profileFilter,
 			},
 			include: { profile: true },
@@ -49,6 +61,7 @@ class CleanupService {
 		let cleanedCount = 0;
 
 		for (const download of downloads) {
+			if (download.channelUrl && protectedChannels.has(download.channelUrl)) continue;
 			try {
 				const wasCleaned = await this.processDownload(
 					download,

@@ -202,6 +202,33 @@
 
 	let libraryRequestStatus = $state<string | null>(data.libraryRequestStatus ?? null);
 
+	let protecting = $state(false);
+
+	async function toggleProtect() {
+		protecting = true;
+		try {
+			const res = await csrfFetch(`/api/downloads/${download.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ protected: !download.protected }),
+			});
+			if (res.ok) {
+				const updated = await res.json();
+				download = { ...download, protected: updated.protected };
+				addToast(
+					'success',
+					updated.protected ? 'Protected from auto-delete' : 'Auto-delete protection removed',
+				);
+			} else {
+				addToast('error', 'Failed to update protection');
+			}
+		} catch {
+			addToast('error', 'Failed to update protection');
+		} finally {
+			protecting = false;
+		}
+	}
+
 	async function handlePromote() {
 		promoting = true;
 		try {
@@ -575,6 +602,32 @@
 						</button>
 					{/if}
 				{/if}
+				<button
+					class="btn btn-secondary"
+					onclick={toggleProtect}
+					disabled={protecting}
+					title={download.protected ? 'Remove auto-delete protection' : 'Protect from auto-delete'}
+					aria-label={download.protected
+						? 'Remove auto-delete protection'
+						: 'Protect from auto-delete'}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill={download.protected ? 'currentColor' : 'none'}
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path
+							d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"
+						/>
+					</svg>
+					{protecting ? 'Saving...' : download.protected ? 'Protected' : 'Protect'}
+				</button>
 				<button
 					class="btn btn-secondary"
 					onclick={handleRefreshMetadata}

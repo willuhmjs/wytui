@@ -18,6 +18,10 @@ export const PATCH = apiRoute(
 			channelName: { type: 'string', description: 'Channel display name' },
 			profileId: { type: 'string', description: 'Download profile ID', nullable: true },
 			autoDeleteDays: { type: 'integer', description: 'Auto-delete after N days', nullable: true },
+			protected: {
+				type: 'boolean',
+				description: 'Exclude this channel from all automated deletion',
+			},
 			sponsorblock: { type: 'boolean', description: 'Enable SponsorBlock for this channel' },
 			customFlags: { type: 'array', description: 'Custom yt-dlp flags for this channel' },
 		},
@@ -61,6 +65,7 @@ export const PATCH = apiRoute(
 				'channelName',
 				'profileId',
 				'autoDeleteDays',
+				'protected',
 				'sponsorblock',
 				'customFlags',
 			];

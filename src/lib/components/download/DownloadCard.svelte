@@ -487,6 +487,9 @@
 						{download.storagePool === 'library' ? 'Library' : 'Cache'}
 					</span>
 				{/if}
+				{#if download.protected}
+					<span class="pool-badge protected" title="Protected from auto-delete">🛡</span>
+				{/if}
 				<span class="status-icon" title={getDownloadStatusLabel(download.status)}>
 					{#if download.status === 'COMPLETED'}
 						<svg viewBox="0 0 20 20" fill="var(--color-status-success)" width="18" height="18"

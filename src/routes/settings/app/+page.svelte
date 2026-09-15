@@ -616,7 +616,7 @@
 <div class="settings-section" id="auto-delete" class:active={activeSection() === 'auto-delete'}>
 						<h2>Auto-Delete</h2>
 						<div class="form-group">
-							<label for="autoDeleteDays">Delete watched videos after (days)</label>
+							<label for="autoDeleteDays">Delete watched cache videos after (days)</label>
 							<input
 								type="number"
 								id="autoDeleteDays"
@@ -626,7 +626,22 @@
 							/>
 							<p class="help-text">
 								Automatically delete watched cache downloads after this many days. Set to 0 or leave
-								empty to disable. Library items are never auto-deleted.
+								empty to disable.
+							</p>
+						</div>
+						<div class="form-group">
+							<label for="autoDeleteLibraryDays">Delete watched library videos after (days)</label>
+							<input
+								type="number"
+								id="autoDeleteLibraryDays"
+								bind:value={s.settings.autoDeleteLibraryDays}
+								min="0"
+								placeholder="Disabled"
+							/>
+							<p class="help-text">
+								Applies the same retention to library items, watched in wytui or in Jellyfin. Leave
+								empty to keep library items forever. Items pinned with "Protect" and channels marked
+								protected in their override are never deleted.
 							</p>
 						</div>
 					</div>

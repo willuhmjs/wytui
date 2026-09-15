@@ -243,6 +243,13 @@ class SubscriptionService {
 				},
 			});
 
+			// Self-heal identity gaps (name still the raw creation URL, missing
+			// avatar) with one background browse call per cycle; stops firing
+			// once both are resolved.
+			if (!subscription.thumbnail || subscription.name === subscription.url) {
+				void this.refreshChannelMeta(subscriptionId).catch(() => {});
+			}
+
 			sseEmitter.broadcast('subscription:checked', {
 				id: subscriptionId,
 				name: subscription.name,
@@ -387,13 +394,19 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Fetch a channel's identity (UC… id) and total video count with a single
-	 * flat yt-dlp browse call. Returns null when the fetch or parse fails.
+	 * Fetch a channel's identity (UC… id), display name, avatar URL, and total
+	 * video count with a single flat yt-dlp browse call. Returns null when the
+	 * fetch or parse fails.
 	 */
 	private async fetchChannelMeta(
 		url: string,
 		userId?: string | null,
-	): Promise<{ channelId: string | null; videoCount: number | null } | null> {
+	): Promise<{
+		channelId: string | null;
+		videoCount: number | null;
+		name: string | null;
+		avatarUrl: string | null;
+	} | null> {
 		const defaults = await this.getYtdlpDefaults({ userId });
 		try {
 			const json = await runYtdlpJson(url, {
@@ -412,16 +425,47 @@ class SubscriptionService {
 				typeof count === 'number' && Number.isFinite(count) && count >= 0
 					? Math.floor(count)
 					: null;
-			return { channelId, videoCount };
+			const name =
+				typeof data?.channel === 'string' && data.channel
+					? data.channel
+					: typeof data?.uploader === 'string' && data.uploader
+						? data.uploader
+						: null;
+			const avatarUrl = SubscriptionService.pickChannelAvatarUrl(data?.thumbnails);
+			return { channelId, videoCount, name, avatarUrl };
 		} catch {
 			return null;
 		}
 	}
 
 	/**
-	 * Refresh a subscription's cached channel ID and video count (one background
-	 * browse call). Fire-and-forget from creation paths so the card's
-	 * "N videos" and RSS lookups work without waiting for a check cycle.
+	 * Pick the channel avatar from a flat-playlist thumbnail list. Channel pages
+	 * list the banner crops first and the square avatar (e.g. 900x900) last, so
+	 * take the largest near-square entry — never the first (that is the wide
+	 * banner, which looks wrong as a card icon).
+	 */
+	private static pickChannelAvatarUrl(
+		thumbnails: { url?: unknown; width?: unknown; height?: unknown }[] | undefined,
+	): string | null {
+		if (!Array.isArray(thumbnails)) return null;
+		let best: { url: string; area: number } | null = null;
+		for (const t of thumbnails) {
+			if (typeof t?.url !== 'string') continue;
+			if (typeof t.width !== 'number' || typeof t.height !== 'number') continue;
+			const ratio = t.width / t.height;
+			if (ratio <= 0.8 || ratio >= 1.3) continue;
+			const area = t.width * t.height;
+			if (!best || area > best.area) best = { url: t.url, area };
+		}
+		return best?.url ?? null;
+	}
+
+	/**
+	 * Refresh a subscription's cached channel identity (UC… id, video count,
+	 * display name, avatar) with one background browse call. Backfills only:
+	 * channelId is never overwritten once resolved, the name is only replaced
+	 * while it is still the raw URL the subscription was created with (a user
+	 * rename must stick), and the avatar only while missing.
 	 */
 	async refreshChannelMeta(subscriptionId: string): Promise<void> {
 		const subscription = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
@@ -434,6 +478,8 @@ class SubscriptionService {
 				data: {
 					...(meta.channelId && !subscription.channelId ? { channelId: meta.channelId } : {}),
 					...(meta.videoCount !== null ? { videoCount: meta.videoCount } : {}),
+					...(meta.name && subscription.name === subscription.url ? { name: meta.name } : {}),
+					...(meta.avatarUrl && !subscription.thumbnail ? { thumbnail: meta.avatarUrl } : {}),
 				},
 			})
 			.catch(() => {});

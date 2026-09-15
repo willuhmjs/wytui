@@ -82,12 +82,16 @@ export const PATCH = apiRoute(
 	'/api/downloads/[id]',
 	'PATCH',
 	{
-		summary: 'Update download metadata (tags)',
+		summary: 'Update download metadata (tags, protection)',
 		tags: ['Downloads'],
 		auth: true,
 		params: { id: { type: 'string', description: 'Download ID' } },
 		body: {
 			tags: { type: 'array', description: 'Array of tag strings' },
+			protected: {
+				type: 'boolean',
+				description: 'Pin this download: excluded from all automated deletion',
+			},
 		},
 		responses: {
 			200: { description: 'Updated download' },
@@ -109,6 +113,9 @@ export const PATCH = apiRoute(
 			data.tags = body.tags
 				.filter((t: any) => typeof t === 'string' && t.trim())
 				.map((t: string) => t.trim());
+		}
+		if (typeof body.protected === 'boolean') {
+			data.protected = body.protected;
 		}
 
 		const updated = await prisma.download.update({

@@ -81,6 +81,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				type: 'CHANNEL',
 				// Pre-seed the RSS cache so checks skip the @handle resolution call.
 				channelId,
+				// The scraped picker already carries the channel avatar.
+				...(typeof ch.thumbnail === 'string' && ch.thumbnail ? { thumbnail: ch.thumbnail } : {}),
 				enabled: body.enabled ?? true,
 				autoDownload: body.autoDownload ?? true,
 				saveToLibrary: body.saveToLibrary ?? false,
