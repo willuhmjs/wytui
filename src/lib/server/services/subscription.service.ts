@@ -40,12 +40,19 @@ class SubscriptionService {
 			const payload = job.payload as any;
 			if (!payload?.subscriptionId) return;
 
-			await this.checkSubscription(payload.subscriptionId);
-
-			// Reschedule for next time
-			const sub = await prisma.subscription.findUnique({ where: { id: payload.subscriptionId } });
-			if (sub && sub.enabled) {
-				await this.scheduleSubscription(sub);
+			// Always reschedule, even when the check fails — a failed check must
+			// not permanently kill the channel's self-rescheduling check chain
+			// until the next server restart (mirrors the system handler in
+			// jobs/scheduler.ts).
+			try {
+				await this.checkSubscription(payload.subscriptionId);
+			} finally {
+				const sub = await prisma.subscription.findUnique({
+					where: { id: payload.subscriptionId },
+				});
+				if (sub && sub.enabled) {
+					await this.scheduleSubscription(sub);
+				}
 			}
 		});
 

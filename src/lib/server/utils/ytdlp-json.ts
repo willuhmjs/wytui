@@ -35,6 +35,19 @@ export class YtdlpAuthError extends Error {
 	}
 }
 
+/**
+ * Thrown when yt-dlp stderr indicates an age-restricted video: it needs an
+ * age-verified account's cookies, which is a per-video condition — NOT an
+ * IP-wide rate limit, so it must never arm the shared cooldown.
+ */
+export class AgeRestrictedError extends Error {
+	readonly isAgeRestricted = true;
+	constructor(msg: string) {
+		super(msg);
+		this.name = 'AgeRestrictedError';
+	}
+}
+
 /** Thrown when the process is killed at the hard timeout. Always retryable. */
 export class YtdlpTimeoutError extends Error {
 	readonly isTimeout = true;
@@ -45,9 +58,19 @@ export class YtdlpTimeoutError extends Error {
 }
 
 /**
+ * Returns true when yt-dlp stderr indicates an age-restricted video.
+ */
+export function isAgeRestrictedError(stderr: string): boolean {
+	return stderr.toLowerCase().includes('sign in to confirm your age');
+}
+
+/**
  * Returns true when yt-dlp stderr indicates a YouTube rate limit (HTTP 429).
  * YouTube surfaces these as "HTTP Error 429", "Too Many Requests", or
  * "Sign in to confirm you're not a bot" in certain cookie-less contexts.
+ * Age-restriction prompts ("Sign in to confirm your age") share the "sign in
+ * to confirm" wording but are a different, per-video condition — see
+ * {@link isAgeRestrictedError}.
  */
 export function isRateLimitedError(stderr: string): boolean {
 	const s = stderr.toLowerCase();
@@ -58,7 +81,7 @@ export function isRateLimitedError(stderr: string): boolean {
 		s.includes('ratelimit') ||
 		/\berror 429\b/.test(s) ||
 		// YouTube sometimes blocks anonymous yt-dlp with this message
-		s.includes('sign in to confirm')
+		(s.includes('sign in to confirm') && !isAgeRestrictedError(s))
 	);
 }
 
@@ -85,7 +108,8 @@ export function isAuthError(stderr: string): boolean {
  * The `settled` guard matters: without it a process that both times out and
  * later closes would settle the promise twice and leave a dangling timer.
  *
- * Throws {@link RateLimitError} when YouTube responds with HTTP 429.
+ * Throws {@link RateLimitError} when YouTube responds with HTTP 429 and
+ * {@link AgeRestrictedError} for age-gated videos.
  */
 export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Promise<string> {
 	const { cookiePath = null, proxyUrl = null, timeoutMs = 120000, extraArgs = [] } = opts;
@@ -128,6 +152,8 @@ export function runYtdlpJson(target: string, opts: RunYtdlpJsonOptions = {}): Pr
 			clearTimeout(timeout);
 			if (code === 0) {
 				resolve(out);
+			} else if (isAgeRestrictedError(err)) {
+				reject(new AgeRestrictedError(err.trim() || 'Age-restricted video'));
 			} else if (isRateLimitedError(err)) {
 				reject(new RateLimitError(err.trim() || 'YouTube rate limit (HTTP 429)'));
 			} else if (isAuthError(err)) {

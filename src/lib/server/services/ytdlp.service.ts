@@ -5,7 +5,9 @@ import type { DownloadMetadata } from '$lib/types';
 import {
 	RateLimitError,
 	YtdlpAuthError,
+	AgeRestrictedError,
 	isRateLimitedError,
+	isAgeRestrictedError,
 	isAuthError,
 } from '../utils/ytdlp-json';
 
@@ -422,7 +424,9 @@ export class YtdlpService {
 					}
 				} else {
 					const message = this.extractErrorMessage(error, code);
-					if (isRateLimitedError(message)) {
+					if (isAgeRestrictedError(message)) {
+						reject(new AgeRestrictedError(message));
+					} else if (isRateLimitedError(message)) {
 						reject(new RateLimitError(message));
 					} else if (isAuthError(message)) {
 						reject(new YtdlpAuthError(message));

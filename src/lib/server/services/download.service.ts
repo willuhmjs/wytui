@@ -16,7 +16,7 @@ import { subtitleService } from './subtitle.service';
 import { extractVideoId } from '$lib/utils/youtube';
 import { libraryAccessStatus, type LibraryAccess } from '$lib/server/permissions';
 import { ffmpegPercent } from './download-progress';
-import { isRateLimitedError } from '../utils/ytdlp-json';
+import { isRateLimitedError, isAgeRestrictedError } from '../utils/ytdlp-json';
 import { armRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 /**
@@ -1064,12 +1064,21 @@ class DownloadService {
 			// check on every queued video. Go terminal immediately with the clear
 			// message, arm the shared cooldown so background checks back off, and
 			// leave the manual Retry button for after the block lapses.
+			//
+			// Age-gated videos and forbidden-flag config errors are equally
+			// deterministic — no quick retry fixes missing age-verified cookies or
+			// an invalid profile — so they also skip the retry cycle, but they are
+			// per-video/per-config conditions and must NOT arm the cooldown (an
+			// age-gated video pausing every channel's checks is exactly the
+			// "phantom rate limit" failure mode).
 			const rateLimited = isRateLimitedError(error);
+			const deterministic =
+				!rateLimited && (isAgeRestrictedError(error) || error.includes('Forbidden flag'));
 			if (rateLimited) {
 				armRateLimitCooldown();
 			}
 
-			if (download.retryCount < 3 && !rateLimited) {
+			if (download.retryCount < 3 && !rateLimited && !deterministic) {
 				await this.updateDownload(downloadId, {
 					retryCount: download.retryCount + 1,
 					error,
@@ -1293,6 +1302,15 @@ class DownloadService {
 			startedAt: null,
 			completedAt: null,
 		});
+
+		// Broadcast the reset row as a fresh download. The client drops failed
+		// downloads from its live "Active" list seconds after download:failed,
+		// and ignores download:status events for ids it doesn't have — without
+		// this, a retried download stays invisible until a page refresh.
+		if (download.userId) {
+			this.downloadOwners.set(downloadId, download.userId);
+		}
+		this.emitToOwner('download:created', updated, downloadId);
 
 		await this.processDownload(downloadId);
 		return updated;

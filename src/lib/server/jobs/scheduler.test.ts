@@ -80,6 +80,7 @@ vi.mock('../services/download.service', () => ({
 import { jobScheduler } from './scheduler';
 import { prisma } from '../db';
 import { queueService } from '../services/queue.service';
+import { subscriptionService } from '../services/subscription.service';
 
 describe('system job handler', () => {
 	it('reschedules the recurring job even when the run fails', async () => {
@@ -93,9 +94,7 @@ describe('system job handler', () => {
 		const handler = handlers.get('system');
 		expect(handler).toBeDefined();
 
-		const runJobSpy = vi
-			.spyOn(jobScheduler as any, 'runJob')
-			.mockRejectedValue(new Error('boom'));
+		const runJobSpy = vi.spyOn(jobScheduler as any, 'runJob').mockRejectedValue(new Error('boom'));
 		const scheduleSpy = vi
 			.spyOn(jobScheduler as any, 'scheduleNextRun')
 			.mockResolvedValue(undefined);
@@ -136,6 +135,23 @@ describe('system job handler', () => {
 
 		expect(queueService.setMaxConcurrent).not.toHaveBeenCalled();
 		vi.unstubAllEnvs();
+	});
+
+	it('registers the subscription handler before the queue worker starts polling', async () => {
+		// Leftover PENDING subscription jobs from a previous run are already
+		// due; if the worker polls before the handler exists they fail with
+		// "No handler registered" and those channels' check chains die.
+		const order: string[] = [];
+		(subscriptionService.startScheduler as any).mockImplementation(async () => {
+			order.push('subscription-scheduler');
+		});
+		(queueService.start as any).mockImplementation(async () => {
+			order.push('queue-start');
+		});
+
+		await jobScheduler.start();
+
+		expect(order).toEqual(['subscription-scheduler', 'queue-start']);
 	});
 });
 

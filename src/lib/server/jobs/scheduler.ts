@@ -67,7 +67,7 @@ class JobScheduler {
 
 		// Register standard task handlers
 		downloadService.registerJobHandlers();
-		
+
 		queueService.registerHandler('system', async (job) => {
 			const payload = job.payload as any;
 			if (!payload?.name) return;
@@ -118,11 +118,11 @@ class JobScheduler {
 			enabled: true,
 			description: 'Monitor livestreams',
 		});
-		
+
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
 		});
-		
+
 		this.jobRegistry.set('backup', {
 			name: 'backup',
 			cron: settings?.backupCron || '0 2 * * *',
@@ -135,10 +135,7 @@ class JobScheduler {
 		// next settings save. An explicitly set QUEUE_MAX_DOWNLOADS env var
 		// wins over the stored setting (operator intent for deployments that
 		// configure via environment).
-		if (
-			settings?.maxConcurrentDownloads &&
-			process.env.QUEUE_MAX_DOWNLOADS === undefined
-		) {
+		if (settings?.maxConcurrentDownloads && process.env.QUEUE_MAX_DOWNLOADS === undefined) {
 			queueService.setMaxConcurrent(settings.maxConcurrentDownloads);
 		}
 
@@ -164,7 +161,7 @@ class JobScheduler {
 		await this.scheduleNextRun('auto-delete');
 		await this.scheduleNextRun('cache-cleanup');
 		await this.scheduleNextRun('youtube-sync');
-		
+
 		if (this.jobRegistry.get('backup')?.enabled) {
 			await this.scheduleNextRun('backup');
 		}
@@ -172,11 +169,17 @@ class JobScheduler {
 			await this.scheduleNextRun('watched-cleanup');
 		}
 
+		// Register the subscription handler and (re)schedule all subscriptions
+		// BEFORE starting the queue worker: subscription jobs left PENDING by a
+		// previous run are already due, and the worker's first poll would
+		// execute them against a missing handler — failing them terminally and
+		// breaking those channels' self-rescheduling check chains until the
+		// next restart.
+		await subscriptionService.startScheduler();
+
 		// Start queue worker
 		await queueService.start();
 
-		// Start subscription and monitor scheduling
-		await subscriptionService.startScheduler();
 		// Livestream monitors are long-lived yt-dlp --wait-for-video processes;
 		// without this startup call no monitor ever checks its stream.
 		await monitorService.startMonitoring();
@@ -193,14 +196,14 @@ class JobScheduler {
 			const nextRun = interval.next().toDate();
 
 			const pendingJobs = await prisma.jobQueue.findMany({
-				where: { type: 'system', status: 'PENDING' }
+				where: { type: 'system', status: 'PENDING' },
 			});
-			const existing = pendingJobs.find(j => (j.payload as any)?.name === name);
+			const existing = pendingJobs.find((j) => (j.payload as any)?.name === name);
 
 			if (existing) {
 				await prisma.jobQueue.update({
 					where: { id: existing.id },
-					data: { runAt: nextRun }
+					data: { runAt: nextRun },
 				});
 			} else {
 				await queueService.enqueue('system', { name }, { runAt: nextRun });
@@ -268,7 +271,7 @@ class JobScheduler {
 				case 'youtube-sync':
 					await youtubeSyncService.runOnce();
 					break;
-					
+
 				case 'watched-cleanup':
 					await cleanupService.runCleanup();
 					break;
@@ -349,7 +352,7 @@ class JobScheduler {
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
 		});
-		
+
 		if (settings?.cleanupEnabled) {
 			const intervalSeconds = settings.cleanupIntervalSeconds || 3600;
 			this.jobRegistry.set('watched-cleanup', {

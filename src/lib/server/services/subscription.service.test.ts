@@ -11,6 +11,7 @@ vi.mock('../db', () => ({
 	prisma: {
 		subscription: {
 			findUnique: vi.fn(async ({ where }: any) => subsDb[where.id] ?? null),
+			findMany: vi.fn(async () => []),
 			update: vi.fn(async ({ where, data }: any) => {
 				subsDb[where.id] = { ...subsDb[where.id], ...data };
 				return subsDb[where.id];
@@ -71,6 +72,7 @@ vi.mock('../utils/ytdlp-json', async (importOriginal) => {
 });
 
 import { subscriptionService } from './subscription.service';
+import { queueService } from './queue.service';
 import { RateLimitError, runYtdlpJson } from '../utils/ytdlp-json';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
@@ -225,6 +227,61 @@ describe('checkSubscription rate-limit cooldown', () => {
 		expect(getLatest).toHaveBeenCalledTimes(2);
 		// A successful check clears the error.
 		expect(subsDb[SUB_ID].lastError).toBeNull();
+	});
+});
+
+describe('subscription job handler', () => {
+	beforeEach(() => {
+		for (const k of Object.keys(subsDb)) delete subsDb[k];
+		vi.restoreAllMocks();
+	});
+
+	it('reschedules the next check even when the check fails', async () => {
+		// Capture the handler startScheduler registers (the real queue service
+		// is in play here; registerHandler just stores it in a map).
+		const registerSpy = vi.spyOn(queueService, 'registerHandler');
+		await subscriptionService.startScheduler();
+		const handler = registerSpy.mock.calls.find((c: any[]) => c[0] === 'subscription')?.[1] as any;
+		registerSpy.mockRestore();
+		expect(handler).toBeTypeOf('function');
+
+		subsDb[SUB_ID] = { id: SUB_ID, name: 'Test', enabled: true };
+		const checkSpy = vi
+			.spyOn(subscriptionService, 'checkSubscription')
+			.mockRejectedValue(new Error('boom'));
+		const scheduleSpy = vi
+			.spyOn(subscriptionService, 'scheduleSubscription')
+			.mockResolvedValue(undefined);
+
+		// The failure propagates (so the queue row records the error) …
+		await expect(handler({ payload: { subscriptionId: SUB_ID } })).rejects.toThrow('boom');
+		// … but the channel's check chain must survive it.
+		expect(scheduleSpy).toHaveBeenCalledTimes(1);
+		expect(scheduleSpy.mock.calls[0][0]).toMatchObject({ id: SUB_ID, enabled: true });
+
+		checkSpy.mockRestore();
+		scheduleSpy.mockRestore();
+	});
+
+	it('does not reschedule a disabled subscription', async () => {
+		const registerSpy = vi.spyOn(queueService, 'registerHandler');
+		await subscriptionService.startScheduler();
+		const handler = registerSpy.mock.calls.find((c: any[]) => c[0] === 'subscription')?.[1] as any;
+		registerSpy.mockRestore();
+
+		subsDb[SUB_ID] = { id: SUB_ID, name: 'Test', enabled: false };
+		const checkSpy = vi
+			.spyOn(subscriptionService, 'checkSubscription')
+			.mockResolvedValue(undefined);
+		const scheduleSpy = vi
+			.spyOn(subscriptionService, 'scheduleSubscription')
+			.mockResolvedValue(undefined);
+
+		await handler({ payload: { subscriptionId: SUB_ID } });
+		expect(scheduleSpy).not.toHaveBeenCalled();
+
+		checkSpy.mockRestore();
+		scheduleSpy.mockRestore();
 	});
 });
 

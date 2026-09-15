@@ -82,6 +82,7 @@ vi.mock('./notification.service', () => ({
 
 import { downloadService } from './download.service';
 import { queueService } from './queue.service';
+import { sseEmitter } from '../sse/emitter';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 const ID = 'dl-retry-1';
@@ -151,6 +152,41 @@ describe('handleDownloadError terminal path', () => {
 		expect(isRateLimitCooldownActive()).toBe(true);
 		resetRateLimitCooldown();
 	});
+
+	it('goes terminal on age-restricted videos without arming the cooldown', async () => {
+		seedDownload({ retryCount: 0 });
+		resetRateLimitCooldown();
+
+		await (downloadService as any).handleDownloadError(
+			ID,
+			'Metadata fetch failed: AgeRestrictedError: [youtube] vid1: Sign in to confirm your age. This video may be inappropriate for some users.',
+		);
+
+		// Deterministic per-video failure: no quick retries…
+		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
+		expect(downloads[ID].status).toBe(DownloadStatus.FAILED);
+		expect(downloads[ID].retryCount).toBe(0);
+		expect(downloads[ID].error).toContain('confirm your age');
+		// …and no cooldown: an age gate is not IP-wide, so subscription checks
+		// must keep running (this was the "phantom rate limit" failure mode).
+		expect(isRateLimitCooldownActive()).toBe(false);
+		// Still archived so subscription sync backs off before re-queueing.
+		expect(archiveDb['vid1']?.reason).toBe('failed');
+	});
+
+	it('goes terminal on forbidden-flag config errors without burning the retry cycle', async () => {
+		seedDownload({ retryCount: 0 });
+		resetRateLimitCooldown();
+
+		await (downloadService as any).handleDownloadError(ID, 'Forbidden flag: --postprocessor-args');
+
+		// An invalid profile flag fails identically on every attempt — retrying
+		// just spawns three more doomed processes.
+		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
+		expect(downloads[ID].status).toBe(DownloadStatus.FAILED);
+		expect(downloads[ID].retryCount).toBe(0);
+		expect(isRateLimitCooldownActive()).toBe(false);
+	});
 });
 
 describe('retryDownload', () => {
@@ -178,6 +214,22 @@ describe('retryDownload', () => {
 
 		expect(updated.status).toBe(DownloadStatus.PENDING);
 		expect(enqueueCalls).toHaveLength(1);
+	});
+
+	it('broadcasts download:created so the retry shows up in Active without a refresh', async () => {
+		// userId set → the retry must broadcast to the owning user.
+		seedDownload({ status: DownloadStatus.FAILED, userId: 'user-1' });
+
+		await downloadService.retryDownload(ID);
+
+		// The client drops failed rows from its live list and ignores
+		// download:status for unknown ids — only download:created re-adds it.
+		const calls = (sseEmitter.broadcastToUser as any).mock.calls.filter(
+			(c: any[]) => c[0] === 'download:created',
+		);
+		expect(calls).toHaveLength(1);
+		expect(calls[0][1]).toMatchObject({ id: ID, status: DownloadStatus.PENDING });
+		expect(calls[0][2]).toBe('user-1');
 	});
 
 	it('refuses to retry a download that is not failed or cancelled', async () => {

@@ -17,11 +17,9 @@ const DEFAULT_PROFILES = [
 		format: 'mp4',
 		customFlags: [
 			'-f',
-			'bestvideo[vcodec^=avc][height<=2160]+bestaudio/best',
+			'bestvideo[vcodec^=avc][height<=2160]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=2160]+bestaudio/best',
 			'--merge-output-format',
 			'mp4',
-			'--postprocessor-args',
-			'ffmpeg:-c:a aac -b:a 192k',
 		],
 	},
 	{
@@ -33,11 +31,9 @@ const DEFAULT_PROFILES = [
 		format: 'mp4',
 		customFlags: [
 			'-f',
-			'bestvideo[vcodec^=avc]+bestaudio/best',
+			'bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/best',
 			'--merge-output-format',
 			'mp4',
-			'--postprocessor-args',
-			'ffmpeg:-c:a aac -b:a 192k',
 		],
 	},
 	{
@@ -49,11 +45,9 @@ const DEFAULT_PROFILES = [
 		format: 'mp4',
 		customFlags: [
 			'-f',
-			'bestvideo[vcodec^=avc][height<=720]+bestaudio/best',
+			'bestvideo[vcodec^=avc][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=720]+bestaudio/best',
 			'--merge-output-format',
 			'mp4',
-			'--postprocessor-args',
-			'ffmpeg:-c:a aac -b:a 192k',
 		],
 	},
 	{
@@ -65,11 +59,9 @@ const DEFAULT_PROFILES = [
 		format: 'mp4',
 		customFlags: [
 			'-f',
-			'bestvideo[vcodec^=avc][height<=480]+bestaudio/best',
+			'bestvideo[vcodec^=avc][height<=480]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc][height<=480]+bestaudio/best',
 			'--merge-output-format',
 			'mp4',
-			'--postprocessor-args',
-			'ffmpeg:-c:a aac -b:a 192k',
 		],
 	},
 
@@ -112,11 +104,9 @@ const DEFAULT_PROFILES = [
 		isDefault: false,
 		customFlags: [
 			'-f',
-			'bestvideo[vcodec^=avc]+bestaudio/best',
+			'bestvideo[vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc]+bestaudio/best',
 			'--merge-output-format',
 			'mp4',
-			'--postprocessor-args',
-			'ffmpeg:-c:a aac -b:a 192k',
 		],
 	},
 	{
@@ -127,6 +117,8 @@ const DEFAULT_PROFILES = [
 		customFlags: ['-f', 'worstvideo+worstaudio/worst'],
 	},
 ];
+
+export { DEFAULT_PROFILES };
 
 /**
  * Ensures the settings singleton and all default system profiles exist in the
@@ -250,5 +242,27 @@ export async function ensureDefaults(): Promise<void> {
 		if (!existing) {
 			await prisma.downloadProfile.create({ data: profile });
 		}
+	}
+
+	// System profiles seeded before the flag denylist carry
+	// --postprocessor-args (a ffmpeg-arg-injection vector, now rejected at
+	// spawn time) — every download using such a profile fails at the download
+	// step. Repair them to the current seeded preset. Only rows that still
+	// carry the forbidden flag are touched, so user-customized system profiles
+	// keep their other edits.
+	const systemProfiles = await prisma.downloadProfile.findMany({
+		where: { userId: null },
+	});
+	for (const existing of systemProfiles) {
+		if (!existing.customFlags.includes('--postprocessor-args')) continue;
+		const preset = DEFAULT_PROFILES.find((p) => p.name === existing.name);
+		if (!preset) continue;
+		await prisma.downloadProfile.update({
+			where: { id: existing.id },
+			data: { customFlags: preset.customFlags },
+		});
+		console.log(
+			`[Init] Repaired system profile "${existing.name}" (removed forbidden --postprocessor-args)`,
+		);
 	}
 }

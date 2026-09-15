@@ -126,6 +126,33 @@ describe('runYtdlpJson', () => {
 		await expect(promise).rejects.toBeInstanceOf(RateLimitError);
 	});
 
+	it('rejects with AgeRestrictedError on age-gate prompts, not RateLimitError', async () => {
+		const p = fakeProc();
+		spawnMock.mockReturnValue(p);
+		const { runYtdlpJson, AgeRestrictedError, RateLimitError } = await import('./ytdlp-json');
+		const promise = runYtdlpJson('TARGET');
+		p.stderr.emit(
+			'data',
+			'ERROR: [youtube] vid1: Sign in to confirm your age. This video may be inappropriate for some users.',
+		);
+		p.emit('close', 1);
+		const err = await promise.catch((e) => e);
+		expect(err).toBeInstanceOf(AgeRestrictedError);
+		expect(err).not.toBeInstanceOf(RateLimitError);
+		expect(err.isAgeRestricted).toBe(true);
+	});
+
+	it('classifies age gates and bot checks as distinct conditions', async () => {
+		const { isRateLimitedError, isAgeRestrictedError } = await import('./ytdlp-json');
+		const ageMsg =
+			'ERROR: Sign in to confirm your age. This video may be inappropriate for some users.';
+		const botMsg = 'ERROR: Sign in to confirm you\u2019re not a bot';
+		expect(isAgeRestrictedError(ageMsg)).toBe(true);
+		expect(isRateLimitedError(ageMsg)).toBe(false);
+		expect(isAgeRestrictedError(botMsg)).toBe(false);
+		expect(isRateLimitedError(botMsg)).toBe(true);
+	});
+
 	it('rejects with YtdlpAuthError on dead-session errors', async () => {
 		const p = fakeProc();
 		spawnMock.mockReturnValue(p);
