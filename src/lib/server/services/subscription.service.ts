@@ -649,6 +649,12 @@ class SubscriptionService {
 		});
 	}
 
+	// Channel tab suffixes: URLs ending in these are YouTube navigation tabs
+	// (…/videos, …/shorts, …/streams), never individual videos. A real video
+	// URL always has an id after the segment (/shorts/VIDEOID), so it can't
+	// match.
+	private static readonly CHANNEL_TAB_URL = /\/(videos|shorts|streams|featured|playlists)(\?|$)/;
+
 	/**
 	 * Map a -J playlist dump to {id, title, url} video entries. In full
 	 * extraction mode, re-apply the date filter client-side so an entry that
@@ -678,12 +684,12 @@ class SubscriptionService {
 				if (y && m && d) uploadedAt = new Date(Date.UTC(y, m - 1, d));
 			}
 			if (cutoff && (!uploadedAt || uploadedAt < cutoff)) continue;
-			videos.push({
-				id: e.id,
-				title: e.title ?? e.id,
-				url: e.webpage_url ?? e.url ?? `https://www.youtube.com/watch?v=${e.id}`,
-				uploadedAt,
-			});
+			const url = e.webpage_url ?? e.url ?? `https://www.youtube.com/watch?v=${e.id}`;
+			// Browsing a channel ROOT url (no /videos tab) makes yt-dlp list the
+			// channel's tabs as entries. Tabs are sub-playlists, not videos —
+			// queueing one would download the entire tab.
+			if (SubscriptionService.CHANNEL_TAB_URL.test(url)) continue;
+			videos.push({ id: e.id, title: e.title ?? e.id, url, uploadedAt });
 		}
 		return videos;
 	}

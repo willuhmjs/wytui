@@ -328,6 +328,22 @@ describe('mapPlaylistEntries', () => {
 		expect(videos.map((v: any) => v.id)).toEqual(['new']);
 		expect(videos[0].uploadedAt?.toISOString()).toContain('2026-06-01');
 	});
+
+	it('never maps channel tab URLs as videos (channel-root browses list tabs)', () => {
+		const videos = map({
+			entries: [
+				{ id: 'UCt', title: 'Videos', url: 'https://www.youtube.com/channel/UCt/videos' },
+				{ id: 'UCt', title: 'Shorts', url: 'https://www.youtube.com/channel/UCt/shorts' },
+				{ id: 'UCt', title: 'Live', url: 'https://www.youtube.com/@handle/streams?si=abc' },
+				{ id: 'vid1', title: 'Real Video', url: 'https://www.youtube.com/watch?v=vid1' },
+				{ id: 'short1', title: 'A Short', url: 'https://www.youtube.com/shorts/short1' },
+				{ id: 'pl1', title: 'A Playlist', url: 'https://www.youtube.com/playlist?list=PL123' },
+			],
+		});
+		// Tabs are dropped; real videos (watch URLs, shorts with ids, playlists)
+		// pass through.
+		expect(videos.map((v: any) => v.id)).toEqual(['vid1', 'short1', 'pl1']);
+	});
 });
 
 describe('filterNewVideos failure cooldown', () => {

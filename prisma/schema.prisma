@@ -297,6 +297,7 @@ model Subscription {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@unique([userId, channelId])
   @@index([enabled])
   @@index([userId])
   @@map("subscriptions")
