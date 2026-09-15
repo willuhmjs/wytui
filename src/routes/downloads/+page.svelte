@@ -348,11 +348,18 @@
 		const unsubFailed = onSSEEvent('download:failed', () => {
 			loadFailedDownloads();
 		});
+		// A retried download leaves the failed list as soon as it's re-queued.
+		const unsubStatus = onSSEEvent('download:status', ({ id, status }: any) => {
+			if (status !== 'FAILED') {
+				failedDownloads = failedDownloads.filter((d) => d.id !== id);
+			}
+		});
 
 		return () => {
 			unsubComplete();
 			unsubDeleted();
 			unsubFailed();
+			unsubStatus();
 		};
 	});
 
@@ -486,26 +493,16 @@
 	async function retryAllFailed() {
 		if (failedDownloads.length === 0) return;
 
-		// Iterate over a copy: the download:deleted SSE handler mutates
-		// failedDownloads as each old record is removed.
+		// Iterate over a copy: each successful retry drops the row from
+		// failedDownloads as it's re-queued.
 		for (const download of [...failedDownloads]) {
 			try {
-				const body: any = {
-					url: download.url,
-					profileId: download.profileId,
-				};
-				if (download.storagePool === 'library') body.saveToLibrary = true;
-				if (download.customFlags?.length) body.customFlags = download.customFlags;
-
-				await csrfFetch('/api/downloads', {
+				const res = await csrfFetch(`/api/downloads/${download.id}/retry`, {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(body),
 				});
-				// Delete the old FAILED record so it doesn't reappear on reload.
-				await csrfFetch(`/api/downloads/${download.id}`, {
-					method: 'DELETE',
-				});
+				if (res.ok) {
+					failedDownloads = failedDownloads.filter((d) => d.id !== download.id);
+				}
 			} catch (e) {
 				console.error(`Failed to retry ${download.id}:`, e);
 			}

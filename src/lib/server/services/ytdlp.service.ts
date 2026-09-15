@@ -2,13 +2,84 @@ import { spawn, type ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import type { DownloadMetadata } from '$lib/types';
+import {
+	RateLimitError,
+	YtdlpAuthError,
+	isRateLimitedError,
+	isAuthError,
+} from '../utils/ytdlp-json';
 
 export class YtdlpService {
 	private ytdlpPath: string;
 	private aria2cAvailableCache: boolean | null = null;
 
+	/**
+	 * yt-dlp flags that execute commands, load code/config, or read sensitive
+	 * server files. Everything else is passed through untouched and rejected by
+	 * yt-dlp's own argument parser if unknown — so this stays a small denylist
+	 * instead of a hand-maintained allowlist that lags behind new yt-dlp flags.
+	 *
+	 * yt-dlp's argparse accepts unambiguous abbreviations (--exe resolves to
+	 * --exec), so matching is prefix-based: any token that could abbreviate a
+	 * dangerous flag is rejected. The few safe flags that are themselves
+	 * prefixes of a dangerous one are exempted as exact matches, since argparse
+	 * resolves exact matches before abbreviations.
+	 */
+	private dangerousFlagPrefixes = [
+		'--exec', // run commands after processing
+		'--exec-before-download', // historical variant of --exec
+		'--external-downloader', // run an arbitrary downloader binary
+		'--external-downloader-args',
+		'--downloader', // alias of --external-downloader
+		'--downloader-args', // alias of --external-downloader-args
+		'--postprocessor-args', // inject args into the ffmpeg invocation
+		'--ppa', // alias of --postprocessor-args
+		'--plugin-dirs', // load arbitrary Python plugins
+		'--use-postprocessor', // enable (plugin) postprocessors
+		'--config-locations', // load config files, which can embed any flag
+		'--batch-file', // read an arbitrary file as the URL list
+		'--ffmpeg-location', // execute an arbitrary ffmpeg binary
+		'--js-runtimes', // execute an arbitrary JS runtime binary
+		'--remote-components', // fetch remote code components
+		'--cookies', // read server-local cookie files (cross-session hijack)
+		'--cookies-from-browser', // read server-local browser credential stores
+		'--load-info-json', // read and parse arbitrary server files
+		'--netrc-location', // read an arbitrary credentials file
+		'--print-to-file', // append rendered text to arbitrary files
+		'--output', // override the app-managed output path (arbitrary write)
+		'--paths', // override output/Temp paths (arbitrary write)
+		'--download-archive', // read/append arbitrary archive files
+		'--sponsorblock-api', // arbitrary URL fetched server-side (SSRF)
+		'--add-headers', // inject arbitrary request headers (auth/cookies)
+	];
+	// -o: --output, -P: --paths, -a: --batch-file
+	private dangerousShortFlags = new Set(['-o', '-P', '-a']);
+	private safeExactFlags = new Set(['--print']);
+
 	constructor(ytdlpPath = '/usr/local/bin/yt-dlp') {
 		this.ytdlpPath = ytdlpPath;
+	}
+
+	/**
+	 * Check if any user-supplied flag can execute code or read sensitive files,
+	 * returning the offending flag (or null if the set is safe).
+	 */
+	findDangerousFlag(flags: string[]): string | null {
+		for (const flag of flags) {
+			// Spawn uses an argv array (no shell), but keep rejecting shell
+			// metacharacters so a value can never become a hazard downstream.
+			if (/[;&|$\`]/.test(flag)) return flag;
+
+			if (!flag.startsWith('-')) continue; // value token
+			const raw = flag.split('=')[0];
+			const name = raw.toLowerCase();
+			if (this.safeExactFlags.has(name)) continue;
+			// Short flags are case-sensitive in argparse (-o is --output, but
+			// -O is --print), so match them on the original case.
+			if (this.dangerousShortFlags.has(raw)) return flag;
+			if (this.dangerousFlagPrefixes.some((d) => d.startsWith(name))) return flag;
+		}
+		return null;
 	}
 
 	getPath(): string {
@@ -63,19 +134,11 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Validate URL to prevent command injection
+	 * Validate URL format
 	 */
 	validateUrl(url: string): void {
 		if (!url || typeof url !== 'string') {
 			throw new Error('Invalid URL: must be a non-empty string');
-		}
-
-		// Check for command injection attempts
-		const dangerousPatterns = [';', '&&', '||', '|', '$', '`', '\n', '\r'];
-		for (const pattern of dangerousPatterns) {
-			if (url.includes(pattern)) {
-				throw new Error('Invalid URL: contains forbidden characters');
-			}
 		}
 
 		// Validate URL format
@@ -91,26 +154,58 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Fetch channel/playlist name from a URL
+	 * Fetch channel/playlist name from a URL. Best-effort: resolves null on
+	 * failure (with the classified reason logged) so callers can fall back.
 	 */
-	async fetchChannelName(url: string): Promise<string | null> {
+	async fetchChannelName(
+		url: string,
+		defaults?: { proxyUrl?: string | null; extraFlags?: string[] },
+	): Promise<string | null> {
 		this.validateUrl(url);
 		return new Promise((resolve) => {
-			const proc = spawn(this.ytdlpPath, [
+			const args = [
 				'--flat-playlist',
 				'--playlist-items',
 				'0',
 				'-J',
 				'--no-warnings',
+				...this.buildDefaultsArgs(defaults ?? {}),
 				url,
-			]);
+			];
+			const proc = spawn(this.ytdlpPath, args);
 			let output = '';
+			let error = '';
+			let settled = false;
+
+			const timeout = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
+				resolve(null);
+			}, 60000);
 
 			proc.stdout.on('data', (data) => {
 				output += data.toString();
 			});
 
+			proc.stderr.on('data', (data) => {
+				error += data.toString();
+			});
+
+			proc.on('error', (err) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				console.error(`[YtdlpService] Channel name fetch failed for ${url}:`, err.message);
+				resolve(null);
+			});
+
 			proc.on('close', (code) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
 				if (code === 0) {
 					try {
 						const info = JSON.parse(output);
@@ -120,33 +215,73 @@ export class YtdlpService {
 						resolve(null);
 					}
 				} else {
+					const message = this.extractErrorMessage(error, code);
+					console.error(
+						`[YtdlpService] Channel name fetch failed for ${url}:${isRateLimitedError(message) ? ' (rate limited)' : ''} ${message}`,
+					);
 					resolve(null);
 				}
 			});
-
-			proc.on('error', () => resolve(null));
 		});
 	}
 
-	async fetchChannelThumbnail(channelUrl: string): Promise<Buffer | null> {
+	async fetchChannelThumbnail(
+		channelUrl: string,
+		defaults?: { proxyUrl?: string | null; extraFlags?: string[] },
+	): Promise<Buffer | null> {
 		this.validateUrl(channelUrl);
 		return new Promise((resolve) => {
-			const proc = spawn(this.ytdlpPath, [
+			const args = [
 				'--flat-playlist',
 				'--playlist-items',
 				'0',
 				'-J',
 				'--no-warnings',
+				...this.buildDefaultsArgs(defaults ?? {}),
 				channelUrl,
-			]);
+			];
+			const proc = spawn(this.ytdlpPath, args);
 			let output = '';
+			let error = '';
+			let settled = false;
+
+			const timeout = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
+				resolve(null);
+			}, 60000);
 
 			proc.stdout.on('data', (data) => {
 				output += data.toString();
 			});
 
+			proc.stderr.on('data', (data) => {
+				error += data.toString();
+			});
+
+			proc.on('error', (err) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				console.error(
+					`[YtdlpService] Channel thumbnail fetch failed for ${channelUrl}:`,
+					err.message,
+				);
+				resolve(null);
+			});
+
 			proc.on('close', async (code) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
 				if (code !== 0) {
+					const message = this.extractErrorMessage(error, code);
+					console.error(
+						`[YtdlpService] Channel thumbnail fetch failed for ${channelUrl}:${isRateLimitedError(message) ? ' (rate limited)' : ''} ${message}`,
+					);
 					resolve(null);
 					return;
 				}
@@ -174,8 +309,6 @@ export class YtdlpService {
 					resolve(null);
 				}
 			});
-
-			proc.on('error', () => resolve(null));
 		});
 	}
 
@@ -187,6 +320,12 @@ export class YtdlpService {
 		options?: { cookiePath?: string | null; proxyUrl?: string | null; extraFlags?: string[] },
 	): Promise<DownloadMetadata> {
 		this.validateUrl(url);
+		if (options?.extraFlags?.length) {
+			const badFlag = this.findDangerousFlag(options.extraFlags);
+			if (badFlag) {
+				throw new Error(`Forbidden flag: ${badFlag}`);
+			}
+		}
 		return new Promise((resolve, reject) => {
 			const args = ['-J', '--no-warnings'];
 			if (options?.cookiePath) {
@@ -196,12 +335,24 @@ export class YtdlpService {
 				args.push('--proxy', options.proxyUrl);
 			}
 			if (options?.extraFlags?.length) {
-				args.push(...this.filterDangerousFlags(options.extraFlags));
+				args.push(...options.extraFlags);
 			}
 			args.push(url);
 			const proc = spawn(this.ytdlpPath, args);
 			let output = '';
 			let error = '';
+			let settled = false;
+
+			// A hung metadata fetch would hold the single metadata slot
+			// forever (and its queue type's concurrency cap), so bound it.
+			const timeout = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				try {
+					proc.kill('SIGKILL');
+				} catch {}
+				reject(new Error('yt-dlp metadata fetch timed out'));
+			}, 180000);
 
 			proc.stdout.on('data', (data) => {
 				output += data.toString();
@@ -211,7 +362,17 @@ export class YtdlpService {
 				error += data.toString();
 			});
 
+			proc.on('error', (err) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				reject(err);
+			});
+
 			proc.on('close', (code) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
 				if (code === 0) {
 					try {
 						const info = JSON.parse(output);
@@ -260,241 +421,36 @@ export class YtdlpService {
 						reject(new Error(`Failed to parse metadata: ${e}`));
 					}
 				} else {
-					reject(new Error(`yt-dlp failed: ${error}`));
+					const message = this.extractErrorMessage(error, code);
+					if (isRateLimitedError(message)) {
+						reject(new RateLimitError(message));
+					} else if (isAuthError(message)) {
+						reject(new YtdlpAuthError(message));
+					} else {
+						reject(new Error(message));
+					}
 				}
 			});
-
-			proc.on('error', (err) => reject(err));
 		});
 	}
 
 	/**
-	 * Whitelist of allowed yt-dlp flags for security
-	 * Using a whitelist instead of blacklist to prevent command injection
+	 * Distill raw process stderr into a single useful message: prefer the last
+	 * ERROR line, fall back to the trimmed tail, and keep it bounded so it fits
+	 * in the download row / job error fields.
 	 */
-	private allowedFlags = new Set([
-		// Format selection
-		'--format',
-		'-f',
-		'--merge-output-format',
-		'--format-sort',
-		'-s',
-		// Quality
-		'--audio-quality',
-		'--video-quality',
-		// Subtitles
-		'--write-subs',
-		'--write-auto-subs',
-		'--sub-langs',
-		'--sub-format',
-		'--embed-subs',
-		'--convert-subs',
-		// Metadata
-		'--embed-metadata',
-		'--embed-thumbnail',
-		'--add-metadata',
-		'--embed-chapters',
-		'--embed-info-json',
-		'--write-info-json',
-		'--write-description',
-		'--write-comments',
-		// Thumbnails
-		'--write-thumbnail',
-		'--convert-thumbnails',
-		// Audio
-		'--extract-audio',
-		'-x',
-		'--audio-format',
-		'--audio-quality',
-		// Video
-		'--recode-video',
-		'--remux-video',
-		// Network
-		'--limit-rate',
-		'-r',
-		'--retries',
-		'-r',
-		'--fragment-retries',
-		'--file-access-retries',
-		'--throttled-rate',
-		'--http-chunk-size',
-		'--buffer-size',
-		'--socket-timeout',
-		'--source-address',
-		'--force-ipv4',
-		'--force-ipv6',
-		'--impersonate',
-		'--proxy',
-		// Playlist
-		'--playlist-start',
-		'--playlist-end',
-		'--playlist-items',
-		'-i',
-		'--yes-playlist',
-		'--no-playlist',
-		'--flat-playlist',
-		'--skip-playlist-after-errors',
-		// Download
-		'--concurrent-fragments',
-		'-n',
-		'--downloader',
-		'--downloader-args',
-		'--download-sections',
-		'--download-archive',
-		'--break-on-existing',
-		// Video Selection
-		'--date',
-		'--datebefore',
-		'--dateafter',
-		'--match-filters',
-		'--min-filesize',
-		'--max-filesize',
-		'--age-limit',
-		'--max-downloads',
-		// Filesystem
-		'--output',
-		'-o',
-		'--no-overwrites',
-		'--force-overwrites',
-		'--no-continue',
-		'--no-part',
-		'--no-mtime',
-		'--restrict-filenames',
-		'--trim-filenames',
-		'--cookies',
-		// SponsorBlock
-		'--sponsorblock-mark',
-		'--sponsorblock-remove',
-		'--sponsorblock-chapter-title',
-		'--sponsorblock-api',
-		'--no-sponsorblock',
-		// Post-processing
-		'--remux-video',
-		'--postprocessor-args',
-		'--keep-video',
-		'-k',
-		'--split-chapters',
-		'--remove-chapters',
-		'--force-keyframes-at-cuts',
-		'--fixup',
-		'--concat-playlist',
-		// Workarounds
-		'--no-check-certificates',
-		'--legacy-server-connect',
-		'--sleep-requests',
-		'--sleep-interval',
-		'--max-sleep-interval',
-		'--sleep-subtitles',
-		'--add-headers',
-		// Extractor
-		'--extractor-retries',
-		'--extractor-args',
-		// General
-		'--ignore-errors',
-		'-i',
-		'--live-from-start',
-		'--prefer-free-formats',
-		// Other safe flags
-		'--no-warnings',
-		'--no-progress',
-		'--quiet',
-		'--verbose',
-	]);
-
-	/**
-	 * Check if a flag is allowed (whitelist approach)
-	 */
-	private isFlagAllowed(flag: string): boolean {
-		// Skip non-flag values (arguments that don't start with -)
-		if (!flag.startsWith('-')) {
-			return true;
-		}
-
-		// Extract flag name (everything before '=' if present)
-		const flagName = flag.split('=')[0].toLowerCase();
-
-		// Check if it's in the whitelist
-		return this.allowedFlags.has(flagName);
-	}
-
-	/**
-	 * Check if any flags are dangerous and return the offending flag, or null if safe
-	 */
-	findDangerousFlag(flags: string[]): string | null {
-		for (const flag of flags) {
-			// Skip non-flag values (arguments that don't start with -)
-			if (!flag.startsWith('-')) {
-				// Still check for shell metacharacters in values
-				if (/[;&|$`]/.test(flag)) {
-					return flag;
-				}
-				continue;
-			}
-
-			if (!this.isFlagAllowed(flag)) {
-				return flag;
-			}
-			// Also check for shell metacharacters
-			if (/[;&|$`]/.test(flag)) {
-				return flag;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Check for incompatible flag combinations and return error message if found
-	 */
-	validateFlagCompatibility(flags: string[]): string | null {
-		const hasEmbedSubs = flags.includes('--embed-subs');
-		const hasExtractAudio = flags.includes('--extract-audio') || flags.includes('-x');
-
-		let audioFormat: string | null = null;
-		const audioFormatIdx = flags.indexOf('--audio-format');
-		if (audioFormatIdx !== -1 && audioFormatIdx + 1 < flags.length) {
-			audioFormat = flags[audioFormatIdx + 1];
-		}
-
-		// Embedding subtitles in audio-only formats is not supported
-		if (hasEmbedSubs && hasExtractAudio) {
-			return 'Cannot embed subtitles in audio-only downloads. Subtitles will be saved as separate files.';
-		}
-
-		// Check specific audio formats that can't embed subtitles
-		const audioOnlyFormats = ['m4a', 'mp3', 'aac', 'flac', 'opus', 'wav', 'ogg', 'vorbis'];
-		if (hasEmbedSubs && audioFormat && audioOnlyFormats.includes(audioFormat.toLowerCase())) {
-			return `Cannot embed subtitles in ${audioFormat} format. Subtitles will be saved as separate files.`;
-		}
-
-		return null;
-	}
-
-	/**
-	 * Filter flags to only allow whitelisted ones
-	 */
-	private filterDangerousFlags(flags: string[]): string[] {
-		return flags.filter((flag) => {
-			// Keep non-flag values (arguments that don't start with -)
-			// but check for shell metacharacters
-			if (!flag.startsWith('-')) {
-				if (/[;&|$`]/.test(flag)) {
-					console.warn(`Filtered value with dangerous characters: ${flag}`);
-					return false;
-				}
-				return true;
-			}
-
-			if (!this.isFlagAllowed(flag)) {
-				console.warn(`Filtered non-whitelisted flag: ${flag}`);
-				return false;
-			}
-			// Also check for shell metacharacters
-			if (/[;&|$`]/.test(flag)) {
-				console.warn(`Filtered flag with dangerous characters: ${flag}`);
-				return false;
-			}
-			return true;
-		});
+	private extractErrorMessage(stderr: string, code: number | null): string {
+		const lines = stderr
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean);
+		const errorLines = lines.filter((l) => l.startsWith('ERROR:'));
+		const message = (
+			errorLines.length > 0 ? errorLines[errorLines.length - 1] : (lines[lines.length - 1] ?? '')
+		)
+			.replace(/^ERROR:\s*/, '')
+			.slice(0, 500);
+		return message || `yt-dlp exited with code ${code ?? 'unknown'}`;
 	}
 
 	/**
@@ -542,7 +498,7 @@ export class YtdlpService {
 	/**
 	 * Args carrying the global yt-dlp defaults (outbound proxy + extra default
 	 * flags) for invocations that don't go through {@link buildArgs}. Extra
-	 * flags pass through the same whitelist as per-download custom flags.
+	 * flags are guarded by the same denylist as per-download custom flags.
 	 */
 	buildDefaultsArgs(defaults: {
 		proxyUrl?: string | null;
@@ -553,7 +509,14 @@ export class YtdlpService {
 			args.push('--proxy', defaults.proxyUrl);
 		}
 		if (defaults?.extraFlags?.length) {
-			args.push(...this.filterDangerousFlags(defaults.extraFlags));
+			// Runtime re-check: extra flags in the DB may predate the current
+			// denylist (older versions allowed more), so fail loudly naming the
+			// offending flag instead of silently executing it.
+			const badFlag = this.findDangerousFlag(defaults.extraFlags);
+			if (badFlag) {
+				throw new Error(`Forbidden flag in saved extra flags: ${badFlag}`);
+			}
+			args.push(...defaults.extraFlags);
 		}
 		return args;
 	}
@@ -581,9 +544,10 @@ export class YtdlpService {
 		const args = [
 			// Progress template for JSON output
 			'--newline',
-			'--progress',
 			'--progress-template',
-			'{"status":"downloading","progress":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s"}',
+			'download:{"type":"download","filename":%(info._filename)j,"progress":{"status":"%(progress.status)s","progress":"%(progress._percent_str)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s"}}',
+			'--progress-template',
+			'postprocess:{"type":"postprocess","module":"%(progress.postprocessor)s","status":"%(progress.status)s"}',
 			// Output settings
 			'-o',
 			join(outputPath, '%(title)s.%(ext)s'),
@@ -625,23 +589,36 @@ export class YtdlpService {
 			args.push('--proxy', options.proxyUrl);
 		}
 
-		// Add custom flags with filtering
+		// Add custom flags
 		if (customFlags.length > 0) {
-			let safeFlags = this.filterDangerousFlags(customFlags);
+			// Runtime re-check (guards are also enforced at save time, but
+			// stored profile/subscription flags may predate the denylist).
+			const badFlag = this.findDangerousFlag(customFlags);
+			if (badFlag) {
+				throw new Error(`Forbidden flag: ${badFlag}`);
+			}
+			let finalFlags = [...customFlags];
 			if (!this.isYouTubeUrl(url)) {
-				safeFlags = this.stripSponsorBlockFlags(safeFlags);
+				finalFlags = this.stripSponsorBlockFlags(finalFlags);
 			}
 			// Strip --embed-subs if audio-only to prevent ffmpeg errors
-			const hasExtractAudio = safeFlags.includes('--extract-audio') || safeFlags.includes('-x');
+			const hasExtractAudio = finalFlags.includes('--extract-audio') || finalFlags.includes('-x');
 			if (hasExtractAudio) {
-				const embedSubsIdx = safeFlags.indexOf('--embed-subs');
+				const embedSubsIdx = finalFlags.indexOf('--embed-subs');
 				if (embedSubsIdx !== -1) {
 					console.log('[YtdlpService] Removing --embed-subs for audio-only download');
-					safeFlags.splice(embedSubsIdx, 1);
+					finalFlags.splice(embedSubsIdx, 1);
 				}
 			}
-			args.push(...safeFlags);
+			args.push(...finalFlags);
 		}
+
+		// Official kill switches, appended AFTER user flags so a dangerous flag
+		// that slips past findDangerousFlag is still neutralized by yt-dlp
+		// itself: --no-exec removes any previously defined --exec, --no-plugin-dirs
+		// clears plugin paths, --no-config-locations clears custom configs, and
+		// --ignore-config stops ambient config files from being loaded at all.
+		args.push('--ignore-config', '--no-exec', '--no-plugin-dirs', '--no-config-locations');
 
 		args.push(url);
 		return args;
@@ -661,44 +638,25 @@ export class YtdlpService {
 		});
 
 		if (proc.stdout) {
-			proc.stdout.on('data', (chunk) => {
-				const lines = chunk.toString().split('\n');
-				for (const line of lines) {
-					if (!line.trim()) continue;
+			// Progress arrives as newline-delimited JSON, but a single chunk can
+			// end mid-line — buffer and only parse complete lines.
+			let stdoutBuffer = '';
+			const processStdoutLine = (line: string) => {
+				if (!line.trim()) return;
 
-					try {
-						const data = JSON.parse(line);
-						if (onProgress) onProgress(data);
-					} catch {
-						// Non-JSON line, could be regular output or destination info
-						console.log('[yt-dlp]', line);
+				try {
+					const data = JSON.parse(line);
 
-						// Check if this is a destination line: [download] Destination: /path/to/file.ext
-						if (line.includes('[download] Destination:')) {
-							const match = line.match(/\[download\] Destination: (.+)/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
+					if (data.type === 'download') {
+						if (data.filename && onProgress) {
+							onProgress({ type: 'destination', filepath: data.filename });
 						}
-						// Check if this is a merge line: [Merger] Merging formats into "/path/to/file.ext"
-						else if (line.includes('[Merger] Merging formats into')) {
-							const match = line.match(/\[Merger\] Merging formats into "(.+)"/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
+						if (data.progress && onProgress) {
+							onProgress(data.progress);
 						}
-						// Post-processing destination (e.g. ExtractAudio, FFmpegVideoConvertor)
-						else if (line.match(/\[[\w]+\] Destination:/)) {
-							const match = line.match(/\[[\w]+\] Destination: (.+)/);
-							if (match && onProgress) {
-								onProgress({ type: 'destination', filepath: match[1].trim() });
-							}
-						}
-
-						// Detect post-processing steps
-						const ppMatch = line.match(/^\[(\w+)\]\s+(.+)/);
-						if (ppMatch && onProgress) {
-							const module = ppMatch[1];
+					} else if (data.type === 'postprocess') {
+						const module = data.module;
+						if (module && onProgress) {
 							const ignoredModules = new Set([
 								'download',
 								'info',
@@ -727,32 +685,55 @@ export class YtdlpService {
 								onProgress({ type: 'postprocess', step, module });
 							}
 						}
+					} else {
+						// Fallback for other JSON types or legacy format
+						if (onProgress) onProgress(data);
 					}
+				} catch {
+					// Non-JSON line (e.g. from generic yt-dlp logging)
+					console.log('[yt-dlp]', line);
 				}
+			};
+
+			proc.stdout.on('data', (chunk) => {
+				stdoutBuffer += chunk.toString();
+				const lines = stdoutBuffer.split('\n');
+				stdoutBuffer = lines.pop() ?? '';
+				for (const line of lines) processStdoutLine(line);
+			});
+			proc.stdout.on('end', () => {
+				if (stdoutBuffer) processStdoutLine(stdoutBuffer);
 			});
 		}
 
 		if (proc.stderr) {
-			proc.stderr.on('data', (chunk) => {
-				const lines = chunk.toString().split('\n');
-				for (const line of lines) {
-					if (!line.trim()) continue;
+			// Same line-buffering for ffmpeg's progress output.
+			let stderrBuffer = '';
+			const processStderrLine = (line: string) => {
+				if (!line.trim()) return;
 
-					const timeMatch = line.match(/time=(\d+):(\d+):(\d+\.\d+)/);
-					if (timeMatch) {
-						const timeSeconds =
-							parseInt(timeMatch[1]) * 3600 +
-							parseInt(timeMatch[2]) * 60 +
-							parseFloat(timeMatch[3]);
-						const speedMatch = line.match(/speed=\s*([\d.]+)x/);
-						const speed = speedMatch ? speedMatch[1] + 'x' : null;
-						if (onProgress) onProgress({ type: 'ffmpeg_progress', timeSeconds, speed });
-						continue;
-					}
-
-					console.error('[yt-dlp error]', line);
-					if (onError) onError(line);
+				const timeMatch = line.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+				if (timeMatch) {
+					const timeSeconds =
+						parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseFloat(timeMatch[3]);
+					const speedMatch = line.match(/speed=\s*([\d.]+)x/);
+					const speed = speedMatch ? speedMatch[1] + 'x' : null;
+					if (onProgress) onProgress({ type: 'ffmpeg_progress', timeSeconds, speed });
+					return;
 				}
+
+				console.error('[yt-dlp error]', line);
+				if (onError) onError(line);
+			};
+
+			proc.stderr.on('data', (chunk) => {
+				stderrBuffer += chunk.toString();
+				const lines = stderrBuffer.split('\n');
+				stderrBuffer = lines.pop() ?? '';
+				for (const line of lines) processStderrLine(line);
+			});
+			proc.stderr.on('end', () => {
+				if (stderrBuffer) processStderrLine(stderrBuffer);
 			});
 		}
 
@@ -769,10 +750,11 @@ export class YtdlpService {
 			// Kill the process group (negative PID)
 			process.kill(-proc.pid, 'SIGTERM');
 
-			// Wait 5 seconds, then force kill
+			// Wait 5 seconds, then force kill. proc.killed only flips when
+			// proc.kill() is called, so test for an actual exit instead.
 			await new Promise((resolve) => setTimeout(resolve, 5000));
 
-			if (!proc.killed) {
+			if (proc.exitCode === null && proc.signalCode === null) {
 				process.kill(-proc.pid, 'SIGKILL');
 			}
 		} catch (e) {

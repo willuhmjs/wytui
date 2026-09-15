@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
+import { isYouTubeUrl } from '$lib/server/services/youtube.service';
 import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
@@ -153,6 +154,12 @@ export const POST = apiRoute(
 				throw error(400, 'Invalid URL format');
 			}
 
+			// Subscriptions poll YouTube channels/playlists — their URLs are fed
+			// to yt-dlp by the scheduler, so restrict them to YouTube hosts.
+			if (!isYouTubeUrl(data.url)) {
+				throw error(400, 'Only YouTube channel or playlist URLs are supported');
+			}
+
 			const validTypes = ['CHANNEL', 'PLAYLIST', 'USER'];
 			if (data.type && !validTypes.includes(data.type)) {
 				throw error(400, 'Invalid subscription type');
@@ -173,11 +180,10 @@ export const POST = apiRoute(
 				throw error(400, 'Check interval must be between 60 and 86400 seconds');
 			}
 
-			const existing = await prisma.subscription.findFirst({
-				where: { url: data.url, userId },
-			});
+			const existing = await subscriptionService.findDuplicate(userId, { url: data.url });
 			if (existing) {
-				throw error(409, 'A subscription for this URL already exists');
+				const typeName = data.type ? data.type.toLowerCase() : 'source';
+				throw error(409, `A subscription for this ${typeName} already exists`);
 			}
 
 			const customFlags = Array.isArray(data.customFlags) ? data.customFlags : [];

@@ -245,15 +245,7 @@
 
 	async function retryDownload() {
 		try {
-			const body: any = { url: download.url, profileId: download.profileId };
-			if (download.storagePool === 'library') body.saveToLibrary = true;
-			if (download.customFlags?.length) body.customFlags = download.customFlags;
-			await csrfFetch('/api/downloads', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body),
-			});
-			await csrfFetch(`/api/downloads/${download.id}`, { method: 'DELETE' });
+			await csrfFetch(`/api/downloads/${download.id}/retry`, { method: 'POST' });
 		} catch (e) {
 			console.error('Failed to retry:', e);
 		}

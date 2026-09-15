@@ -83,43 +83,47 @@
 <!-- Desktop sidebar -->
 <aside class="sidebar" class:collapsed>
 	<div class="sidebar-header">
-		<a href="/" class="logo" title="wytui (W-Y-T-U-I)">
-			{#if !collapsed}
-				<div class="logo-row">
+		{#if !collapsed}
+			<!-- The logo link and the update badge must be siblings: nesting the
+			   badge <a> inside the logo <a> triggers a hydration mismatch. -->
+			<div class="logo-row">
+				<a href="/" class="logo" title="wytui (W-Y-T-U-I)">
 					<h1>wytui</h1>
-					{#if updateAvailable}
-						<a
-							href={commitsUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="update-badge"
-							title="New commits available — pull the latest image"
+				</a>
+				{#if updateAvailable}
+					<a
+						href={commitsUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="update-badge"
+						title="New commits available — pull the latest image"
+					>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
 						>
-							<svg
-								width="14"
-								height="14"
-								viewBox="0 0 20 20"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d="M10 3v10M6 9l4 4 4-4" />
-								<path d="M4 15h12" />
-							</svg>
-						</a>
-					{/if}
-				</div>
-			{:else}
+							<path d="M10 3v10M6 9l4 4 4-4" />
+							<path d="M4 15h12" />
+						</svg>
+					</a>
+				{/if}
+			</div>
+		{:else}
+			<a href="/" class="logo" title="wytui (W-Y-T-U-I)">
 				<div class="logo-row">
 					<h1 class="logo-collapsed">w</h1>
 					{#if updateAvailable}
 						<span class="update-dot" title="New commits available — pull the latest image"></span>
 					{/if}
 				</div>
-			{/if}
-		</a>
+			</a>
+		{/if}
 		<button
 			class="collapse-btn"
 			onclick={() => (collapsed = !collapsed)}
@@ -387,6 +391,27 @@
 		<div class="mobile-menu-backdrop" onclick={() => (mobileMenuOpen = false)}></div>
 		<div class="mobile-menu">
 			<a
+				href="/search"
+				class="mobile-menu-item"
+				class:active={isActive('/search')}
+				onclick={() => (mobileMenuOpen = false)}
+			>
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 20 20"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<circle cx="9" cy="9" r="5" />
+					<path d="M13 13l4 4" />
+				</svg>
+				<span>Search</span>
+			</a>
+			<a
 				href="/channels"
 				class="mobile-menu-item"
 				class:active={isActive('/channels')}
@@ -431,29 +456,6 @@
 					<circle cx="10" cy="10" r="3" />
 				</svg>
 				<span>Monitors</span>
-			</a>
-			<a
-				href="/playlists"
-				class="mobile-menu-item"
-				class:active={isActive('/playlists')}
-				onclick={() => (mobileMenuOpen = false)}
-			>
-				<svg
-					width="20"
-					height="20"
-					viewBox="0 0 20 20"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path d="M3 5h10" />
-					<path d="M3 10h6" />
-					<path d="M3 15h4" />
-					<path d="M14 10v6l4-3-4-3z" />
-				</svg>
-				<span>Playlists</span>
 			</a>
 			{#if isAdmin}
 				<a

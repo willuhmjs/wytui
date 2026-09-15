@@ -1,63 +1,206 @@
-import pLimit from 'p-limit';
+import { prisma } from '../db';
 import type { QueueStats } from '$lib/types';
+import type { JobQueue } from '@prisma/client';
+
+export type JobHandler = (job: JobQueue) => Promise<void>;
+
+/**
+ * Read a positive integer env var, clamped to the same 1-20 range the
+ * settings validation enforces. Falls back when unset or malformed.
+ */
+function envInt(name: string, fallback: number): number {
+	const raw = parseInt(process.env[name] ?? '', 10);
+	if (Number.isFinite(raw) && raw >= 1) return Math.min(raw, 20);
+	return fallback;
+}
 
 export class QueueService {
-	private metadataLimit: ReturnType<typeof pLimit>;
-	private downloadLimit: ReturnType<typeof pLimit>;
-	private maxConcurrentDownloads: number;
+	/**
+	 * Per-type concurrency limits, overridable via env vars
+	 * (QUEUE_MAX_DOWNLOADS, QUEUE_MAX_METADATA, QUEUE_MAX_SUBSCRIPTIONS,
+	 * QUEUE_MAX_SYSTEM, QUEUE_MAX_UNLISTED). The download limit is also
+	 * controllable from app settings; an explicitly set QUEUE_MAX_DOWNLOADS
+	 * takes precedence over the stored setting at startup. Types without an
+	 * entry get QUEUE_MAX_UNLISTED so a new job type can't silently run
+	 * unbounded.
+	 */
+	private maxConcurrentByType: Record<string, number> = {
+		download: envInt('QUEUE_MAX_DOWNLOADS', 2),
+		metadata: envInt('QUEUE_MAX_METADATA', 1),
+		subscription: envInt('QUEUE_MAX_SUBSCRIPTIONS', 3),
+		system: envInt('QUEUE_MAX_SYSTEM', 2),
+	};
+	private static readonly DEFAULT_TYPE_LIMIT = envInt('QUEUE_MAX_UNLISTED', 5);
 
-	// Track active operations
-	private activeMetadata = 0;
-	private activeDownloads = 0;
-	private queuedMetadata = 0;
-	private queuedDownloads = 0;
+	private handlers = new Map<string, JobHandler>();
+	private pollingTimer: NodeJS.Timeout | null = null;
 
-	constructor(maxConcurrent = 3) {
-		this.maxConcurrentDownloads = maxConcurrent;
-		this.metadataLimit = pLimit(1); // Sequential metadata fetching
-		this.downloadLimit = pLimit(maxConcurrent); // Parallel downloads
+	// Active state tracking
+	private activeJobs = new Set<string>();
+	private activeByType = new Map<string, number>();
+	private isPolling = false;
+
+	constructor(maxConcurrent?: number) {
+		if (maxConcurrent !== undefined) {
+			this.maxConcurrentByType.download = maxConcurrent;
+		}
 	}
 
 	/**
-	 * Enqueue metadata fetch operation (sequential)
+	 * Register a handler for a specific job type
 	 */
-	async enqueueMetadata<T>(fn: () => Promise<T>): Promise<T> {
-		this.queuedMetadata++;
-		return this.metadataLimit(async () => {
-			this.queuedMetadata--;
-			this.activeMetadata++;
-			try {
-				return await fn();
-			} finally {
-				this.activeMetadata--;
-			}
-		});
+	registerHandler(type: string, handler: JobHandler) {
+		this.handlers.set(type, handler);
 	}
 
 	/**
-	 * Enqueue download operation (parallel with limit)
+	 * Start the background queue worker
 	 */
-	async enqueueDownload<T>(fn: () => Promise<T>): Promise<T> {
-		this.queuedDownloads++;
-		return this.downloadLimit(async () => {
-			this.queuedDownloads--;
-			this.activeDownloads++;
-			try {
-				return await fn();
-			} finally {
-				this.activeDownloads--;
+	async start() {
+		if (this.pollingTimer) return;
+		console.log('[QueueService] Starting background worker...');
+
+		// Reset any stale RUNNING jobs back to PENDING from before a server restart
+		await prisma.jobQueue.updateMany({
+			where: { status: 'RUNNING' },
+			data: { status: 'PENDING', startedAt: null }
+		});
+
+		this.poll();
+		this.pollingTimer = setInterval(() => this.poll(), 5000);
+	}
+
+	/**
+	 * Stop the background queue worker
+	 */
+	stop() {
+		if (this.pollingTimer) {
+			clearInterval(this.pollingTimer);
+			this.pollingTimer = null;
+		}
+	}
+
+	/**
+	 * Main polling loop
+	 */
+	private async poll() {
+		if (this.isPolling) return;
+		this.isPolling = true;
+
+		try {
+			// Fetch pending jobs that are due
+			const jobs = await prisma.jobQueue.findMany({
+				where: {
+					status: 'PENDING',
+					runAt: { lte: new Date() },
+					id: { notIn: Array.from(this.activeJobs) }
+				},
+				orderBy: [
+					{ priority: 'desc' },
+					{ runAt: 'asc' }
+				],
+				take: 20 // Fetch a batch
+			});
+
+			for (const job of jobs) {
+				// Concurrency limits logic: every type has a cap so one poll batch
+				// can't launch an unbounded number of yt-dlp-hitting jobs at once.
+				const limit = this.maxConcurrentByType[job.type] ?? QueueService.DEFAULT_TYPE_LIMIT;
+				const active = this.activeByType.get(job.type) ?? 0;
+				if (active >= limit) continue;
+
+				// Mark as RUNNING
+				const updatedJob = await prisma.jobQueue.update({
+					where: { id: job.id, status: 'PENDING' },
+					data: { status: 'RUNNING', startedAt: new Date() }
+				}).catch(() => null);
+
+				if (!updatedJob) continue; // someone else grabbed it
+
+				// Track active stats
+				this.activeJobs.add(job.id);
+				this.activeByType.set(job.type, active + 1);
+
+				// Execute in background
+				this.executeJob(updatedJob);
+
+				if (job.type === 'download') break; // Re-evaluate slots on next poll
+			}
+		} catch (error) {
+			console.error('[QueueService] Poll error:', error);
+		} finally {
+			this.isPolling = false;
+		}
+	}
+
+	private async executeJob(job: JobQueue) {
+		const handler = this.handlers.get(job.type);
+		
+		try {
+			if (!handler) throw new Error(`No handler registered for job type: ${job.type}`);
+			await handler(job);
+			
+			// Success
+			await prisma.jobQueue.update({
+				where: { id: job.id },
+				data: { status: 'COMPLETED', completedAt: new Date() }
+			});
+		} catch (error: any) {
+			console.error(`[QueueService] Job ${job.id} (${job.type}) failed:`, error);
+			// Failure
+			await prisma.jobQueue.update({
+				where: { id: job.id },
+				data: { status: 'FAILED', completedAt: new Date(), error: error?.message || 'Unknown error' }
+			});
+		} finally {
+			// Cleanup tracking
+			this.activeJobs.delete(job.id);
+			const active = this.activeByType.get(job.type) ?? 0;
+			if (active <= 1) this.activeByType.delete(job.type);
+			else this.activeByType.set(job.type, active - 1);
+
+			// Trigger next poll immediately to pick up more tasks
+			setImmediate(() => this.poll());
+		}
+	}
+
+	/**
+	 * Enqueue a new job
+	 */
+	async enqueue(type: string, payload?: any, options?: { runAt?: Date; priority?: number }) {
+		const job = await prisma.jobQueue.create({
+			data: {
+				type,
+				payload: payload || null,
+				runAt: options?.runAt || new Date(),
+				priority: options?.priority || 0,
+				status: 'PENDING'
 			}
 		});
+		
+		// trigger a poll immediately if possible
+		if (!this.isPolling) {
+			setImmediate(() => this.poll());
+		}
+		
+		return job;
 	}
 
 	/**
 	 * Get queue statistics
 	 */
-	getStats(): QueueStats {
+	async getStats(): Promise<QueueStats> {
+		const queuedMetadata = await prisma.jobQueue.count({
+			where: { type: 'metadata', status: 'PENDING' }
+		});
+		const queuedDownloads = await prisma.jobQueue.count({
+			where: { type: 'download', status: 'PENDING' }
+		});
+
 		return {
-			metadata: this.queuedMetadata,
-			downloads: this.queuedDownloads,
-			active: this.activeDownloads + this.activeMetadata,
+			metadata: queuedMetadata,
+			downloads: queuedDownloads,
+			active: Array.from(this.activeByType.values()).reduce((sum, n) => sum + n, 0),
 		};
 	}
 
@@ -65,33 +208,32 @@ export class QueueService {
 	 * Update concurrent download limit
 	 */
 	setMaxConcurrent(max: number): void {
+		// Bounds match the settings validation (1-20).
 		if (max < 1) max = 1;
-		if (max > 10) max = 10;
+		if (max > 20) max = 20;
+		this.maxConcurrentByType.download = max;
 
-		this.maxConcurrentDownloads = max;
-		// Mutate the existing limiter rather than replacing it — swapping the
-		// instance orphaned in-flight/queued tasks on the old limiter and could
-		// briefly exceed the intended concurrency (old + new running together).
-		this.downloadLimit.concurrency = max;
+		if (!this.isPolling) {
+			setImmediate(() => this.poll());
+		}
 	}
 
 	/**
 	 * Get current max concurrent downloads
 	 */
 	getMaxConcurrent(): number {
-		return this.maxConcurrentDownloads;
+		return this.maxConcurrentByType.download;
 	}
 
 	/**
-	 * Clear all pending operations (cannot abort running ones)
+	 * Clear all pending operations
 	 */
-	clearPending(): void {
-		this.downloadLimit.clearQueue();
-		this.metadataLimit.clearQueue();
-		this.queuedMetadata = 0;
-		this.queuedDownloads = 0;
+	async clearPending(): Promise<void> {
+		await prisma.jobQueue.deleteMany({
+			where: { status: 'PENDING', type: { in: ['download', 'metadata'] } }
+		});
 	}
 }
 
 // Singleton instance
-export const queueService = new QueueService(2);
+export const queueService = new QueueService();

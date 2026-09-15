@@ -657,3 +657,20 @@ model YouTubeLink {
 
   @@map("youtube_links")
 }
+model JobQueue {
+  id          String   @id @default(cuid())
+  type        String   // e.g. "download", "metadata", "subscription", "monitor", "system"
+  payload     Json?
+  status      String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  error       String?  @db.Text
+  priority    Int      @default(0) // Higher number = higher priority
+  runAt       DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, runAt])
+  @@index([type])
+  @@map("job_queue")
+}

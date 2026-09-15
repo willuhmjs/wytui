@@ -225,7 +225,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					channels: chosen.map((c) => ({ url: c.url, name: c.title })),
+					channels: chosen.map((c) => ({ url: c.url, name: c.title, channelId: c.channelId })),
 					profileId: selectedProfile,
 					enabled,
 					autoDownload,

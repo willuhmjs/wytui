@@ -16,6 +16,8 @@ import { subtitleService } from './subtitle.service';
 import { extractVideoId } from '$lib/utils/youtube';
 import { libraryAccessStatus, type LibraryAccess } from '$lib/server/permissions';
 import { ffmpegPercent } from './download-progress';
+import { isRateLimitedError } from '../utils/ytdlp-json';
+import { armRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 /**
  * Thrown when a download is deliberately abandoned before any bytes are
@@ -157,8 +159,9 @@ class DownloadService {
 			throw new Error('Invalid URL');
 		}
 
-		// Validate custom flags
-		if (customFlags?.length) {
+		// Custom flags reach a spawned yt-dlp process — reject anything outside
+		// the whitelist before persisting them on the download row.
+		if (customFlags && customFlags.length > 0) {
 			const badFlag = ytdlpService.findDangerousFlag(customFlags);
 			if (badFlag) {
 				throw new Error(`Forbidden flag: ${badFlag}`);
@@ -244,23 +247,49 @@ class DownloadService {
 	/**
 	 * Process download in two phases: metadata → download
 	 */
-	private async processDownload(downloadId: string): Promise<void> {
-		// Phase 1: Fetch metadata (sequential queue)
-		try {
-			await queueService.enqueueMetadata(async () => {
-				await this.fetchMetadata(downloadId);
-			});
-		} catch (err: any) {
-			// A deliberate skip (excluded short, upcoming premiere) has already
-			// removed the record — abort the pipeline without error handling.
-			if (err instanceof DownloadSkippedError) return;
-			throw err;
-		}
+	registerJobHandlers(): void {
+		queueService.registerHandler('metadata', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.downloadId) throw new Error('Missing downloadId in metadata payload');
 
-		// Phase 2: Download file (parallel queue)
-		await queueService.enqueueDownload(async () => {
-			await this.executeDownload(downloadId);
+			try {
+				await this.fetchMetadata(payload.downloadId);
+				await queueService.enqueue('download', { downloadId: payload.downloadId });
+			} catch (err: any) {
+				if (err instanceof DownloadSkippedError) return;
+				// Record the failure on the download row (retry cycle → FAILED
+				// status → notifications). Rethrowing would strand the error on
+				// the job_queue row, where no UI ever reads it.
+				await this.handleDownloadError(payload.downloadId, err.message);
+			}
 		});
+
+		queueService.registerHandler('download', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.downloadId) throw new Error('Missing downloadId in download payload');
+			try {
+				await this.executeDownload(payload.downloadId);
+			} catch (err: any) {
+				await this.handleDownloadError(payload.downloadId, err.message);
+			}
+		});
+	}
+
+	private async processDownload(downloadId: string): Promise<void> {
+		// A queued/running pipeline already exists for this download (e.g. the
+		// post-restart resume racing a stale job row that start() reset to
+		// PENDING) — enqueueing a second one would double-spawn yt-dlp on the
+		// same output file.
+		const activeJobs = await prisma.jobQueue.findMany({
+			where: {
+				status: { in: ['PENDING', 'RUNNING'] },
+				type: { in: ['metadata', 'download'] },
+			},
+			select: { payload: true },
+		});
+		if (activeJobs.some((j) => (j.payload as any)?.downloadId === downloadId)) return;
+
+		await queueService.enqueue('metadata', { downloadId }, { priority: 10 });
 	}
 
 	/**
@@ -535,6 +564,21 @@ class DownloadService {
 		});
 
 		if (!download || download.status === DownloadStatus.CANCELLED) {
+			return;
+		}
+
+		// Never re-run a download that already reached a terminal state, and
+		// never spawn a second process for one that's already running (e.g. a
+		// stale job row racing the post-restart resume).
+		if (
+			download.status === DownloadStatus.COMPLETED ||
+			download.status === DownloadStatus.FAILED ||
+			download.status === DownloadStatus.DELETED
+		) {
+			return;
+		}
+		if (this.activeProcesses.has(downloadId)) {
+			console.warn(`[DownloadService] ${downloadId} already has an active process — skipping`);
 			return;
 		}
 
@@ -1015,7 +1059,17 @@ class DownloadService {
 
 			if (!download || download.status === DownloadStatus.CANCELLED) return;
 
-			if (download.retryCount < 3) {
+			// A 429 / bot-check is IP-wide, not per-video: quick retries (1s/2s/4s)
+			// would only hammer the blocked endpoint harder and re-trigger the
+			// check on every queued video. Go terminal immediately with the clear
+			// message, arm the shared cooldown so background checks back off, and
+			// leave the manual Retry button for after the block lapses.
+			const rateLimited = isRateLimitedError(error);
+			if (rateLimited) {
+				armRateLimitCooldown();
+			}
+
+			if (download.retryCount < 3 && !rateLimited) {
 				await this.updateDownload(downloadId, {
 					retryCount: download.retryCount + 1,
 					error,
@@ -1031,11 +1085,10 @@ class DownloadService {
 				}, delay);
 				this.retryTimeouts.set(downloadId, timeout);
 			} else {
-				// Terminal failure: drop the record entirely rather than leaving a
-				// FAILED row that's invisible in every list (which only query COMPLETED
-				// or the in-progress statuses) yet still reachable at /downloads/:id.
-				// Notify first — we still hold the record — then delete file, archive
-				// entry, and the row (child rows cascade).
+				// Terminal failure: keep the row as FAILED so it stays visible in
+				// the downloads page's failed section, carries the error message,
+				// and offers a retry button. Clean up any partial files and archive
+				// the failure so subscription sync backs off before re-queueing.
 				this.clearDownloadState(downloadId);
 
 				if (download.filepath) {
@@ -1061,10 +1114,13 @@ class DownloadService {
 					});
 				}
 
-				await prisma.download.delete({ where: { id: downloadId } }).catch(() => {});
+				await this.updateDownload(downloadId, {
+					status: DownloadStatus.FAILED,
+					error,
+					filepath: null,
+				}).catch(() => {});
 
 				this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
-				this.downloadOwners.delete(downloadId);
 
 				// Send failure notification
 				notificationService
@@ -1199,6 +1255,47 @@ class DownloadService {
 			console.error(`Failed to resume download ${downloadId}:`, error);
 			this.handleDownloadError(downloadId, error.message);
 		});
+	}
+
+	/**
+	 * Retry a FAILED or CANCELLED download: reset the record and re-run the
+	 * metadata → download pipeline.
+	 */
+	async retryDownload(downloadId: string): Promise<any> {
+		const download = await prisma.download.findUnique({
+			where: { id: downloadId },
+			include: { profile: true },
+		});
+		if (!download) throw new Error('Download not found');
+		if (download.status !== DownloadStatus.FAILED && download.status !== DownloadStatus.CANCELLED) {
+			throw new Error('Only failed or cancelled downloads can be retried');
+		}
+
+		// Drop the failed-archive marker so subscription sync doesn't treat this
+		// video as known-bad while the retry is in flight.
+		const videoId = this.extractVideoId(download.url);
+		if (videoId) {
+			await prisma.archive.deleteMany({ where: { videoId } }).catch(() => {});
+		}
+
+		this.cancelledDownloads.delete(downloadId);
+		this.lastErrorLine.delete(downloadId);
+
+		const updated = await this.updateDownload(downloadId, {
+			status: DownloadStatus.PENDING,
+			error: null,
+			retryCount: 0,
+			progress: 0,
+			speed: null,
+			eta: null,
+			downloadedBytes: null,
+			totalBytes: null,
+			startedAt: null,
+			completedAt: null,
+		});
+
+		await this.processDownload(downloadId);
+		return updated;
 	}
 
 	/**

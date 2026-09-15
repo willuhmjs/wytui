@@ -1,4 +1,5 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { statfs } from 'fs/promises';
 import { prisma } from './db';
 import { hashPassword, invalidateUsersCache } from './auth';
@@ -133,10 +134,15 @@ const DEFAULT_PROFILES = [
  * app works correctly even when the manual `db:seed` step has been skipped.
  */
 export async function ensureDefaults(): Promise<void> {
-	// Detect yt-dlp version (best-effort)
+	// Detect yt-dlp version (best-effort). Probe the exact binary the service
+	// spawns — resolving from PATH could pick up a different yt-dlp.
 	let ytdlpVersion: string | null = null;
 	try {
-		ytdlpVersion = execSync('yt-dlp --version', { timeout: 5000 }).toString().trim();
+		ytdlpVersion = execFileSync(ytdlpService.getPath(), ['--version'], {
+			timeout: 5000,
+		})
+			.toString()
+			.trim();
 	} catch {
 		// yt-dlp not available in this environment — that's fine
 	}

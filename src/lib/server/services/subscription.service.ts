@@ -4,24 +4,31 @@ import { ytdlpService } from './ytdlp.service';
 import { youtubeService } from './youtube.service';
 import { youtubeLinkService } from './youtube-link.service';
 import { sseEmitter } from '../sse/emitter';
-import cron, { type ScheduledTask } from 'node-cron';
+import { queueService } from './queue.service';
+import { CronExpressionParser } from 'cron-parser';
 import type { Subscription } from '@prisma/client';
 import { spawn } from 'child_process';
 import { access } from 'fs/promises';
-import { RateLimitError, isRateLimitedError, runYtdlpJson } from '../utils/ytdlp-json';
+import {
+	RateLimitError,
+	YtdlpAuthError,
+	isRateLimitedError,
+	isAuthError,
+	runYtdlpJson,
+} from '../utils/ytdlp-json';
+import { armRateLimitCooldown, isRateLimitCooldownActive } from '../utils/rate-limit-cooldown';
 
 class SubscriptionService {
 	private static readonly CHECK_DEPTH = 15;
-	private scheduledTasks = new Map<string, ScheduledTask>();
+
 	private activeChecks = new Set<string>();
 
 	/**
-	 * Timestamp until which checks are paused after a rate limit. YouTube blocks
-	 * are IP-wide, so one 429 means every other check in the window will fail
-	 * too — backing off globally avoids hammering the blocked endpoint.
+	 * Rate-limit cooldown lives in a shared module (see
+	 * ../utils/rate-limit-cooldown): YouTube blocks are IP-wide, so one 429
+	 * means every other check in the window will fail too — and download,
+	 * playlist, and sync paths arm the same cooldown.
 	 */
-	private rateLimitCooldownUntil = 0;
-	private static readonly RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
 
 	/**
 	 * Start subscription scheduler
@@ -29,10 +36,22 @@ class SubscriptionService {
 	async startScheduler(): Promise<void> {
 		console.log('[Subscriptions] Starting scheduler...');
 
+		queueService.registerHandler('subscription', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.subscriptionId) return;
+
+			await this.checkSubscription(payload.subscriptionId);
+
+			// Reschedule for next time
+			const sub = await prisma.subscription.findUnique({ where: { id: payload.subscriptionId } });
+			if (sub && sub.enabled) {
+				await this.scheduleSubscription(sub);
+			}
+		});
+
 		// Load all enabled subscriptions
 		const subscriptions = await prisma.subscription.findMany({
 			where: { enabled: true },
-			include: { profile: true },
 		});
 
 		for (const subscription of subscriptions) {
@@ -46,22 +65,25 @@ class SubscriptionService {
 	 * Schedule a subscription
 	 */
 	async scheduleSubscription(subscription: any): Promise<void> {
-		// Remove existing task if any
-		this.unscheduleSubscription(subscription.id);
-
-		// Hash the subscription ID to a stable per-subscription minute offset so
-		// that subscriptions with the same check interval don't all fire at minute 0.
-		// This spreads load across the interval window and reduces the chance of
-		// hitting YouTube's rate limits when many subscriptions check simultaneously.
 		const offset = this.idToMinuteOffset(subscription.id);
 		const cronExpr = this.secondsToCron(subscription.checkInterval, offset);
 
-		const task = cron.schedule(cronExpr, async () => {
-			await this.checkSubscription(subscription.id);
-		});
+		try {
+			const interval = CronExpressionParser.parse(cronExpr);
+			const nextRun = interval.next().toDate();
 
-		this.scheduledTasks.set(subscription.id, task);
-		console.log(`[Subscriptions] Scheduled ${subscription.name} (${cronExpr})`);
+			// Clear any existing job
+			await this.unscheduleSubscription(subscription.id);
+
+			await queueService.enqueue(
+				'subscription',
+				{ subscriptionId: subscription.id },
+				{ runAt: nextRun },
+			);
+			console.log(`[Subscriptions] Scheduled ${subscription.name} at ${nextRun} (${cronExpr})`);
+		} catch (e) {
+			console.error(`[Subscriptions] Failed to schedule ${subscription.name}:`, e);
+		}
 	}
 
 	/**
@@ -79,11 +101,15 @@ class SubscriptionService {
 	/**
 	 * Unschedule a subscription
 	 */
-	unscheduleSubscription(subscriptionId: string): void {
-		const task = this.scheduledTasks.get(subscriptionId);
-		if (task) {
-			task.stop();
-			this.scheduledTasks.delete(subscriptionId);
+	async unscheduleSubscription(subscriptionId: string): Promise<void> {
+		// Prisma cannot filter nicely by JSON contents, so we fetch and filter in JS
+		// Since subscriptions are not thousands, this is acceptable.
+		const jobs = await prisma.jobQueue.findMany({
+			where: { type: 'subscription' },
+		});
+		const toDelete = jobs.filter((j) => (j.payload as any)?.subscriptionId === subscriptionId);
+		for (const job of toDelete) {
+			await prisma.jobQueue.delete({ where: { id: job.id } });
 		}
 	}
 
@@ -100,7 +126,7 @@ class SubscriptionService {
 			return;
 		}
 
-		if (!opts.force && Date.now() < this.rateLimitCooldownUntil) {
+		if (!opts.force && isRateLimitCooldownActive()) {
 			console.log('[Subscriptions] Skipping check — rate-limit cooldown active');
 			return;
 		}
@@ -219,7 +245,7 @@ class SubscriptionService {
 		} catch (error: any) {
 			const rateLimited = error?.isRateLimit === true;
 			if (rateLimited) {
-				this.rateLimitCooldownUntil = Date.now() + SubscriptionService.RATE_LIMIT_COOLDOWN_MS;
+				armRateLimitCooldown();
 			}
 			console.error(
 				`[Subscriptions] Check failed for ${subscriptionId}${rateLimited ? ' (rate limited)' : ''}:`,
@@ -307,10 +333,12 @@ class SubscriptionService {
 	}
 
 	/**
-	 * yt-dlp defaults (proxy + extra flags) for a subscription. The owning
-	 * user's linked YouTube account overrides the server-wide defaults.
+	 * Resolve the yt-dlp defaults (proxy + extra flags) for a user's traffic:
+	 * per-linked-account overrides when set, otherwise the global settings.
+	 * Shared with monitor/service paths so all yt-dlp traffic egresses the same
+	 * way (per-account proxy keeps a stable IP per YouTube identity).
 	 */
-	private async getYtdlpDefaults(
+	async getYtdlpDefaults(
 		subscription?: { userId?: string | null } | null,
 	): Promise<{ proxyUrl: string | null; extraFlags: string[] }> {
 		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
@@ -327,9 +355,89 @@ class SubscriptionService {
 	}
 
 	/**
+	 * Find an existing subscription that already covers the given channel.
+	 *
+	 * URL equality alone is not enough: the same channel can be referenced as
+	 * @handle, /channel/UC…, or /c/… URLs, so also match by resolved channel ID
+	 * (either provided by the caller or embedded in a /channel/UC… URL).
+	 */
+	async findDuplicate(
+		userId: string,
+		{ url, channelId }: { url: string; channelId?: string | null },
+	): Promise<Subscription | null> {
+		const byUrl = await prisma.subscription.findFirst({ where: { url, userId } });
+		if (byUrl) return byUrl;
+
+		const ids = [channelId, url?.match(/\/channel\/(UC[\w-]+)/)?.[1]].filter(
+			(v): v is string => !!v,
+		);
+		for (const id of ids) {
+			const byChannel = await prisma.subscription.findFirst({
+				where: { channelId: id, userId, type: 'CHANNEL' },
+			});
+			if (byChannel) return byChannel;
+		}
+		return null;
+	}
+
+	/**
+	 * Fetch a channel's identity (UC… id) and total video count with a single
+	 * flat yt-dlp browse call. Returns null when the fetch or parse fails.
+	 */
+	private async fetchChannelMeta(
+		url: string,
+		userId?: string | null,
+	): Promise<{ channelId: string | null; videoCount: number | null } | null> {
+		const defaults = await this.getYtdlpDefaults({ userId });
+		try {
+			const json = await runYtdlpJson(url, {
+				proxyUrl: defaults.proxyUrl,
+				extraArgs: [
+					'--playlist-items',
+					'0',
+					...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
+				],
+				timeoutMs: 30000,
+			});
+			const data = JSON.parse(json);
+			const channelId = typeof data?.channel_id === 'string' ? data.channel_id : null;
+			const count = data?.playlist_count;
+			const videoCount =
+				typeof count === 'number' && Number.isFinite(count) && count >= 0
+					? Math.floor(count)
+					: null;
+			return { channelId, videoCount };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Refresh a subscription's cached channel ID and video count (one background
+	 * browse call). Fire-and-forget from creation paths so the card's
+	 * "N videos" and RSS lookups work without waiting for a check cycle.
+	 */
+	async refreshChannelMeta(subscriptionId: string): Promise<void> {
+		const subscription = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+		if (!subscription) return;
+		const meta = await this.fetchChannelMeta(subscription.url, subscription.userId);
+		if (!meta) return;
+		await prisma.subscription
+			.update({
+				where: { id: subscription.id },
+				data: {
+					...(meta.channelId && !subscription.channelId ? { channelId: meta.channelId } : {}),
+					...(meta.videoCount !== null ? { videoCount: meta.videoCount } : {}),
+				},
+			})
+			.catch(() => {});
+	}
+
+	/**
 	 * Resolve a subscription URL to a YouTube channel ID (UC…) for RSS lookups.
 	 * The result is cached on the subscription row; @handle URLs are resolved
-	 * once via a single flat yt-dlp browse request.
+	 * once via a single flat yt-dlp browse request, which also yields the
+	 * channel's video count.
 	 */
 	private async resolveChannelId(subscription: any): Promise<string | null> {
 		if (subscription.channelId) return subscription.channelId;
@@ -342,29 +450,20 @@ class SubscriptionService {
 			return fromUrl;
 		}
 
-		const defaults = await this.getYtdlpDefaults(subscription);
-		const json = await runYtdlpJson(subscription.url, {
-			proxyUrl: defaults.proxyUrl,
-			extraArgs: [
-				'--playlist-items',
-				'0',
-				...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
-			],
-			timeoutMs: 30000,
-		});
-		const channelId = (() => {
-			try {
-				return JSON.parse(json)?.channel_id ?? null;
-			} catch {
-				return null;
-			}
-		})();
-		if (channelId) {
+		const meta = await this.fetchChannelMeta(subscription.url, subscription.userId);
+		if (meta?.channelId) {
 			await prisma.subscription
-				.update({ where: { id: subscription.id }, data: { channelId } })
+				.update({
+					where: { id: subscription.id },
+					data: {
+						channelId: meta.channelId,
+						...(meta.videoCount !== null ? { videoCount: meta.videoCount } : {}),
+					},
+				})
 				.catch(() => {});
+			return meta.channelId;
 		}
-		return channelId;
+		return null;
 	}
 
 	/**
@@ -379,7 +478,13 @@ class SubscriptionService {
 				headers: { 'User-Agent': 'Mozilla/5.0 (compatible; wytui)' },
 			},
 		);
-		if (!res.ok) throw new Error(`Feed request failed: HTTP ${res.status}`);
+		if (!res.ok) {
+			// A 429 from the feed endpoint means the IP is throttled across YouTube,
+			// so classify it as a rate limit: this arms the global cooldown and stops
+			// the caller from "falling back" to more yt-dlp traffic while blocked.
+			if (res.status === 429) throw new RateLimitError('Feed request failed: HTTP 429');
+			throw new Error(`Feed request failed: HTTP ${res.status}`);
+		}
 		const xml = await res.text();
 
 		const videos: any[] = [];
@@ -409,7 +514,10 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Fetch playlist entries from yt-dlp with optional limit and date filter
+	 * Fetch playlist entries from yt-dlp with optional limit and date filter.
+	 * Uses -J (single JSON dump) so entry fields can never desync — the old
+	 * --print line-triplet parsing shifted id/title/url whenever yt-dlp emitted
+	 * an extra line (warning, unavailable entry).
 	 */
 	private async fetchPlaylistEntries(
 		url: string,
@@ -421,13 +529,14 @@ class SubscriptionService {
 		const defaults = await this.getYtdlpDefaults({ userId: opts.userId });
 
 		return new Promise((resolve, reject) => {
-			const args = ['--print', 'id', '--print', 'title', '--print', 'webpage_url'];
+			const args = ['-J', '--no-warnings'];
 
 			if (useFullExtraction) {
-				args.unshift('--no-download');
+				// -J implies simulate; --dateafter lets yt-dlp skip extracting
+				// entries older than the subscription's creation date.
 				args.push('--dateafter', opts.dateAfter!);
 			} else {
-				args.unshift('--flat-playlist');
+				args.push('--flat-playlist');
 			}
 
 			if (opts.limit) {
@@ -471,29 +580,60 @@ class SubscriptionService {
 				settled = true;
 				clearTimeout(timeout);
 				if (code === 0) {
-					const lines = output.trim().split('\n');
-					const videos = [];
-
-					for (let i = 0; i < lines.length; i += 3) {
-						if (i + 2 < lines.length) {
-							videos.push({
-								id: lines[i],
-								title: lines[i + 1],
-								url: lines[i + 2],
-							});
-						}
+					try {
+						const info = JSON.parse(output);
+						resolve(SubscriptionService.mapPlaylistEntries(info, opts.dateAfter));
+					} catch (e) {
+						reject(new Error(`Failed to parse playlist JSON: ${e}`));
 					}
-
-					resolve(videos);
 				} else if (isRateLimitedError(error)) {
 					reject(new RateLimitError(error.trim() || 'YouTube rate limit (HTTP 429)'));
+				} else if (isAuthError(error)) {
+					reject(new YtdlpAuthError(error.trim() || 'yt-dlp authentication required'));
 				} else {
-					reject(new Error(`yt-dlp failed: ${error}`));
+					reject(new Error(`yt-dlp failed: ${error.slice(-500)}`));
 				}
 			});
-
-			proc.on('error', (err) => reject(err));
 		});
+	}
+
+	/**
+	 * Map a -J playlist dump to {id, title, url} video entries. In full
+	 * extraction mode, re-apply the date filter client-side so an entry that
+	 * slipped past yt-dlp's own filtering can't resurrect old videos.
+	 */
+	private static mapPlaylistEntries(
+		info: any,
+		dateAfter?: string,
+	): { id: string; title: string; url: string; uploadedAt?: Date }[] {
+		const entries: any[] = Array.isArray(info?.entries) ? info.entries : [];
+		let cutoff: Date | null = null;
+		if (dateAfter) {
+			const y = parseInt(dateAfter.slice(0, 4));
+			const m = parseInt(dateAfter.slice(4, 6));
+			const d = parseInt(dateAfter.slice(6, 8));
+			if (y && m && d) cutoff = new Date(Date.UTC(y, m - 1, d));
+		}
+
+		const videos: { id: string; title: string; url: string; uploadedAt?: Date }[] = [];
+		for (const e of entries) {
+			if (!e?.id) continue;
+			let uploadedAt: Date | undefined;
+			if (e.upload_date) {
+				const y = parseInt(String(e.upload_date).slice(0, 4));
+				const m = parseInt(String(e.upload_date).slice(4, 6));
+				const d = parseInt(String(e.upload_date).slice(6, 8));
+				if (y && m && d) uploadedAt = new Date(Date.UTC(y, m - 1, d));
+			}
+			if (cutoff && (!uploadedAt || uploadedAt < cutoff)) continue;
+			videos.push({
+				id: e.id,
+				title: e.title ?? e.id,
+				url: e.webpage_url ?? e.url ?? `https://www.youtube.com/watch?v=${e.id}`,
+				uploadedAt,
+			});
+		}
+		return videos;
 	}
 
 	/**
@@ -523,6 +663,10 @@ class SubscriptionService {
 		}
 
 		console.log(`[Subscriptions] Seeded archive with ${seeded} videos for ${subscription.name}`);
+
+		// Populate the card's video count (and the cached channel ID) from the
+		// same browse call shape — fire-and-forget so seeding isn't slowed down.
+		void this.refreshChannelMeta(subscriptionId);
 		return seeded;
 	}
 
@@ -736,11 +880,8 @@ class SubscriptionService {
 	 * Stop all scheduled tasks
 	 */
 	stopAll(): void {
-		for (const [id, task] of this.scheduledTasks.entries()) {
-			task.stop();
-		}
-		this.scheduledTasks.clear();
-		console.log('[Subscriptions] Stopped all tasks');
+		// DB queue tasks are stopped by stopping the QueueService
+		console.log('[Subscriptions] stopAll called');
 	}
 }
 

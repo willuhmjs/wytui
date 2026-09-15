@@ -1,4 +1,4 @@
-import cron, { type ScheduledTask } from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
 import { subscriptionService } from '../services/subscription.service';
 import { monitorService } from '../services/monitor.service';
 import { ytdlpService } from '../services/ytdlp.service';
@@ -8,6 +8,8 @@ import { prisma } from '../db';
 import { autoDeleteService } from '../services/auto-delete.service';
 import { backupService } from '../services/backup.service';
 import { youtubeSyncService } from '../services/youtube-sync.service';
+import { queueService } from '../services/queue.service';
+import { downloadService } from '../services/download.service';
 
 export interface JobInfo {
 	name: string;
@@ -17,13 +19,6 @@ export interface JobInfo {
 }
 
 class JobScheduler {
-	private ytdlpUpdateTask: ScheduledTask | null = null;
-	private cacheCleanupTask: ScheduledTask | null = null;
-	private watchedCleanupTask: ScheduledTask | null = null;
-	private autoDeleteTask: ScheduledTask | null = null;
-	private backupTask: ScheduledTask | null = null;
-	private youtubeSyncTask: ScheduledTask | null = null;
-
 	private jobRegistry = new Map<string, JobInfo>();
 
 	/** Names of jobs currently executing, to prevent overlapping runs piling up. */
@@ -33,8 +28,6 @@ class JobScheduler {
 	 * Log a job run to the database
 	 */
 	private async logJobRun(jobName: string, fn: () => Promise<void>): Promise<void> {
-		// Skip if a previous run of this job is still in flight (e.g. a slow cache-cleanup
-		// on a large library that takes longer than its 5-minute interval).
 		if (this.runningJobs.has(jobName)) {
 			console.warn(`[Scheduler] Skipping ${jobName}: previous run still in progress`);
 			return;
@@ -72,101 +65,149 @@ class JobScheduler {
 	async start(): Promise<void> {
 		console.log('[Scheduler] Starting background jobs...');
 
-		// Start subscription monitoring
-		await subscriptionService.startScheduler();
+		// Register standard task handlers
+		downloadService.registerJobHandlers();
+		
+		queueService.registerHandler('system', async (job) => {
+			const payload = job.payload as any;
+			if (!payload?.name) return;
 
-		this.jobRegistry.set('subscription-check', {
-			name: 'subscription-check',
-			cron: '*/30 * * * *',
-			enabled: true,
-			description: 'Check subscriptions for new content',
+			// Always reschedule, even after a failed run — otherwise one bad
+			// run permanently kills the recurring job until the next restart.
+			try {
+				await this.runJob(payload.name);
+			} finally {
+				await this.scheduleNextRun(payload.name);
+			}
 		});
 
-		// Start livestream monitoring
-		await monitorService.startMonitoring();
-
-		this.jobRegistry.set('monitor-check', {
-			name: 'monitor-check',
-			cron: '*/5 * * * *',
-			enabled: true,
-			description: 'Monitor livestreams',
-		});
-
-		// Schedule yt-dlp updates (daily at 3 AM)
-		this.ytdlpUpdateTask = cron.schedule('0 3 * * *', async () => {
-			await this.logJobRun('ytdlp-update', () => this.checkYtdlpUpdate());
-		});
-
+		// Initialize recurring jobs mapping
 		this.jobRegistry.set('ytdlp-update', {
 			name: 'ytdlp-update',
 			cron: '0 3 * * *',
 			enabled: true,
 			description: 'Auto-update yt-dlp binary',
 		});
-
-		// Schedule auto-delete of watched downloads (hourly)
-		this.autoDeleteTask = cron.schedule('0 * * * *', async () => {
-			await this.logJobRun('auto-delete', async () => {
-				const result = await autoDeleteService.deleteWatchedOverThreshold();
-				if (result.deleted > 0) {
-					console.log(`[Scheduler] AutoDelete: deleted ${result.deleted} watched download(s)`);
-				}
-			});
-		});
-
 		this.jobRegistry.set('auto-delete', {
 			name: 'auto-delete',
 			cron: '0 * * * *',
 			enabled: true,
 			description: 'Delete watched videos past retention period',
 		});
-
-		// Schedule cache quota enforcement and file reconciliation (every 5 minutes)
-		this.cacheCleanupTask = cron.schedule('*/5 * * * *', async () => {
-			await this.logJobRun('cache-cleanup', async () => {
-				// Heal promotions interrupted by a restart before reconciling, so a
-				// row whose file is mid-move completes instead of being marked missing.
-				await libraryService.resumeInterruptedPromotions();
-				await libraryService.reconcileFiles();
-				await libraryService.enforceCacheQuota();
-				// Reclaim download-root files no download record owns (stale .part
-				// fragments, orphaned sidecars) so the disk can't silently fill up.
-				await libraryService.sweepOrphanedDownloads();
-			});
-		});
-
 		this.jobRegistry.set('cache-cleanup', {
 			name: 'cache-cleanup',
 			cron: '*/5 * * * *',
 			enabled: true,
 			description: 'Reconcile files and enforce cache quota',
 		});
-
-		// Schedule YouTube sync (every 30 minutes)
-		this.youtubeSyncTask = cron.schedule('*/30 * * * *', async () => {
-			await this.logJobRun('youtube-sync', async () => {
-				await youtubeSyncService.runOnce();
-			}).catch((e) => {
-				// logJobRun has already recorded the failed run; keep the error
-				// out of node-cron's callback so it can't crash the process.
-				console.error('[Scheduler] youtube-sync failed:', e);
-			});
-		});
-
 		this.jobRegistry.set('youtube-sync', {
 			name: 'youtube-sync',
 			cron: '*/30 * * * *',
 			enabled: true,
 			description: 'Sync YouTube watch history, watched status, and Watch Later',
 		});
+		this.jobRegistry.set('subscription-check', {
+			name: 'subscription-check',
+			cron: '*/30 * * * *',
+			enabled: true,
+			description: 'Legacy manual subscription checking (managed by SubscriptionService)',
+		});
+		this.jobRegistry.set('monitor-check', {
+			name: 'monitor-check',
+			cron: '*/15 * * * *',
+			enabled: true,
+			description: 'Monitor livestreams',
+		});
+		
+		const settings = await prisma.settings.findUnique({
+			where: { id: 'singleton' },
+		});
+		
+		this.jobRegistry.set('backup', {
+			name: 'backup',
+			cron: settings?.backupCron || '0 2 * * *',
+			enabled: !!(settings?.backupEnabled && settings?.backupCron),
+			description: 'Automated database backup',
+		});
 
-		// Schedule automated backups if enabled
-		await this.startBackupTask();
+		// Apply the persisted concurrency limit at startup — without this the
+		// worker keeps its env-derived default after every restart until the
+		// next settings save. An explicitly set QUEUE_MAX_DOWNLOADS env var
+		// wins over the stored setting (operator intent for deployments that
+		// configure via environment).
+		if (
+			settings?.maxConcurrentDownloads &&
+			process.env.QUEUE_MAX_DOWNLOADS === undefined
+		) {
+			queueService.setMaxConcurrent(settings.maxConcurrentDownloads);
+		}
 
-		// Schedule watched item cleanup
-		await this.restartCleanupTask();
+		if (settings?.cleanupEnabled) {
+			const intervalSeconds = settings.cleanupIntervalSeconds || 3600;
+			this.jobRegistry.set('watched-cleanup', {
+				name: 'watched-cleanup',
+				cron: this.secondsToCronInterval(intervalSeconds),
+				enabled: true,
+				description: 'Clean up watched items',
+			});
+		} else {
+			this.jobRegistry.set('watched-cleanup', {
+				name: 'watched-cleanup',
+				cron: '0 * * * *',
+				enabled: false,
+				description: 'Clean up watched items',
+			});
+		}
+
+		// Ensure system jobs are scheduled
+		await this.scheduleNextRun('ytdlp-update');
+		await this.scheduleNextRun('auto-delete');
+		await this.scheduleNextRun('cache-cleanup');
+		await this.scheduleNextRun('youtube-sync');
+		
+		if (this.jobRegistry.get('backup')?.enabled) {
+			await this.scheduleNextRun('backup');
+		}
+		if (this.jobRegistry.get('watched-cleanup')?.enabled) {
+			await this.scheduleNextRun('watched-cleanup');
+		}
+
+		// Start queue worker
+		await queueService.start();
+
+		// Start subscription and monitor scheduling
+		await subscriptionService.startScheduler();
+		// Livestream monitors are long-lived yt-dlp --wait-for-video processes;
+		// without this startup call no monitor ever checks its stream.
+		await monitorService.startMonitoring();
 
 		console.log('[Scheduler] All background jobs started');
+	}
+
+	async scheduleNextRun(name: string) {
+		const reg = this.jobRegistry.get(name);
+		if (!reg || !reg.enabled || !reg.cron) return;
+
+		try {
+			const interval = CronExpressionParser.parse(reg.cron);
+			const nextRun = interval.next().toDate();
+
+			const pendingJobs = await prisma.jobQueue.findMany({
+				where: { type: 'system', status: 'PENDING' }
+			});
+			const existing = pendingJobs.find(j => (j.payload as any)?.name === name);
+
+			if (existing) {
+				await prisma.jobQueue.update({
+					where: { id: existing.id },
+					data: { runAt: nextRun }
+				});
+			} else {
+				await queueService.enqueue('system', { name }, { runAt: nextRun });
+			}
+		} catch (e) {
+			console.error(`[Scheduler] Failed to parse cron or schedule job ${name}:`, e);
+		}
 	}
 
 	/**
@@ -187,13 +228,18 @@ class JobScheduler {
 					break;
 
 				case 'auto-delete':
-					await autoDeleteService.deleteWatchedOverThreshold();
+					const res = await autoDeleteService.deleteWatchedOverThreshold();
+					if (res.deleted > 0) {
+						console.log(`[Scheduler] AutoDelete: deleted ${res.deleted} watched download(s)`);
+					}
 					break;
 
 				case 'cache-cleanup':
 					await libraryService.resumeInterruptedPromotions();
 					await libraryService.reconcileFiles();
 					await libraryService.enforceCacheQuota();
+					await libraryService.sweepOrphanedDownloads();
+					await this.pruneJobHistory();
 					break;
 
 				case 'subscription-check': {
@@ -207,20 +253,24 @@ class JobScheduler {
 				}
 
 				case 'monitor-check': {
-					// Restart monitoring to re-check all monitors
 					monitorService.stopAll();
 					await monitorService.startMonitoring();
 					break;
 				}
 
 				case 'backup': {
-					const backup = await backupService.createBackup('manual');
-					console.log(`[Scheduler] Manual backup created: ${backup.filename}`);
+					console.log('[Scheduler] Running scheduled backup...');
+					const backup = await backupService.createBackup('scheduled');
+					console.log(`[Scheduler] Backup created: ${backup.filename}`);
 					break;
 				}
 
 				case 'youtube-sync':
 					await youtubeSyncService.runOnce();
+					break;
+					
+				case 'watched-cleanup':
+					await cleanupService.runCleanup();
 					break;
 
 				default:
@@ -230,54 +280,41 @@ class JobScheduler {
 	}
 
 	/**
-	 * Start (or restart) the backup cron task based on settings
+	 * Delete finished job rows and stale history so the queue tables don't grow
+	 * forever. Recurring jobs enqueue a fresh row every cycle and the runs table
+	 * only ever appends, so without pruning both grow unboundedly.
 	 */
-	private async startBackupTask(): Promise<void> {
-		// Stop existing task if running
-		if (this.backupTask) {
-			this.backupTask.stop();
-			this.backupTask = null;
-		}
+	private async pruneJobHistory(): Promise<void> {
+		const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+		const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-		const settings = await prisma.settings.findUnique({
-			where: { id: 'singleton' },
+		// Terminal job rows past retention, plus PENDING rows that have been due
+		// for a month without being claimed (dead jobs from removed handlers).
+		const jobs = await prisma.jobQueue.deleteMany({
+			where: {
+				OR: [
+					{ status: { in: ['COMPLETED', 'FAILED'] }, completedAt: { lt: weekAgo } },
+					{ status: 'PENDING', runAt: { lt: monthAgo } },
+				],
+			},
+		});
+		const runs = await prisma.scheduledJobRun.deleteMany({
+			where: { startedAt: { lt: monthAgo } },
+		});
+		// Old failed downloads keep their failure record in the archive, so the
+		// retry affordance can age out of the list without losing the history.
+		const failedDownloads = await prisma.download.deleteMany({
+			where: { status: 'FAILED', createdAt: { lt: monthAgo } },
 		});
 
-		if (settings?.backupEnabled && settings.backupCron) {
-			if (!cron.validate(settings.backupCron)) {
-				console.error(`[Scheduler] Invalid backup cron expression: ${settings.backupCron}`);
-				return;
-			}
-
-			this.backupTask = cron.schedule(settings.backupCron, async () => {
-				await this.logJobRun('backup', async () => {
-					console.log('[Scheduler] Running scheduled backup...');
-					const backup = await backupService.createBackup('scheduled');
-					console.log(`[Scheduler] Backup created: ${backup.filename}`);
-				});
-			});
-
-			this.jobRegistry.set('backup', {
-				name: 'backup',
-				cron: settings.backupCron,
-				enabled: true,
-				description: 'Automated database backup',
-			});
-
-			console.log(`[Scheduler] Backup task scheduled: ${settings.backupCron}`);
-		} else {
-			this.jobRegistry.set('backup', {
-				name: 'backup',
-				cron: settings?.backupCron || '0 2 * * *',
-				enabled: false,
-				description: 'Automated database backup',
-			});
+		if (jobs.count > 0 || runs.count > 0 || failedDownloads.count > 0) {
+			console.log(
+				`[Scheduler] Pruned ${jobs.count} job rows, ${runs.count} run rows, ` +
+					`${failedDownloads.count} stale failed download(s)`,
+			);
 		}
 	}
 
-	/**
-	 * Check and update yt-dlp if needed
-	 */
 	private async checkYtdlpUpdate(): Promise<void> {
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
@@ -291,7 +328,6 @@ class JobScheduler {
 
 		const currentVersion = await ytdlpService.getVersion();
 		const updateOutput = await ytdlpService.updateBinary();
-
 		const newVersion = await ytdlpService.getVersion();
 
 		if (currentVersion !== newVersion) {
@@ -310,29 +346,34 @@ class JobScheduler {
 	}
 
 	async restartCleanupTask(): Promise<void> {
-		if (this.watchedCleanupTask) {
-			this.watchedCleanupTask.stop();
-			this.watchedCleanupTask = null;
-		}
-
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
 		});
-
-		if (!settings?.cleanupEnabled) return;
-
-		const intervalSeconds = settings.cleanupIntervalSeconds || 3600;
-		const cronExpr = this.secondsToCronInterval(intervalSeconds);
-
-		this.watchedCleanupTask = cron.schedule(cronExpr, async () => {
-			try {
-				await cleanupService.runCleanup();
-			} catch (error) {
-				console.error('[Scheduler] Watched item cleanup failed:', error);
-			}
-		});
-
-		console.log(`[Scheduler] Watched item cleanup scheduled (every ${intervalSeconds}s)`);
+		
+		if (settings?.cleanupEnabled) {
+			const intervalSeconds = settings.cleanupIntervalSeconds || 3600;
+			this.jobRegistry.set('watched-cleanup', {
+				name: 'watched-cleanup',
+				cron: this.secondsToCronInterval(intervalSeconds),
+				enabled: true,
+				description: 'Clean up watched items',
+			});
+			await this.scheduleNextRun('watched-cleanup');
+		} else {
+			this.jobRegistry.set('watched-cleanup', {
+				name: 'watched-cleanup',
+				cron: this.secondsToCronInterval(settings?.cleanupIntervalSeconds || 3600),
+				enabled: false,
+				description: 'Clean up watched items',
+			});
+			await prisma.jobQueue.deleteMany({
+				where: {
+					type: 'system',
+					status: 'PENDING',
+					payload: { path: ['name'], equals: 'watched-cleanup' },
+				},
+			});
+		}
 	}
 
 	private secondsToCronInterval(seconds: number): string {
@@ -340,7 +381,7 @@ class JobScheduler {
 		if (minutes < 60) return `*/${minutes} * * * *`;
 		const hours = Math.round(minutes / 60);
 		if (hours < 24) return `0 */${hours} * * *`;
-		return `0 0 */${Math.round(hours / 24)} * *`;
+		return `0 0 */${Math.round(hours / 24)} * * *`;
 	}
 
 	/**
@@ -351,36 +392,7 @@ class JobScheduler {
 
 		subscriptionService.stopAll();
 		monitorService.stopAll();
-
-		if (this.ytdlpUpdateTask) {
-			this.ytdlpUpdateTask.stop();
-			this.ytdlpUpdateTask = null;
-		}
-
-		if (this.cacheCleanupTask) {
-			this.cacheCleanupTask.stop();
-			this.cacheCleanupTask = null;
-		}
-
-		if (this.watchedCleanupTask) {
-			this.watchedCleanupTask.stop();
-			this.watchedCleanupTask = null;
-		}
-
-		if (this.autoDeleteTask) {
-			this.autoDeleteTask.stop();
-			this.autoDeleteTask = null;
-		}
-
-		if (this.backupTask) {
-			this.backupTask.stop();
-			this.backupTask = null;
-		}
-
-		if (this.youtubeSyncTask) {
-			this.youtubeSyncTask.stop();
-			this.youtubeSyncTask = null;
-		}
+		queueService.stop();
 
 		console.log('[Scheduler] All background jobs stopped');
 	}

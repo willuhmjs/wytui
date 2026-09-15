@@ -52,4 +52,8 @@ Usage: {{- include "wytui.appEnv" . | nindent 8 }}
       name: {{ .Values.oidc.secret.name }}
       key: {{ .Values.oidc.secret.issuerKey }}
 {{- end }}
+{{- range .Values.extraEnv }}
+- name: {{ .name }}
+  value: {{ .value | quote }}
+{{- end }}
 {{- end }}

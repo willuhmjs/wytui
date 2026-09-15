@@ -21,6 +21,11 @@ secret:
   authSecret: ''
   authSecretKey: AUTH_SECRET
 
+# Extra environment variables for the app container, e.g. queue concurrency:
+#   - name: QUEUE_MAX_DOWNLOADS
+#     value: "4"
+extraEnv: []
+
 oidc:
   enabled: false
   name: oidc
