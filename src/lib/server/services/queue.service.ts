@@ -135,23 +135,31 @@ export class QueueService {
 
 	private async executeJob(job: JobQueue) {
 		const handler = this.handlers.get(job.type);
-		
+
 		try {
 			if (!handler) throw new Error(`No handler registered for job type: ${job.type}`);
 			await handler(job);
-			
-			// Success
-			await prisma.jobQueue.update({
+
+			// Success. updateMany, not update: self-rescheduling handlers (e.g.
+			// subscription jobs) may delete this row before we get here, and a
+			// P2025 from a missing row must not kill the worker process.
+			await prisma.jobQueue.updateMany({
 				where: { id: job.id },
 				data: { status: 'COMPLETED', completedAt: new Date() }
 			});
 		} catch (error: any) {
 			console.error(`[QueueService] Job ${job.id} (${job.type}) failed:`, error);
-			// Failure
-			await prisma.jobQueue.update({
-				where: { id: job.id },
-				data: { status: 'FAILED', completedAt: new Date(), error: error?.message || 'Unknown error' }
-			});
+			// Failure. executeJob runs detached, so anything thrown here becomes
+			// an unhandled rejection and terminates Node — never let bookkeeping
+			// (e.g. the row vanishing mid-run) escape.
+			try {
+				await prisma.jobQueue.updateMany({
+					where: { id: job.id },
+					data: { status: 'FAILED', completedAt: new Date(), error: error?.message || 'Unknown error' }
+				});
+			} catch (recordError) {
+				console.error(`[QueueService] Failed to record failure for job ${job.id}:`, recordError);
+			}
 		} finally {
 			// Cleanup tracking
 			this.activeJobs.delete(job.id);

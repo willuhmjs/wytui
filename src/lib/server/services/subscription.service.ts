@@ -104,8 +104,14 @@ class SubscriptionService {
 	async unscheduleSubscription(subscriptionId: string): Promise<void> {
 		// Prisma cannot filter nicely by JSON contents, so we fetch and filter in JS
 		// Since subscriptions are not thousands, this is acceptable.
+		//
+		// PENDING rows only: the RUNNING row is the in-flight check for this very
+		// subscription (scheduleSubscription runs from inside its own job handler),
+		// and deleting it would make the queue worker's completion update fail.
+		// Stale RUNNING rows are reset to PENDING on worker start, so they still
+		// get cleaned up; terminal rows are pruned by the weekly history prune.
 		const jobs = await prisma.jobQueue.findMany({
-			where: { type: 'subscription' },
+			where: { type: 'subscription', status: 'PENDING' },
 		});
 		const toDelete = jobs.filter((j) => (j.payload as any)?.subscriptionId === subscriptionId);
 		for (const job of toDelete) {

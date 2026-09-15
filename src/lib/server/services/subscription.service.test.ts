@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const archiveDb: Record<string, any> = {};
 const downloadsDb: any[] = [];
 const subsDb: Record<string, any> = {};
+const jobQueueDb: any[] = [];
 
 vi.mock('../db', () => ({
 	prisma: {
@@ -12,6 +13,19 @@ vi.mock('../db', () => ({
 			update: vi.fn(async ({ where, data }: any) => {
 				subsDb[where.id] = { ...subsDb[where.id], ...data };
 				return subsDb[where.id];
+			}),
+		},
+		jobQueue: {
+			findMany: vi.fn(async ({ where }: any) =>
+				jobQueueDb.filter(
+					(j) =>
+						(where.type === undefined || j.type === where.type) &&
+						(where.status === undefined || j.status === where.status),
+				),
+			),
+			delete: vi.fn(async ({ where }: any) => {
+				const i = jobQueueDb.findIndex((j) => j.id === where.id);
+				if (i !== -1) jobQueueDb.splice(i, 1);
 			}),
 		},
 		archive: {
@@ -200,6 +214,36 @@ describe('checkSubscription rate-limit cooldown', () => {
 		expect(getLatest).toHaveBeenCalledTimes(2);
 		// A successful check clears the error.
 		expect(subsDb[SUB_ID].lastError).toBeNull();
+	});
+});
+
+describe('unscheduleSubscription', () => {
+	beforeEach(() => {
+		jobQueueDb.length = 0;
+	});
+
+	it('removes only PENDING rows and leaves the in-flight RUNNING row alone', async () => {
+		const future = new Date(Date.now() + 60 * 60 * 1000);
+		jobQueueDb.push(
+			// The next scheduled run — this is what a reschedule replaces.
+			{ id: 'pending-1', type: 'subscription', status: 'PENDING', runAt: future, payload: { subscriptionId: 'sub-1' } },
+			// The row for the check that is currently executing (scheduleSubscription
+			// runs from inside its own job handler). Deleting it made the queue
+			// worker's completion update fail and crashed the process.
+			{ id: 'running-1', type: 'subscription', status: 'RUNNING', startedAt: new Date(), payload: { subscriptionId: 'sub-1' } },
+			// Terminal history — pruned by the weekly job-history prune instead.
+			{ id: 'done-1', type: 'subscription', status: 'COMPLETED', completedAt: new Date(), payload: { subscriptionId: 'sub-1' } },
+			// Another subscription's row must not be touched.
+			{ id: 'other-1', type: 'subscription', status: 'PENDING', runAt: future, payload: { subscriptionId: 'sub-2' } },
+		);
+
+		await subscriptionService.unscheduleSubscription('sub-1');
+
+		const ids = jobQueueDb.map((j) => j.id);
+		expect(ids).not.toContain('pending-1');
+		expect(ids).toContain('running-1');
+		expect(ids).toContain('done-1');
+		expect(ids).toContain('other-1');
 	});
 });
 
