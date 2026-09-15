@@ -34,6 +34,11 @@ export class QueueService {
 
 	private handlers = new Map<string, JobHandler>();
 	private pollingTimer: NodeJS.Timeout | null = null;
+	// Boot enqueues (system + subscription scheduling) fire an immediate poll
+	// via setImmediate; jobs must not execute before start() — handlers are
+	// still being registered and leftover jobs from a previous run would fail
+	// against a missing handler.
+	private started = false;
 
 	// Active state tracking
 	private activeJobs = new Set<string>();
@@ -60,10 +65,12 @@ export class QueueService {
 		if (this.pollingTimer) return;
 		console.log('[QueueService] Starting background worker...');
 
+		this.started = true;
+
 		// Reset any stale RUNNING jobs back to PENDING from before a server restart
 		await prisma.jobQueue.updateMany({
 			where: { status: 'RUNNING' },
-			data: { status: 'PENDING', startedAt: null }
+			data: { status: 'PENDING', startedAt: null },
 		});
 
 		this.poll();
@@ -78,13 +85,14 @@ export class QueueService {
 			clearInterval(this.pollingTimer);
 			this.pollingTimer = null;
 		}
+		this.started = false;
 	}
 
 	/**
 	 * Main polling loop
 	 */
 	private async poll() {
-		if (this.isPolling) return;
+		if (this.isPolling || !this.started) return;
 		this.isPolling = true;
 
 		try {
@@ -93,13 +101,10 @@ export class QueueService {
 				where: {
 					status: 'PENDING',
 					runAt: { lte: new Date() },
-					id: { notIn: Array.from(this.activeJobs) }
+					id: { notIn: Array.from(this.activeJobs) },
 				},
-				orderBy: [
-					{ priority: 'desc' },
-					{ runAt: 'asc' }
-				],
-				take: 20 // Fetch a batch
+				orderBy: [{ priority: 'desc' }, { runAt: 'asc' }],
+				take: 20, // Fetch a batch
 			});
 
 			for (const job of jobs) {
@@ -110,10 +115,12 @@ export class QueueService {
 				if (active >= limit) continue;
 
 				// Mark as RUNNING
-				const updatedJob = await prisma.jobQueue.update({
-					where: { id: job.id, status: 'PENDING' },
-					data: { status: 'RUNNING', startedAt: new Date() }
-				}).catch(() => null);
+				const updatedJob = await prisma.jobQueue
+					.update({
+						where: { id: job.id, status: 'PENDING' },
+						data: { status: 'RUNNING', startedAt: new Date() },
+					})
+					.catch(() => null);
 
 				if (!updatedJob) continue; // someone else grabbed it
 
@@ -137,7 +144,19 @@ export class QueueService {
 		const handler = this.handlers.get(job.type);
 
 		try {
-			if (!handler) throw new Error(`No handler registered for job type: ${job.type}`);
+			// A job claimed before its handler registered (boot-ordering race)
+			// must not fail terminally — that permanently kills self-rescheduling
+			// chains. Release it for a later poll instead.
+			if (!handler) {
+				console.warn(`[QueueService] No handler for ${job.type} yet — requeueing job ${job.id}`);
+				await prisma.jobQueue
+					.updateMany({
+						where: { id: job.id },
+						data: { status: 'PENDING', startedAt: null, runAt: new Date(Date.now() + 5000) },
+					})
+					.catch(() => {});
+				return;
+			}
 			await handler(job);
 
 			// Success. updateMany, not update: self-rescheduling handlers (e.g.
@@ -145,7 +164,7 @@ export class QueueService {
 			// P2025 from a missing row must not kill the worker process.
 			await prisma.jobQueue.updateMany({
 				where: { id: job.id },
-				data: { status: 'COMPLETED', completedAt: new Date() }
+				data: { status: 'COMPLETED', completedAt: new Date() },
 			});
 		} catch (error: any) {
 			console.error(`[QueueService] Job ${job.id} (${job.type}) failed:`, error);
@@ -155,7 +174,11 @@ export class QueueService {
 			try {
 				await prisma.jobQueue.updateMany({
 					where: { id: job.id },
-					data: { status: 'FAILED', completedAt: new Date(), error: error?.message || 'Unknown error' }
+					data: {
+						status: 'FAILED',
+						completedAt: new Date(),
+						error: error?.message || 'Unknown error',
+					},
 				});
 			} catch (recordError) {
 				console.error(`[QueueService] Failed to record failure for job ${job.id}:`, recordError);
@@ -182,15 +205,15 @@ export class QueueService {
 				payload: payload || null,
 				runAt: options?.runAt || new Date(),
 				priority: options?.priority || 0,
-				status: 'PENDING'
-			}
+				status: 'PENDING',
+			},
 		});
-		
+
 		// trigger a poll immediately if possible
 		if (!this.isPolling) {
 			setImmediate(() => this.poll());
 		}
-		
+
 		return job;
 	}
 
@@ -199,10 +222,10 @@ export class QueueService {
 	 */
 	async getStats(): Promise<QueueStats> {
 		const queuedMetadata = await prisma.jobQueue.count({
-			where: { type: 'metadata', status: 'PENDING' }
+			where: { type: 'metadata', status: 'PENDING' },
 		});
 		const queuedDownloads = await prisma.jobQueue.count({
-			where: { type: 'download', status: 'PENDING' }
+			where: { type: 'download', status: 'PENDING' },
 		});
 
 		return {
@@ -238,7 +261,7 @@ export class QueueService {
 	 */
 	async clearPending(): Promise<void> {
 		await prisma.jobQueue.deleteMany({
-			where: { status: 'PENDING', type: { in: ['download', 'metadata'] } }
+			where: { status: 'PENDING', type: { in: ['download', 'metadata'] } },
 		});
 	}
 }

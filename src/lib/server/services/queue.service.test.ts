@@ -5,7 +5,12 @@ const jobRows: any[] = [];
 vi.mock('../db', () => ({
 	prisma: {
 		jobQueue: {
-			findMany: vi.fn(async () => jobRows.filter((j) => j.status === 'PENDING')),
+			findMany: vi.fn(async () =>
+				// Mirrors the production claim filter: only PENDING jobs that are
+				// due. Without the runAt filter the no-handler requeue path (which
+				// sets runAt +5s and re-polls from its finally) would busy-loop.
+				jobRows.filter((j) => j.status === 'PENDING' && j.runAt <= new Date()),
+			),
 			update: vi.fn(async ({ where, data }: any) => {
 				const job = jobRows.find((j) => j.id === where.id);
 				if (!job) return null;
@@ -60,6 +65,11 @@ function blockForever() {
 	return new Promise<void>(() => {});
 }
 
+/** poll() refuses to run before start(); tests drive it directly. */
+function startPolling(svc: QueueService) {
+	(svc as any).started = true;
+}
+
 beforeEach(() => {
 	jobRows.length = 0;
 });
@@ -67,6 +77,7 @@ beforeEach(() => {
 describe('per-type concurrency limits', () => {
 	it('caps subscription jobs at 3 concurrent in a single poll batch', async () => {
 		const svc = new QueueService(2);
+		startPolling(svc);
 		svc.registerHandler('subscription', blockForever);
 		seedPending('subscription', 10);
 
@@ -78,6 +89,7 @@ describe('per-type concurrency limits', () => {
 
 	it('caps system jobs at 2 concurrent in a single poll batch', async () => {
 		const svc = new QueueService(2);
+		startPolling(svc);
 		svc.registerHandler('system', blockForever);
 		seedPending('system', 10);
 
@@ -89,6 +101,7 @@ describe('per-type concurrency limits', () => {
 
 	it('starts at most one download per poll and stops at the configured limit', async () => {
 		const svc = new QueueService(2);
+		startPolling(svc);
 		svc.registerHandler('download', blockForever);
 		seedPending('download', 5);
 
@@ -102,6 +115,7 @@ describe('per-type concurrency limits', () => {
 
 	it('releases the slot when a job finishes so the next poll can claim more', async () => {
 		const svc = new QueueService(2);
+		startPolling(svc);
 		svc.registerHandler('system', async () => {});
 		seedPending('system', 3);
 
@@ -123,6 +137,7 @@ describe('bookkeeping resilience', () => {
 		// block the second claim below.
 		process.env.QUEUE_MAX_SUBSCRIPTIONS = '1';
 		const svc = new QueueService(2);
+		startPolling(svc);
 		let runs = 0;
 		// Reproduces the subscription handler's self-reschedule: the row for the
 		// in-flight job is removed (delete + re-enqueue) before executeJob
@@ -162,6 +177,7 @@ describe('bookkeeping resilience', () => {
 		updateMany.mockRejectedValueOnce(new Error('db down (failure write)'));
 
 		const svc = new QueueService(2);
+		startPolling(svc);
 		svc.registerHandler('system', async () => {});
 		seedPending('system', 1);
 
@@ -199,5 +215,59 @@ describe('env-derived defaults', () => {
 	it('honors an explicit constructor argument over the env default', () => {
 		const svc = new QueueService(7);
 		expect(svc.getMaxConcurrent()).toBe(7);
+	});
+});
+
+describe('boot ordering', () => {
+	it('poll() does nothing before start() — jobs stay PENDING until the worker is up', async () => {
+		// Boot enqueues (system + subscription scheduling) fire an immediate
+		// poll via setImmediate; before start(), handlers are still being
+		// registered and leftover due jobs from a previous run would fail
+		// against a missing handler — killing self-rescheduling chains.
+		const svc = new QueueService(2);
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		svc.registerHandler('subscription', async () => {});
+		seedPending('subscription', 1);
+
+		// Simulates the enqueue-triggered setImmediate poll before start().
+		(svc as any).poll();
+		await new Promise((resolve) => setImmediate(resolve));
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(jobRows.filter((j) => j.status === 'RUNNING')).toHaveLength(0);
+		expect(jobRows.filter((j) => j.status === 'PENDING')).toHaveLength(1);
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+
+	it('releases a claimed job for a later poll when no handler is registered yet', async () => {
+		const svc = new QueueService(2);
+		startPolling(svc);
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		// No handler for this type at claim time — the job must NOT go FAILED.
+		seedPending('subscription', 1);
+
+		await (svc as any).poll();
+		// Let the detached executeJob's requeue write land.
+		await new Promise((resolve) => setImmediate(resolve));
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const job = jobRows[0];
+		expect(job.status).toBe('PENDING');
+		expect(job.runAt.getTime()).toBeGreaterThan(Date.now());
+
+		// Handler registers late (the real boot order now guarantees this
+		// never happens, but a requeued job must still be recoverable if it
+		// does). Simulate the 5s backoff elapsing, then poll again.
+		svc.registerHandler('subscription', async () => {});
+		job.runAt = new Date(Date.now() - 1000);
+		await (svc as any).poll();
+		await new Promise((resolve) => setImmediate(resolve));
+		await new Promise((resolve) => setImmediate(resolve));
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(jobRows.find((j) => j.id === job.id)?.status).toBe('COMPLETED');
+		expect(warnSpy).toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 });
