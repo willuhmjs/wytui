@@ -1,5 +1,7 @@
 import { json, error } from '@sveltejs/kit';
+import { prisma } from '$lib/server/db';
 import { playlistService } from '$lib/server/services/playlist.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -127,7 +129,19 @@ export const DELETE = apiRoute(
 				throw error(401, 'Authentication required');
 			}
 
+			// Fetched for the log message; playlistService.delete enforces
+			// ownership again on delete.
+			const playlist = await prisma.playlist.findUnique({
+				where: { id: params.id },
+				select: { name: true },
+			});
+
 			await playlistService.delete(params.id, locals.session.user.id);
+
+			eventLogService
+				.record(EventTypes.PLAYLIST_DELETED, `Deleted playlist "${playlist?.name ?? params.id}"`)
+				.catch(() => {});
+
 			return json({ success: true });
 		} catch (e: any) {
 			if (e.status) throw e;

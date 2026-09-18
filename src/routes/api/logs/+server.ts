@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
 import { requireAdmin } from '$lib/server/guards';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import type { RequestHandler } from './$types';
 
 export const GET = apiRoute(
@@ -40,6 +41,15 @@ export const GET = apiRoute(
 									type: { type: 'string' },
 									message: { type: 'string' },
 									userId: { type: 'string', nullable: true },
+									user: {
+										type: 'object',
+										nullable: true,
+										description: 'Resolved acting-user identity (name/email)',
+										properties: {
+											name: { type: 'string', nullable: true },
+											email: { type: 'string' },
+										},
+									},
 									createdAt: { type: 'string', format: 'date-time' },
 								},
 							},
@@ -84,7 +94,24 @@ export const GET = apiRoute(
 
 			const types = typeGroups.map((g) => g.type).sort();
 
-			return json({ events, total, types });
+			// Resolve userId → display identity so the feed can show who acted.
+			// EventLog has no FK relation (retention pruning would cascade-foul
+			// user deletes), so this is a point lookup on the page's ids.
+			const userIds = [...new Set(events.map((e) => e.userId).filter((id): id is string => !!id))];
+			const users = userIds.length
+				? await prisma.user.findMany({
+						where: { id: { in: userIds } },
+						select: { id: true, name: true, email: true },
+					})
+				: [];
+			const userById = new Map(users.map((u) => [u.id, u]));
+
+			const eventsWithUser = events.map((e) => {
+				const user = e.userId ? userById.get(e.userId) : undefined;
+				return { ...e, user: user ? { name: user.name, email: user.email } : null };
+			});
+
+			return json({ events: eventsWithUser, total, types });
 		} catch (e: any) {
 			console.error('Failed to list event logs:', e);
 			if (e.status) throw e;
@@ -118,6 +145,10 @@ export const DELETE = apiRoute(
 			requireAdmin(locals);
 
 			const result = await prisma.eventLog.deleteMany({});
+
+			eventLogService
+				.record(EventTypes.LOGS_CLEARED, `Cleared event log (${result.count} entries)`)
+				.catch(() => {});
 
 			return json({ success: true, deleted: result.count });
 		} catch (e: any) {

@@ -91,7 +91,7 @@ export const POST = apiRoute(
 				return json({ requested: true });
 			}
 
-			await libraryService.promoteToLibrary(params.id, locals.session.user.id);
+			await libraryService.promoteToLibrary(params.id);
 
 			const updated = await downloadService.getDownload(params.id);
 			return json(updated);

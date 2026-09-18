@@ -38,7 +38,6 @@ export const POST = apiRoute(
 			const { userId } = await request.json().catch(() => ({}));
 			const deleted = await downloadService.clearAllDownloads(
 				typeof userId === 'string' && userId ? userId : undefined,
-				locals.session?.user?.id,
 			);
 			return json({ success: true, deleted });
 		} catch (e: any) {

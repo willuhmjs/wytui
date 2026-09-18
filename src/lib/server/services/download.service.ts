@@ -249,6 +249,15 @@ class DownloadService {
 		console.log('[DownloadService] Broadcasting download:created:', serialized.id);
 		this.emitToOwner('download:created', serialized, download.id);
 
+		// Manual submissions get a feed row; subscription auto-downloads are
+		// already represented by the subscription's own checked event, and one
+		// row per queued video would flood the feed on backfills.
+		if (!subscriptionId) {
+			eventLogService
+				.record(EventTypes.DOWNLOAD_CREATED, `Started download "${url}"`)
+				.catch(() => {});
+		}
+
 		// Start download process
 		this.processDownload(download.id).catch((error) => {
 			console.error(`Failed to process download ${download.id}:`, error);
@@ -1333,11 +1342,12 @@ class DownloadService {
 	}
 
 	/**
-	 * Delete download. `actorId` is the performing user when known (an admin
-	 * overriding ownership differs from the row's owner); the event log's
-	 * userId column is documented as the acting user.
+	 * Delete download. The event log attributes the acting user from the
+	 * request context; the owner is only the fallback for background
+	 * callers (e.g. admin bulk clears triggered outside a request would
+	 * have no actor at all).
 	 */
-	async deleteDownload(downloadId: string, actorId?: string): Promise<void> {
+	async deleteDownload(downloadId: string): Promise<void> {
 		await this.cancelDownload(downloadId);
 
 		const download = await prisma.download.findUnique({
@@ -1372,7 +1382,7 @@ class DownloadService {
 			.record(
 				EventTypes.DOWNLOAD_DELETED,
 				`Deleted "${download?.title ?? download?.url ?? downloadId}"`,
-				actorId ?? download?.userId ?? this.downloadOwners.get(downloadId),
+				download?.userId ?? this.downloadOwners.get(downloadId),
 			)
 			.catch(() => {});
 
@@ -1385,7 +1395,7 @@ class DownloadService {
 	 * a single user. Each is removed via deleteDownload so in-progress processes
 	 * are cancelled and files/archives cleaned up. Returns the number deleted.
 	 */
-	async clearAllDownloads(userId?: string, actorId?: string): Promise<number> {
+	async clearAllDownloads(userId?: string): Promise<number> {
 		const downloads = await prisma.download.findMany({
 			where: userId ? { userId } : {},
 			select: { id: true },
@@ -1394,7 +1404,7 @@ class DownloadService {
 		let deleted = 0;
 		for (const { id } of downloads) {
 			try {
-				await this.deleteDownload(id, actorId);
+				await this.deleteDownload(id);
 				deleted++;
 			} catch (e) {
 				console.error(`[DownloadService] Failed to clear download ${id}:`, e);
@@ -1419,10 +1429,10 @@ class DownloadService {
 
 	/**
 	 * Retry a FAILED or CANCELLED download: reset the record and re-run the
-	 * metadata → download pipeline. `actorId` is the performing user when
-	 * known (admin override) — see deleteDownload.
+	 * metadata → download pipeline. Event-log attribution comes from the
+	 * request context — see deleteDownload.
 	 */
-	async retryDownload(downloadId: string, actorId?: string): Promise<any> {
+	async retryDownload(downloadId: string): Promise<any> {
 		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
 			include: { profile: true },
@@ -1459,7 +1469,7 @@ class DownloadService {
 			.record(
 				EventTypes.DOWNLOAD_RETRIED,
 				`Retried "${download.title || download.url}"`,
-				actorId ?? download.userId ?? this.downloadOwners.get(downloadId),
+				download.userId ?? this.downloadOwners.get(downloadId),
 			)
 			.catch(() => {});
 

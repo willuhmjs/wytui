@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -42,6 +43,9 @@ export const DELETE = apiRoute(
 		}
 
 		await prisma.apiKey.delete({ where: { id: params.id } });
+
+		eventLogService.record(EventTypes.KEY_DELETED, `Revoked API key "${key.name}"`).catch(() => {});
+
 		return json({ success: true });
 	},
 ) satisfies RequestHandler;

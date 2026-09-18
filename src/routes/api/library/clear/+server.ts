@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { libraryService } from '$lib/server/services/library.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -32,6 +33,14 @@ export const POST = apiRoute(
 			// Admins clear the whole cache; regular users only their own downloads.
 			const scopeUserId = locals.session.user.isAdmin ? undefined : locals.session.user.id;
 			const count = await libraryService.clearCache(scopeUserId);
+
+			eventLogService
+				.record(
+					EventTypes.CACHE_CLEARED,
+					`Cleared cache: ${count} download${count === 1 ? '' : 's'} deleted`,
+				)
+				.catch(() => {});
+
 			return json({ success: true, deleted: count });
 		} catch (e: any) {
 			console.error('Failed to clear cache:', e);

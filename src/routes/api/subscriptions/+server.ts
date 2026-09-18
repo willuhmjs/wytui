@@ -4,6 +4,7 @@ import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { isYouTubeUrl } from '$lib/server/services/youtube.service';
 import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -213,6 +214,10 @@ export const POST = apiRoute(
 			});
 
 			await subscriptionService.scheduleSubscription(subscription);
+
+			eventLogService
+				.record(EventTypes.SUBSCRIPTION_CREATED, `Subscribed to "${subscription.name}"`)
+				.catch(() => {});
 
 			// Resolve the channel identity (display name, avatar, channel ID,
 			// video count) in the background so the response is immediate

@@ -89,6 +89,7 @@ import { queueService } from './queue.service';
 import { sseEmitter } from '../sse/emitter';
 import { prisma } from '../db';
 import { ytdlpService } from './ytdlp.service';
+import { runWithRequestContext, setActingUser } from '../request-context';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 const ID = 'dl-retry-1';
@@ -362,7 +363,12 @@ describe('event log actor attribution', () => {
 	it('records the acting admin, not the download owner, on admin deletion', async () => {
 		seedDownload({ userId: 'user-x' });
 
-		await downloadService.deleteDownload(ID, 'admin-1');
+		// The route-level acting user now arrives via the request context
+		// (hooks.server.ts), not an actorId parameter.
+		await runWithRequestContext(async () => {
+			setActingUser({ id: 'admin-1' });
+			await downloadService.deleteDownload(ID);
+		});
 
 		expect(prisma.eventLog.create).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ userId: 'admin-1' }) }),
@@ -372,6 +378,7 @@ describe('event log actor attribution', () => {
 	it('falls back to the download owner when no actor is known', async () => {
 		seedDownload({ userId: 'user-x' });
 
+		// No request context — background callers (queue jobs, eviction).
 		await downloadService.deleteDownload(ID);
 
 		expect(prisma.eventLog.create).toHaveBeenCalledWith(

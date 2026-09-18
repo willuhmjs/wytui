@@ -14,6 +14,7 @@
 		type: string;
 		message: string;
 		userId: string | null;
+		user: { name: string | null; email: string } | null;
 		createdAt: string;
 	}
 
@@ -163,12 +164,27 @@
 	}
 
 	// Stable badge colors derived from the type's prefix (subscription.* /
-	// download.* / cookies.*). Unknown prefixes fall back to a neutral gray.
+	// download.* / user.* / …). Unknown prefixes fall back to a neutral gray.
 	const TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
 		subscription: { bg: 'rgba(139, 92, 246, 0.15)', fg: '#a78bfa' },
 		download: { bg: 'rgba(59, 130, 246, 0.15)', fg: '#60a5fa' },
 		cookies: { bg: 'rgba(245, 158, 11, 0.15)', fg: '#f59e0b' },
+		user: { bg: 'rgba(16, 185, 129, 0.15)', fg: '#34d399' },
+		settings: { bg: 'rgba(6, 182, 212, 0.15)', fg: '#22d3ee' },
+		library: { bg: 'rgba(244, 63, 94, 0.15)', fg: '#fb7185' },
+		cache: { bg: 'rgba(20, 184, 166, 0.15)', fg: '#2dd4bf' },
+		playlist: { bg: 'rgba(236, 72, 153, 0.15)', fg: '#f472b6' },
+		profile: { bg: 'rgba(132, 204, 22, 0.15)', fg: '#a3e635' },
+		key: { bg: 'rgba(99, 102, 241, 0.15)', fg: '#818cf8' },
+		youtube: { bg: 'rgba(239, 68, 68, 0.15)', fg: '#f87171' },
+		logs: { bg: 'rgba(156, 163, 175, 0.15)', fg: '#9ca3af' },
 	};
+
+	/** Display label for an event's actor; background jobs act as "System". */
+	function actorLabel(event: EventLogEntry): string {
+		if (!event.userId) return 'System';
+		return event.user?.name || event.user?.email || 'Unknown user';
+	}
 
 	function badgeStyle(type: string): string {
 		const c = TYPE_COLORS[type.split('.')[0]] ?? {
@@ -254,6 +270,7 @@
 								<tr>
 									<th>Time</th>
 									<th>Type</th>
+									<th>User</th>
 									<th>Message</th>
 								</tr>
 							</thead>
@@ -268,6 +285,9 @@
 										</td>
 										<td>
 											<span class="type-badge" style={badgeStyle(event.type)}>{event.type}</span>
+										</td>
+										<td class="user-cell" title={event.user?.email ?? undefined}>
+											{actorLabel(event)}
 										</td>
 										<td class="message-cell">{event.message}</td>
 									</tr>
@@ -383,6 +403,14 @@
 	.time-cell {
 		white-space: nowrap;
 		color: var(--color-text-secondary);
+	}
+
+	.user-cell {
+		white-space: nowrap;
+		color: var(--color-text-secondary);
+		max-width: 160px;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.type-badge {

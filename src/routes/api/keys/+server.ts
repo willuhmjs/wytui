@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { generateApiKey, hashApiKey } from '$lib/server/auth';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -95,6 +96,10 @@ export const POST = apiRoute(
 				userId: locals.session.user.id,
 			},
 		});
+
+		eventLogService
+			.record(EventTypes.KEY_CREATED, `Created API key "${apiKey.name}"`)
+			.catch(() => {});
 
 		return json(
 			{

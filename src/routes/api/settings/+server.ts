@@ -10,6 +10,7 @@ import {
 	applySettingsSideEffects,
 	serializeSettingsResponse,
 } from '$lib/server/services/settings-validation';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import type { RequestHandler } from './$types';
 
 export const GET = apiRoute(
@@ -268,6 +269,15 @@ export const PATCH = apiRoute(
 			});
 
 			await applySettingsSideEffects(updates);
+
+			// Field names only — values can include secrets (API keys, tokens).
+			const changedFields = Object.keys(updates);
+			eventLogService
+				.record(
+					EventTypes.SETTINGS_UPDATED,
+					`Updated settings (${changedFields.slice(0, 10).join(', ')}${changedFields.length > 10 ? ', …' : ''})`,
+				)
+				.catch(() => {});
 
 			return json(serializeSettingsResponse(settings));
 		} catch (e: any) {

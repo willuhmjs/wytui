@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -63,6 +64,14 @@ export const POST = apiRoute(
 			subscriptionService.backfillSubscription(params.id, { dateAfter }).catch((err) => {
 				console.error(`[Subscriptions] Backfill failed for ${params.id}:`, err);
 			});
+
+			eventLogService
+				.record(
+					EventTypes.SUBSCRIPTION_BACKFILL,
+					`Started backfill for "${existing.name}"${dateAfter ? ` (from ${dateAfter})` : ''}`,
+				)
+				.catch(() => {});
+
 			return json({ started: true });
 		} catch (e: any) {
 			console.error('Failed to backfill subscription:', e);

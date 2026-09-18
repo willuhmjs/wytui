@@ -3,6 +3,7 @@ import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -225,6 +226,13 @@ export const PATCH = apiRoute(
 				}
 			}
 
+			eventLogService
+				.record(
+					EventTypes.SUBSCRIPTION_UPDATED,
+					`Updated subscription "${subscription.name}" (${Object.keys(updates).join(', ')})`,
+				)
+				.catch(() => {});
+
 			return json(subscription);
 		} catch (e: any) {
 			console.error('Failed to update subscription:', e);
@@ -278,6 +286,10 @@ export const DELETE = apiRoute(
 			await prisma.subscription.delete({
 				where: { id: params.id },
 			});
+
+			eventLogService
+				.record(EventTypes.SUBSCRIPTION_DELETED, `Deleted subscription "${existing.name}"`)
+				.catch(() => {});
 
 			return json({ success: true });
 		} catch (e: any) {

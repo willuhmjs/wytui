@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { hashPassword, validatePassword, invalidateUsersCache } from '$lib/server/auth';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import { requireAdmin } from '$lib/server/guards';
 import type { RequestHandler } from './$types';
@@ -180,6 +181,14 @@ export const POST = apiRoute(
 			});
 
 			invalidateUsersCache();
+
+			eventLogService
+				.record(
+					EventTypes.USER_CREATED,
+					`Created user "${user.email}"${user.isAdmin ? ' (admin)' : ''}`,
+				)
+				.catch(() => {});
+
 			return json(user, { status: 201 });
 		} catch (e: any) {
 			console.error('Failed to create user:', e);

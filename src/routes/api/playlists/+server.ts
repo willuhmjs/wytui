@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { playlistService } from '$lib/server/services/playlist.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -89,6 +90,11 @@ export const POST = apiRoute(
 				name.trim(),
 				description?.trim(),
 			);
+
+			eventLogService
+				.record(EventTypes.PLAYLIST_CREATED, `Created playlist "${playlist.name}"`)
+				.catch(() => {});
+
 			return json(playlist, { status: 201 });
 		} catch (e: any) {
 			if (e.status) throw e;

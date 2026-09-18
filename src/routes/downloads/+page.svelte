@@ -123,6 +123,23 @@
 		}
 	});
 
+	// The SSE store reconnects silently; completions and deletions that
+	// happened during the gap never arrive as events. Refetch when the
+	// connection comes back so the Completed list catches up (the Active
+	// list heals itself via the server's on-connect replay).
+	// null until first observed — the initial connect must not stack a
+	// second fetch on the mount load.
+	let prevConnected: boolean | null = $state(null);
+	$effect(() => {
+		const c = sseState.connected;
+		if (prevConnected === false && c === true) {
+			loadCompletedDownloads();
+			loadCacheUsage();
+			loadDiskInfo();
+		}
+		prevConnected = c;
+	});
+
 	let filtersInitialized = false;
 
 	// Reload when resolution or date filters change

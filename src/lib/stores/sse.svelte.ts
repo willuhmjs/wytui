@@ -2,6 +2,16 @@ let eventSource = $state<EventSource | null>(null);
 let connected = $state(false);
 let downloads = $state<any[]>([]);
 
+// The server pings every 30s. EventSource fires no error when the peer
+// vanishes without a FIN (laptop sleep, NAT timeout, proxy drop) — the
+// connection just goes silent while the server keeps it "alive" forever.
+// If nothing arrives for 2.5 ping intervals, the pipe is dead: tear it
+// down and reconnect.
+const PING_TIMEOUT_MS = 75_000;
+const WATCHDOG_INTERVAL_MS = 15_000;
+let lastMessageAt = Date.now();
+let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+
 type EventCallback = (data: any) => void;
 const eventCallbacks = new Map<string, Set<EventCallback>>();
 
@@ -10,12 +20,27 @@ export function connectSSE() {
 
 	console.log('[SSE Client] Connecting to /api/sse...');
 	eventSource = new EventSource('/api/sse');
+	lastMessageAt = Date.now();
 
-	eventSource.addEventListener('connected', () => {
+	// All listeners go through listen() so any message counts as proof of
+	// life for the watchdog below.
+	function listen(event: string, handler: (e: MessageEvent) => void) {
+		eventSource!.addEventListener(event, (e) => {
+			lastMessageAt = Date.now();
+			handler(e as MessageEvent);
+		});
+	}
+
+	listen('connected', () => {
 		connected = true;
+		// The server replays the active downloads right after this event.
+		// Anything still held locally ended while we were disconnected —
+		// its terminal event was lost in the gap and will never arrive, so
+		// drop it instead of leaving a zombie card until a manual refresh.
+		downloads = [];
 	});
 
-	eventSource.addEventListener('download:created', (e) => {
+	listen('download:created', (e) => {
 		const download = JSON.parse(e.data);
 
 		// Check if already exists
@@ -27,7 +52,7 @@ export function connectSSE() {
 		}
 	});
 
-	eventSource.addEventListener('download:status', (e) => {
+	listen('download:status', (e) => {
 		const data = JSON.parse(e.data);
 
 		const index = downloads.findIndex((d) => d.id === data.id);
@@ -39,7 +64,7 @@ export function connectSSE() {
 		dispatchCallbacks('download:status', data);
 	});
 
-	eventSource.addEventListener('download:metadata', (e) => {
+	listen('download:metadata', (e) => {
 		const data = JSON.parse(e.data);
 
 		const index = downloads.findIndex((d) => d.id === data.id);
@@ -51,7 +76,7 @@ export function connectSSE() {
 		dispatchCallbacks('download:metadata', data);
 	});
 
-	eventSource.addEventListener('download:progress', (e) => {
+	listen('download:progress', (e) => {
 		const data = JSON.parse(e.data);
 
 		const index = downloads.findIndex((d) => d.id === data.id);
@@ -63,7 +88,7 @@ export function connectSSE() {
 		dispatchCallbacks('download:progress', data);
 	});
 
-	eventSource.addEventListener('download:complete', (e) => {
+	listen('download:complete', (e) => {
 		const data = JSON.parse(e.data);
 		const { id, download } = data;
 
@@ -80,7 +105,7 @@ export function connectSSE() {
 		dispatchCallbacks('download:complete', data);
 	});
 
-	eventSource.addEventListener('download:failed', (e) => {
+	listen('download:failed', (e) => {
 		const { id, error } = JSON.parse(e.data);
 
 		const index = downloads.findIndex((d) => d.id === id);
@@ -96,7 +121,7 @@ export function connectSSE() {
 		dispatchCallbacks('download:failed', { id, error });
 	});
 
-	eventSource.addEventListener('download:cancelled', (e) => {
+	listen('download:cancelled', (e) => {
 		const { id } = JSON.parse(e.data);
 
 		const index = downloads.findIndex((d) => d.id === id);
@@ -112,71 +137,88 @@ export function connectSSE() {
 		dispatchCallbacks('download:cancelled', { id });
 	});
 
-	eventSource.addEventListener('download:deleted', (e) => {
+	listen('download:deleted', (e) => {
 		const data = JSON.parse(e.data);
 		downloads = downloads.filter((d) => d.id !== data.id);
 		dispatchCallbacks('download:deleted', data);
 	});
 
-	eventSource.addEventListener('download:skipped', (e) => {
+	listen('download:skipped', (e) => {
 		const data = JSON.parse(e.data);
 		downloads = downloads.filter((d) => d.id !== data.id);
 		dispatchCallbacks('download:skipped', data);
 	});
 
-	eventSource.addEventListener('download:tasks', (e) => {
+	listen('download:tasks', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('download:tasks', data);
 	});
 
-	eventSource.addEventListener('download:task', (e) => {
+	listen('download:task', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('download:task', data);
 	});
 
-	eventSource.addEventListener('subscription:checked', (e) => {
+	listen('subscription:checked', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('subscription:checked', data);
 	});
 
-	eventSource.addEventListener('subscription:check:error', (e) => {
+	listen('subscription:check:error', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('subscription:check:error', data);
 	});
 
-	eventSource.addEventListener('playlist:sync:progress', (e) => {
+	listen('playlist:sync:progress', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('playlist:sync:progress', data);
 	});
 
-	eventSource.addEventListener('playlist:sync:complete', (e) => {
+	listen('playlist:sync:complete', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('playlist:sync:complete', data);
 	});
 
-	eventSource.addEventListener('monitor:live', (e) => {
+	listen('monitor:live', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('monitor:live', data);
 	});
 
-	eventSource.addEventListener('monitor:update', (e) => {
+	listen('monitor:update', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('monitor:update', data);
 	});
 
-	eventSource.addEventListener('ping', () => {
+	listen('ping', () => {
 		// Heartbeat, do nothing
 	});
 
+	watchdogTimer = setInterval(() => {
+		if (!eventSource) return;
+		if (Date.now() - lastMessageAt > PING_TIMEOUT_MS) {
+			console.warn('[SSE Client] Connection silent for >75s — reconnecting');
+			teardown();
+			connectSSE();
+		}
+	}, WATCHDOG_INTERVAL_MS);
+
 	eventSource.onerror = () => {
 		console.error('[SSE Client] Connection error, will retry...');
-		connected = false;
-		eventSource?.close();
-		eventSource = null;
+		teardown();
 
 		// Reconnect after 5 seconds
 		setTimeout(connectSSE, 5000);
 	};
+}
+
+function teardown() {
+	if (watchdogTimer) {
+		clearInterval(watchdogTimer);
+		watchdogTimer = null;
+	}
+	eventSource?.close();
+	eventSource = null;
+	connected = false;
 }
 
 function dispatchCallbacks(event: string, data: any): void {
@@ -197,9 +239,7 @@ export function onSSEEvent(event: string, callback: EventCallback): () => void {
 }
 
 export function disconnectSSE() {
-	eventSource?.close();
-	eventSource = null;
-	connected = false;
+	teardown();
 }
 
 export function getSSEState() {

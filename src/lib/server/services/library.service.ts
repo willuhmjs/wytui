@@ -29,11 +29,11 @@ function sanitizeFilename(name: string): string {
 
 class LibraryService {
 	/**
-	 * `actorId` is the performing user when known (an admin approving a
-	 * request differs from the download's owner); the event log's userId
-	 * column is documented as the acting user.
+	 * Event-log attribution resolves the acting user from the request
+	 * context; the download's owner is only the fallback for background
+	 * callers (completion-hook promotions).
 	 */
-	async promoteToLibrary(downloadId: string, actorId?: string): Promise<void> {
+	async promoteToLibrary(downloadId: string): Promise<void> {
 		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
 			include: { profile: true },
@@ -76,7 +76,7 @@ class LibraryService {
 			.record(
 				EventTypes.DOWNLOAD_PROMOTED,
 				`Moved to library: "${download.title || download.url}"`,
-				actorId ?? userId,
+				userId,
 			)
 			.catch(() => {});
 

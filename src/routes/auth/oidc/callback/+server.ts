@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import * as client from 'openid-client';
 import { getOidcConfig, isOidcConfigured } from '$lib/server/oidc';
 import { issueSessionCookie } from '$lib/server/auth';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { prisma } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
@@ -120,6 +121,9 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		email: user.email,
 		isAdmin: user.isAdmin,
 	});
+
+	// Pre-auth request: no ambient acting user, so attribute explicitly.
+	eventLogService.record(EventTypes.USER_LOGIN, 'Signed in (OIDC)', user.id).catch(() => {});
 
 	throw redirect(303, '/');
 };

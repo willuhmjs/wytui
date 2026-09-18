@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { hashPassword, validatePassword } from '$lib/server/auth';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -53,6 +54,7 @@ export const PATCH = apiRoute(
 				where: { id: targetUserId },
 				select: {
 					id: true,
+					email: true,
 					isAdmin: true,
 				},
 			});
@@ -82,6 +84,13 @@ export const PATCH = apiRoute(
 					passwordChangedAt: new Date(), // Revoke all existing sessions
 				},
 			});
+
+			eventLogService
+				.record(
+					EventTypes.USER_PASSWORD_CHANGED,
+					`Changed password for "${targetUser.email}"${isChangingOwnPassword ? '' : ' (by admin)'}`,
+				)
+				.catch(() => {});
 
 			return json({
 				success: true,

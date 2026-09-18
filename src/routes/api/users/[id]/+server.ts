@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { invalidateUsersCache } from '$lib/server/auth';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import { requireAdmin } from '$lib/server/guards';
 import type { RequestHandler } from './$types';
@@ -90,6 +91,17 @@ export const PATCH = apiRoute(
 				},
 			});
 
+			eventLogService
+				.record(
+					EventTypes.USER_UPDATED,
+					// `data` always carries name/isAdmin keys; Prisma no-ops undefined
+					// ones, so only report fields actually being written.
+					`Updated user "${user.email}" (${Object.keys(data)
+						.filter((k) => data[k] !== undefined)
+						.join(', ')})`,
+				)
+				.catch(() => {});
+
 			return json({ ...user, cacheQuotaBytes: user.cacheQuotaBytes?.toString() ?? null });
 		} catch (e: any) {
 			console.error('Failed to update user:', e);
@@ -147,6 +159,11 @@ export const DELETE = apiRoute(
 			});
 
 			invalidateUsersCache();
+
+			eventLogService
+				.record(EventTypes.USER_DELETED, `Deleted user "${user?.email ?? params.id}"`)
+				.catch(() => {});
+
 			return json({ success: true });
 		} catch (e: any) {
 			console.error('Failed to delete user:', e);

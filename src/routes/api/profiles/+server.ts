@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -174,6 +175,13 @@ export const POST = apiRoute(
 						data,
 					})
 				: await prisma.downloadProfile.create({ data });
+
+			eventLogService
+				.record(
+					EventTypes.PROFILE_SAVED,
+					`${existing ? 'Updated' : 'Created'} download profile "${profile.name}"`,
+				)
+				.catch(() => {});
 
 			return json(profile, { status: existing ? 200 : 201 });
 		} catch (e: any) {

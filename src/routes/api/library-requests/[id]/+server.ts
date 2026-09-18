@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { libraryService } from '$lib/server/services/library.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import { requireAdmin } from '$lib/server/guards';
 import type { RequestHandler } from './$types';
@@ -30,15 +31,22 @@ export const PATCH = apiRoute(
 
 		const req = await prisma.libraryRequest.findUnique({
 			where: { id: params.id },
-			include: { download: { select: { id: true, status: true, storagePool: true } } },
+			include: {
+				download: { select: { id: true, status: true, storagePool: true, title: true, url: true } },
+			},
 		});
 		if (!req) throw error(404, 'Request not found');
+
+		const downloadLabel = req.download.title || req.download.url || req.download.id;
 
 		if (action === 'deny') {
 			const updated = await prisma.libraryRequest.update({
 				where: { id: req.id },
 				data: { status: 'denied', resolvedAt: new Date(), resolvedBy: adminId },
 			});
+			eventLogService
+				.record(EventTypes.LIBRARY_REQUEST_DENIED, `Denied library request for "${downloadLabel}"`)
+				.catch(() => {});
 			return json(updated);
 		}
 
@@ -49,9 +57,16 @@ export const PATCH = apiRoute(
 			data: { status: 'approved', resolvedAt: new Date(), resolvedBy: adminId },
 		});
 
+		eventLogService
+			.record(
+				EventTypes.LIBRARY_REQUEST_APPROVED,
+				`Approved library request for "${downloadLabel}"`,
+			)
+			.catch(() => {});
+
 		if (req.download.status === 'COMPLETED' && req.download.storagePool === 'cache') {
 			try {
-				await libraryService.promoteToLibrary(req.download.id, adminId);
+				await libraryService.promoteToLibrary(req.download.id);
 			} catch (e) {
 				console.error('Failed to promote on library-request approval:', e);
 				throw error(500, 'Failed to move download to library');

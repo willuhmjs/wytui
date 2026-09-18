@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { downloadService } from '$lib/server/services/download.service';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { apiRoute } from '$lib/server/openapi';
 import type { RequestHandler } from './$types';
 
@@ -41,6 +42,11 @@ export const POST = apiRoute(
 			}
 
 			await downloadService.cancelDownload(params.id);
+
+			eventLogService
+				.record(EventTypes.DOWNLOAD_CANCELLED, `Cancelled "${download.title || download.url}"`)
+				.catch(() => {});
+
 			return json({ success: true });
 		} catch (e: any) {
 			console.error('Failed to cancel download:', e);

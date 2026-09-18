@@ -3,6 +3,7 @@ import { prisma } from '$lib/server/db';
 import { issueSessionCookie } from '$lib/server/auth';
 import { isOidcConfigured, getOidcDisplayName } from '$lib/server/oidc';
 import { isLdapEnabled, authenticateLdap } from '$lib/server/ldap';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import bcrypt from 'bcrypt';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -64,6 +65,11 @@ export const actions = {
 						isAdmin: user.isAdmin,
 					});
 
+					// Pre-auth request: no ambient acting user, so attribute explicitly.
+					eventLogService
+						.record(EventTypes.USER_LOGIN, 'Signed in (LDAP)', user.id)
+						.catch(() => {});
+
 					throw redirect(303, '/');
 				}
 			} catch (e) {
@@ -101,6 +107,9 @@ export const actions = {
 			email: user.email,
 			isAdmin: user.isAdmin,
 		});
+
+		// Pre-auth request: no ambient acting user, so attribute explicitly.
+		eventLogService.record(EventTypes.USER_LOGIN, 'Signed in (password)', user.id).catch(() => {});
 
 		throw redirect(303, '/');
 	},
