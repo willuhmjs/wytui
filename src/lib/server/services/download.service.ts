@@ -16,13 +16,19 @@ import { subtitleService } from './subtitle.service';
 import { extractVideoId } from '$lib/utils/youtube';
 import { libraryAccessStatus, type LibraryAccess } from '$lib/server/permissions';
 import { ffmpegPercent } from './download-progress';
-import { isRateLimitedError, isAgeRestrictedError } from '../utils/ytdlp-json';
+import {
+	isRateLimitedError,
+	isAgeRestrictedError,
+	isCookieFailureError,
+} from '../utils/ytdlp-json';
 import { armRateLimitCooldown } from '../utils/rate-limit-cooldown';
+import { eventLogService, EventTypes } from './event-log.service';
 
 /**
- * Thrown when a download is deliberately abandoned before any bytes are
- * fetched (excluded short, upcoming premiere). The record is already cleaned
- * up by the thrower; callers must not retry or mark it failed.
+ * Thrown when a download is deliberately abandoned before any bytes were
+ * fetched (excluded short, upcoming premiere, duration-boundary skip). The
+ * record is already cleaned up by the thrower; callers must not retry or mark
+ * it failed.
  */
 class DownloadSkippedError extends Error {
 	constructor(reason: string) {
@@ -30,6 +36,9 @@ class DownloadSkippedError extends Error {
 		this.name = 'DownloadSkippedError';
 	}
 }
+
+/** Cookie-invalidation events are throttled to one per hour (see markCookiesInvalidated). */
+const COOKIE_INVALIDATION_THROTTLE_MS = 60 * 60 * 1000;
 
 /**
  * Serialize download object for JSON responses
@@ -98,6 +107,10 @@ class DownloadService {
 	// non-zero exit code fails the download (see executeDownload).
 	private lastErrorLine = new Map<string, string>();
 
+	// Timestamp of the last cookies.invalidated event this process recorded
+	// (0 = never). Throttles markCookiesInvalidated.
+	private lastCookieInvalidationAt = 0;
+
 	/** Drop all per-download bookkeeping for a finished/cancelled download. */
 	private clearDownloadState(downloadId: string): void {
 		// Cancel any pending debounced progress write so it can't overwrite a
@@ -131,8 +144,9 @@ class DownloadService {
 
 	/**
 	 * Remove a download record that was deliberately abandoned before any bytes
-	 * were fetched (excluded short, upcoming premiere). The UI lists don't show
-	 * cancelled rows, so deleting keeps the table clean; child rows cascade.
+	 * were fetched (excluded short, upcoming premiere, duration-boundary skip).
+	 * The UI lists don't show cancelled rows, so deleting keeps the table clean;
+	 * child rows cascade.
 	 */
 	private async discardDownloadRecord(downloadId: string): Promise<void> {
 		this.clearDownloadState(downloadId);
@@ -332,6 +346,19 @@ class DownloadService {
 				console.log(
 					`[DownloadService] ${download.url} is an upcoming premiere — skipping until it goes live`,
 				);
+				// Subscription premieres re-enter this skip on every check cycle
+				// until they go live (the checker re-queues unarchived videos),
+				// so logging each pass would flood the feed with one row per
+				// cycle. Only a user-submitted premiere is a one-time event.
+				if (!download.subscriptionId) {
+					eventLogService
+						.record(
+							EventTypes.DOWNLOAD_SKIPPED,
+							`Skipped "${metadata.title ?? download.url}": upcoming premiere`,
+							download.userId ?? undefined,
+						)
+						.catch(() => {});
+				}
 				await this.discardDownloadRecord(downloadId);
 				throw new DownloadSkippedError('upcoming');
 			}
@@ -366,6 +393,13 @@ class DownloadService {
 					console.log(
 						`[DownloadService] Skipped short ${videoId ?? download.url} (excluded by subscription)`,
 					);
+					eventLogService
+						.record(
+							EventTypes.DOWNLOAD_SKIPPED,
+							`Skipped "${metadata.title ?? download.url}": short (excluded by subscription)`,
+							download.userId ?? undefined,
+						)
+						.catch(() => {});
 					await this.discardDownloadRecord(downloadId);
 					throw new DownloadSkippedError('short');
 				}
@@ -377,12 +411,13 @@ class DownloadService {
 							await prisma.archive
 								.upsert({
 									where: { videoId },
-									update: { reason: 'duration' },
+									update: { reason: 'duration', failedAt: new Date() },
 									create: {
 										videoId,
 										url: download.url,
 										title: metadata.title ?? videoId,
 										reason: 'duration',
+										failedAt: new Date(),
 									},
 								})
 								.catch(() => {});
@@ -390,18 +425,69 @@ class DownloadService {
 						console.log(
 							`[DownloadService] Skipped ${videoId ?? download.url} (${Math.round(metadata.duration / 60)} min exceeds subscription limit of ${Math.round(sub.maxDurationSeconds / 60)} min)`,
 						);
+						eventLogService
+							.record(
+								EventTypes.DOWNLOAD_SKIPPED,
+								`Skipped "${metadata.title ?? download.url}": ${Math.round(metadata.duration / 60)} min exceeds subscription limit of ${Math.round(sub.maxDurationSeconds / 60)} min`,
+								download.userId ?? undefined,
+							)
+							.catch(() => {});
 						await this.discardDownloadRecord(downloadId);
 						throw new DownloadSkippedError('duration');
 					}
 				}
 			}
 
-			// Check duration limit
+			// Global duration limit. A boundary rejection is not a failure:
+			// archive it with a reason so subscription checks never re-queue it,
+			// and drop the record instead of burning the retry cycle into the
+			// failed section. Mirrors the subscription-level limit above.
 			if (settings.maxDurationSeconds && metadata.duration) {
 				if (metadata.duration > settings.maxDurationSeconds) {
-					throw new Error(
-						`Video duration (${Math.round(metadata.duration / 60)} min) exceeds limit (${Math.round(settings.maxDurationSeconds / 60)} min)`,
+					const videoId = this.extractVideoId(download.url) ?? metadata.videoId;
+					if (videoId) {
+						await prisma.archive
+							.upsert({
+								where: { videoId },
+								update: { reason: 'duration', failedAt: new Date() },
+								create: {
+									videoId,
+									url: download.url,
+									title: metadata.title ?? videoId,
+									reason: 'duration',
+									failedAt: new Date(),
+								},
+							})
+							.catch(() => {});
+					}
+					console.log(
+						`[DownloadService] Skipped ${videoId ?? download.url} (${Math.round(metadata.duration / 60)} min exceeds global limit of ${Math.round(settings.maxDurationSeconds / 60)} min)`,
 					);
+					eventLogService
+						.record(
+							EventTypes.DOWNLOAD_SKIPPED,
+							`Skipped "${metadata.title ?? download.url}": ${Math.round(metadata.duration / 60)} min exceeds the global limit of ${Math.round(settings.maxDurationSeconds / 60)} min`,
+							download.userId ?? undefined,
+						)
+						.catch(() => {});
+					// A manual submission vanishes here with no FAILED row and
+					// no notification — emit a distinct skip event so the owner
+					// learns why instead of watching their download disappear.
+					// Subscription-driven skips are routine automation; the
+					// event-log row above covers them.
+					if (!download.subscriptionId) {
+						this.emitToOwner(
+							'download:skipped',
+							{
+								id: downloadId,
+								reason: 'duration',
+								message: `"${metadata.title ?? download.url}" (${Math.round(metadata.duration / 60)} min) exceeds the duration limit of ${Math.round(settings.maxDurationSeconds / 60)} min`,
+							},
+							downloadId,
+						);
+					}
+					await this.discardDownloadRecord(downloadId);
+					throw new DownloadSkippedError('duration');
 				}
 			}
 
@@ -449,6 +535,10 @@ class DownloadService {
 
 			this.emitToOwner('download:metadata', updated, downloadId);
 		} catch (error) {
+			// Skips must reach the queue handler as themselves — the handler's
+			// instanceof check decides "no retry, no FAILED row". Re-wrapping
+			// them as a plain Error would defeat it.
+			if (error instanceof DownloadSkippedError) throw error;
 			throw new Error(`Metadata fetch failed: ${error}`);
 		}
 	}
@@ -949,6 +1039,14 @@ class DownloadService {
 			await this.addToArchive(download.url, download.title);
 		}
 
+		eventLogService
+			.record(
+				EventTypes.DOWNLOAD_COMPLETED,
+				`Downloaded "${download.title || download.url}"`,
+				download.userId ?? this.downloadOwners.get(downloadId),
+			)
+			.catch(() => {});
+
 		// Normalize word-timed YouTube auto-captions, then index subtitles if
 		// any exist alongside the video
 		try {
@@ -1078,6 +1176,15 @@ class DownloadService {
 				armRateLimitCooldown();
 			}
 
+			// Failure-driven cookie expiry: when yt-dlp reports the request
+			// could not be authorized (dead session, members-only content,
+			// bot-check), the cookies are marked invalidated and the admin UI
+			// surfaces it. The download itself is the check — nothing parses
+			// the cookie file proactively.
+			if (isCookieFailureError(error)) {
+				this.markCookiesInvalidated().catch(() => {});
+			}
+
 			if (download.retryCount < 3 && !rateLimited && !deterministic) {
 				await this.updateDownload(downloadId, {
 					retryCount: download.retryCount + 1,
@@ -1129,6 +1236,14 @@ class DownloadService {
 					filepath: null,
 				}).catch(() => {});
 
+				eventLogService
+					.record(
+						EventTypes.DOWNLOAD_FAILED,
+						`Download failed: "${download.title || download.url}" — ${error.slice(0, 200)}`,
+						download.userId ?? this.downloadOwners.get(downloadId),
+					)
+					.catch(() => {});
+
 				this.emitToOwner('download:failed', { id: downloadId, error }, downloadId);
 
 				// Send failure notification
@@ -1139,6 +1254,32 @@ class DownloadService {
 		} finally {
 			this.handlingError.delete(downloadId);
 		}
+	}
+
+	/**
+	 * Record that the configured cookies failed to authorize a download.
+	 * Throttled to one event per hour so a failing batch records the
+	 * condition once, not once per video; only fires when cookies are
+	 * actually configured. GET /api/settings/cookies derives its `expired`
+	 * flag by comparing this event's latest timestamp against the latest
+	 * cookies.updated one (upload/removal clears the condition).
+	 */
+	private async markCookiesInvalidated(): Promise<void> {
+		const now = Date.now();
+		if (now - this.lastCookieInvalidationAt < COOKIE_INVALIDATION_THROTTLE_MS) return;
+		this.lastCookieInvalidationAt = now;
+
+		const settings = await prisma.settings.findUnique({
+			where: { id: 'singleton' },
+		});
+		if (!settings?.cookiePath) return;
+
+		eventLogService
+			.record(
+				EventTypes.COOKIES_INVALIDATED,
+				'YouTube cookies marked expired — a download failed authentication (sign-in, members-only, or bot check). Re-upload them in Settings → Cookies.',
+			)
+			.catch(() => {});
 	}
 
 	/**
@@ -1192,9 +1333,11 @@ class DownloadService {
 	}
 
 	/**
-	 * Delete download
+	 * Delete download. `actorId` is the performing user when known (an admin
+	 * overriding ownership differs from the row's owner); the event log's
+	 * userId column is documented as the acting user.
 	 */
-	async deleteDownload(downloadId: string): Promise<void> {
+	async deleteDownload(downloadId: string, actorId?: string): Promise<void> {
 		await this.cancelDownload(downloadId);
 
 		const download = await prisma.download.findUnique({
@@ -1225,6 +1368,14 @@ class DownloadService {
 			where: { id: downloadId },
 		});
 
+		eventLogService
+			.record(
+				EventTypes.DOWNLOAD_DELETED,
+				`Deleted "${download?.title ?? download?.url ?? downloadId}"`,
+				actorId ?? download?.userId ?? this.downloadOwners.get(downloadId),
+			)
+			.catch(() => {});
+
 		this.emitToOwner('download:deleted', { id: downloadId }, downloadId);
 		this.downloadOwners.delete(downloadId);
 	}
@@ -1234,7 +1385,7 @@ class DownloadService {
 	 * a single user. Each is removed via deleteDownload so in-progress processes
 	 * are cancelled and files/archives cleaned up. Returns the number deleted.
 	 */
-	async clearAllDownloads(userId?: string): Promise<number> {
+	async clearAllDownloads(userId?: string, actorId?: string): Promise<number> {
 		const downloads = await prisma.download.findMany({
 			where: userId ? { userId } : {},
 			select: { id: true },
@@ -1243,7 +1394,7 @@ class DownloadService {
 		let deleted = 0;
 		for (const { id } of downloads) {
 			try {
-				await this.deleteDownload(id);
+				await this.deleteDownload(id, actorId);
 				deleted++;
 			} catch (e) {
 				console.error(`[DownloadService] Failed to clear download ${id}:`, e);
@@ -1268,9 +1419,10 @@ class DownloadService {
 
 	/**
 	 * Retry a FAILED or CANCELLED download: reset the record and re-run the
-	 * metadata → download pipeline.
+	 * metadata → download pipeline. `actorId` is the performing user when
+	 * known (admin override) — see deleteDownload.
 	 */
-	async retryDownload(downloadId: string): Promise<any> {
+	async retryDownload(downloadId: string, actorId?: string): Promise<any> {
 		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
 			include: { profile: true },
@@ -1302,6 +1454,14 @@ class DownloadService {
 			startedAt: null,
 			completedAt: null,
 		});
+
+		eventLogService
+			.record(
+				EventTypes.DOWNLOAD_RETRIED,
+				`Retried "${download.title || download.url}"`,
+				actorId ?? download.userId ?? this.downloadOwners.get(downloadId),
+			)
+			.catch(() => {});
 
 		// Broadcast the reset row as a fresh download. The client drops failed
 		// downloads from its live "Active" list seconds after download:failed,
@@ -1483,7 +1643,16 @@ class DownloadService {
 		const downloads = await prisma.download.findMany({
 			where,
 			include: { profile: true },
-			orderBy: { createdAt: 'desc' },
+			// The failed section renders failure time (updatedAt, bumped by the
+			// terminal-failure write) and is refetched on every download:failed,
+			// so order FAILED by most recent failure — a retried old row that
+			// fails again must surface at the top, not below newer-created
+			// failures. Every other status keeps creation order, which the
+			// completed list's offset pagination depends on.
+			orderBy:
+				status === DownloadStatus.FAILED
+					? [{ updatedAt: 'desc' as const }]
+					: [{ createdAt: 'desc' as const }],
 			take: limit,
 			skip: offset,
 		});

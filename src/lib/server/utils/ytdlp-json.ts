@@ -103,6 +103,30 @@ export function isAuthError(stderr: string): boolean {
 }
 
 /**
+ * Returns true when yt-dlp stderr indicates the stored cookies failed to
+ * authorize the request — dead session, members-only content the account
+ * can't access, or a bot-check the session didn't satisfy. These are the
+ * failures that mean "the cookie file is no longer working"; the downloads
+ * themselves are the check, so there is no proactive expiry parsing.
+ *
+ * Age-restriction is deliberately excluded: it is a per-video condition
+ * (the account simply isn't age-verified), not a cookie failure.
+ */
+export function isCookieFailureError(stderr: string): boolean {
+	if (isAgeRestrictedError(stderr)) return false;
+	const s = stderr.toLowerCase();
+	return (
+		isAuthError(s) ||
+		s.includes("sign in to confirm you're not a bot") ||
+		s.includes('members-only') ||
+		s.includes('members only') ||
+		s.includes('join this channel') ||
+		s.includes('available to members') ||
+		s.includes('requires you to sign in')
+	);
+}
+
+/**
  * Run yt-dlp in flat-JSON mode and resolve its stdout.
  *
  * The `settled` guard matters: without it a process that both times out and

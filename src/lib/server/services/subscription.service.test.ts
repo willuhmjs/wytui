@@ -50,6 +50,10 @@ vi.mock('../db', () => ({
 		youTubeLink: {
 			findUnique: vi.fn(async () => null),
 		},
+		eventLog: {
+			create: vi.fn(async () => ({})),
+			deleteMany: vi.fn(async () => ({ count: 0 })),
+		},
 		settings: {
 			findUnique: vi.fn(async () => settingsDb),
 		},

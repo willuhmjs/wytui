@@ -39,7 +39,9 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+# Anchored to the repo root: an unanchored "logs/" would also ignore the
+# src/routes/logs/ pages (admin Logs page + /api/logs endpoint).
+/logs/
 
 # Database
 *.db

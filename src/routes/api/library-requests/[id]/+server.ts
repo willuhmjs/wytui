@@ -51,7 +51,7 @@ export const PATCH = apiRoute(
 
 		if (req.download.status === 'COMPLETED' && req.download.storagePool === 'cache') {
 			try {
-				await libraryService.promoteToLibrary(req.download.id);
+				await libraryService.promoteToLibrary(req.download.id, adminId);
 			} catch (e) {
 				console.error('Failed to promote on library-request approval:', e);
 				throw error(500, 'Failed to move download to library');

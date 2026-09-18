@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
+import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join, resolve, normalize } from 'path';
 import type { RequestHandler } from './$types';
@@ -49,9 +50,31 @@ export const GET: RequestHandler = async ({ locals }) => {
 		where: { id: 'singleton' },
 	});
 
+	// Failure-driven expiry: the downloads themselves are the check. Cookies
+	// are expired when the most recent invalidation (a download failing
+	// authentication — sign-in, members-only, bot check) is newer than the
+	// most recent upload/removal. No cookie file is parsed here.
+	let expired = false;
+	if (settings?.cookiePath) {
+		const [invalidated, updated] = await Promise.all([
+			prisma.eventLog.findFirst({
+				where: { type: EventTypes.COOKIES_INVALIDATED },
+				orderBy: { createdAt: 'desc' },
+				select: { createdAt: true },
+			}),
+			prisma.eventLog.findFirst({
+				where: { type: EventTypes.COOKIES_UPDATED },
+				orderBy: { createdAt: 'desc' },
+				select: { createdAt: true },
+			}),
+		]);
+		expired = !!invalidated && (!updated || invalidated.createdAt > updated.createdAt);
+	}
+
 	return json({
 		hasCookies: !!settings?.cookiePath,
 		path: settings?.cookiePath || null,
+		expired,
 	});
 };
 
@@ -99,6 +122,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		data: { cookiePath },
 	});
 
+	eventLogService
+		.record(EventTypes.COOKIES_UPDATED, 'Cookie file uploaded', locals.session.user.id)
+		.catch(() => {});
+
 	return json({ success: true, path: cookiePath });
 };
 
@@ -123,6 +150,10 @@ export const DELETE: RequestHandler = async ({ locals }) => {
 		where: { id: 'singleton' },
 		data: { cookiePath: null },
 	});
+
+	eventLogService
+		.record(EventTypes.COOKIES_UPDATED, 'Cookie file removed', locals.session.user.id)
+		.catch(() => {});
 
 	return json({ success: true });
 };

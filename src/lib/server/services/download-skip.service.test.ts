@@ -21,10 +21,18 @@ vi.mock('../db', () => ({
 			findFirst: vi.fn(async () => null),
 		},
 		archive: {
-			upsert: vi.fn(async ({ where, create }: any) => {
-				archiveDb[where.videoId] = { ...create };
+			upsert: vi.fn(async ({ where, create, update }: any) => {
+				// Real upsert semantics: an existing row is updated (not
+				// rebuilt from `create`), so tests can pin the update branch.
+				archiveDb[where.videoId] = archiveDb[where.videoId]
+					? { ...archiveDb[where.videoId], ...update }
+					: { ...create };
 				return archiveDb[where.videoId];
 			}),
+			deleteMany: vi.fn(async () => ({ count: 0 })),
+		},
+		eventLog: {
+			create: vi.fn(async () => ({})),
 			deleteMany: vi.fn(async () => ({ count: 0 })),
 		},
 		subscription: {
@@ -189,5 +197,129 @@ describe('fetchMetadata subscription max-duration skipping', () => {
 
 		expect(downloads[ID]).toBeDefined();
 		expect(archiveDb['nolimit1']).toBeUndefined();
+	});
+});
+
+describe('fetchMetadata global max-duration skipping', () => {
+	beforeEach(() => {
+		for (const k of Object.keys(downloads)) delete downloads[k];
+		for (const k of Object.keys(archiveDb)) delete archiveDb[k];
+		for (const k of Object.keys(subs)) delete subs[k];
+		settings = { cookiePath: null, maxDurationSeconds: 7200, rydEnabled: false };
+		(downloadService as any).retryTimeouts.clear();
+		vi.restoreAllMocks();
+	});
+
+	it('discards a video over the global limit and archives it with a reason', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=toolong1' });
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: '3h Documentary',
+			videoId: 'toolong1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 3 * 3600,
+		} as any);
+
+		const promise = (downloadService as any).fetchMetadata(ID);
+		// The skip must surface as DownloadSkippedError itself — the queue
+		// handler's instanceof check depends on it not being re-wrapped.
+		await expect(promise).rejects.toMatchObject({ name: 'DownloadSkippedError' });
+		await expect(promise).rejects.toThrow('duration');
+
+		// Record is gone, archive entry carries the skip reason, no retry.
+		expect(downloads[ID]).toBeUndefined();
+		expect(archiveDb['toolong1']?.reason).toBe('duration');
+		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
+	});
+
+	it('keeps the download when the duration is within the global limit', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=okglobal1' });
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Under the limit',
+			videoId: 'okglobal1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 3600,
+		} as any);
+
+		await (downloadService as any).fetchMetadata(ID);
+
+		expect(downloads[ID]).toBeDefined();
+		expect(archiveDb['okglobal1']).toBeUndefined();
+	});
+
+	it('lets a subscription without a limit fall through to the global limit', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=subfall1' });
+		subs[SUB_ID] = { excludeShorts: false, maxDurationSeconds: null };
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Long stream VOD',
+			videoId: 'subfall1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 10 * 3600,
+		} as any);
+
+		await expect((downloadService as any).fetchMetadata(ID)).rejects.toThrow('duration');
+
+		expect(downloads[ID]).toBeUndefined();
+		expect(archiveDb['subfall1']?.reason).toBe('duration');
+	});
+
+	it('keeps a video exactly at the global limit (boundary is inclusive)', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=boundary1' });
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Exactly two hours',
+			videoId: 'boundary1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 7200,
+		} as any);
+
+		await (downloadService as any).fetchMetadata(ID);
+
+		expect(downloads[ID]).toBeDefined();
+		expect(archiveDb['boundary1']).toBeUndefined();
+	});
+
+	it('skips a video one second over the global limit', async () => {
+		seedDownload({ url: 'https://youtube.com/watch?v=boundary2' });
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Two hours and one second',
+			videoId: 'boundary2',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 7201,
+		} as any);
+
+		await expect((downloadService as any).fetchMetadata(ID)).rejects.toThrow('duration');
+
+		expect(downloads[ID]).toBeUndefined();
+		expect(archiveDb['boundary2']?.reason).toBe('duration');
+	});
+
+	it('flips an existing failed-archive row to duration on a limit skip', async () => {
+		// Real-world shape: the video failed terminally (archived 'failed'),
+		// the user retried, and metadata now shows it over the limit. The
+		// upsert's update branch must carry the reason flip.
+		seedDownload({ url: 'https://youtube.com/watch?v=flip1' });
+		archiveDb['flip1'] = {
+			videoId: 'flip1',
+			url: 'https://youtube.com/watch?v=flip1',
+			title: 'Previously failed',
+			reason: 'failed',
+			failedAt: new Date(),
+		};
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Previously failed',
+			videoId: 'flip1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 3 * 3600,
+		} as any);
+
+		await expect((downloadService as any).fetchMetadata(ID)).rejects.toThrow('duration');
+
+		expect(archiveDb['flip1']?.reason).toBe('duration');
+		expect(archiveDb['flip1']?.url).toBe('https://youtube.com/watch?v=flip1');
 	});
 });

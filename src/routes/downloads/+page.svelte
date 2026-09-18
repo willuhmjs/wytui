@@ -6,6 +6,7 @@
 	import DownloadForm from '$lib/components/download/DownloadForm.svelte';
 	import DownloadCard from '$lib/components/download/DownloadCard.svelte';
 	import DownloadListRow from '$lib/components/download/DownloadListRow.svelte';
+	import FailedDownloads from '$lib/components/download/FailedDownloads.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ErrorMessage from '$lib/components/ui/ErrorMessage.svelte';
@@ -75,8 +76,6 @@
 		music: { usedBytes: string; count: number } | null;
 	} | null>(null);
 	let clearingCache = $state(false);
-	let failedDownloads = $state<any[]>([]);
-	let failedLoading = $state(false);
 	let diskInfo = $state<{
 		totalBytes: string;
 		availableBytes: string;
@@ -325,7 +324,6 @@
 		loadCompletedDownloads().then(() => {
 			filtersInitialized = true;
 		});
-		loadFailedDownloads();
 		loadCacheUsage();
 		loadDiskInfo();
 
@@ -339,27 +337,13 @@
 		});
 		const unsubDeleted = onSSEEvent('download:deleted', ({ id }) => {
 			completedDownloads = completedDownloads.filter((d) => d.id !== id);
-			failedDownloads = failedDownloads.filter((d) => d.id !== id);
 			loadCacheUsage();
 			loadDiskInfo();
-		});
-		// download:failed only carries { id, error }, so refetch the failed
-		// list to pick up the full record and show it live.
-		const unsubFailed = onSSEEvent('download:failed', () => {
-			loadFailedDownloads();
-		});
-		// A retried download leaves the failed list as soon as it's re-queued.
-		const unsubStatus = onSSEEvent('download:status', ({ id, status }: any) => {
-			if (status !== 'FAILED') {
-				failedDownloads = failedDownloads.filter((d) => d.id !== id);
-			}
 		});
 
 		return () => {
 			unsubComplete();
 			unsubDeleted();
-			unsubFailed();
-			unsubStatus();
 		};
 	});
 
@@ -460,25 +444,6 @@
 		}
 	}
 
-	async function loadFailedDownloads() {
-		failedLoading = true;
-		try {
-			const params = new URLSearchParams({
-				status: 'FAILED',
-				limit: String(DOWNLOADS_PAGE_SIZE),
-				offset: '0',
-			});
-			const res = await fetch(`/api/downloads?${params}`);
-			if (res.ok) {
-				failedDownloads = await res.json();
-			}
-		} catch (e) {
-			console.error('Failed to load failed downloads:', e);
-		} finally {
-			failedLoading = false;
-		}
-	}
-
 	async function loadDiskInfo() {
 		try {
 			const res = await fetch('/api/settings/disk');
@@ -488,26 +453,6 @@
 		} catch {
 			// disk info is best-effort
 		}
-	}
-
-	async function retryAllFailed() {
-		if (failedDownloads.length === 0) return;
-
-		// Iterate over a copy: each successful retry drops the row from
-		// failedDownloads as it's re-queued.
-		for (const download of [...failedDownloads]) {
-			try {
-				const res = await csrfFetch(`/api/downloads/${download.id}/retry`, {
-					method: 'POST',
-				});
-				if (res.ok) {
-					failedDownloads = failedDownloads.filter((d) => d.id !== download.id);
-				}
-			} catch (e) {
-				console.error(`Failed to retry ${download.id}:`, e);
-			}
-		}
-		await loadCompletedDownloads();
 	}
 
 	async function clearCache() {
@@ -969,28 +914,7 @@
 		{/if}
 	{/if}
 
-	{#if failedDownloads.length > 0 || failedLoading}
-		<div class="section">
-			<div class="section-header">
-				<h2>Failed ({failedDownloads.length})</h2>
-				{#if failedDownloads.length > 0}
-					<button class="btn btn-sm btn-primary" onclick={retryAllFailed} disabled={failedLoading}>
-						Retry All
-					</button>
-				{/if}
-			</div>
-
-			{#if failedLoading && failedDownloads.length === 0}
-				<Skeleton count={3} variant="card" />
-			{:else}
-				<div class="downloads-grid">
-					{#each failedDownloads as download (download.id)}
-						<DownloadCard {download} {jellyfinUrl} {libraryConfigured} />
-					{/each}
-				</div>
-			{/if}
-		</div>
-	{/if}
+	<FailedDownloads />
 
 	<div class="section completed-card">
 		<div class="section-header">

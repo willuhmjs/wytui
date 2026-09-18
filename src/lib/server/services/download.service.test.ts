@@ -46,6 +46,10 @@ vi.mock('../db', () => ({
 				jobQueueRows.filter((j) => j.status === 'PENDING' || j.status === 'RUNNING'),
 			),
 		},
+		eventLog: {
+			create: vi.fn(async () => ({})),
+			deleteMany: vi.fn(async () => ({ count: 0 })),
+		},
 		settings: {
 			findUnique: vi.fn(async () => ({})),
 		},
@@ -83,6 +87,8 @@ vi.mock('./notification.service', () => ({
 import { downloadService } from './download.service';
 import { queueService } from './queue.service';
 import { sseEmitter } from '../sse/emitter';
+import { prisma } from '../db';
+import { ytdlpService } from './ytdlp.service';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
 const ID = 'dl-retry-1';
@@ -313,5 +319,63 @@ describe('queue handler error wiring', () => {
 		expect(handleErrorSpy).toHaveBeenCalledWith(ID, 'yt-dlp timeout');
 		// The download phase is never enqueued when metadata fails.
 		expect(enqueueCalls).toHaveLength(0);
+	});
+
+	it('lets a real skip flow through the metadata handler without touching the failure pipeline', async () => {
+		// Drive a genuine DownloadSkippedError: fetchMetadata must throw it as
+		// itself, and the registered handler's instanceof branch must swallow
+		// it — no handleDownloadError (no retry, no FAILED row, no
+		// notification) and no download-phase enqueue.
+		const registered = new Map<string, any>();
+		(queueService.registerHandler as any).mockImplementation((type: string, handler: any) =>
+			registered.set(type, handler),
+		);
+		downloadService.registerJobHandlers();
+
+		seedDownload({ status: DownloadStatus.PENDING, url: 'https://www.youtube.com/watch?v=qskip1' });
+		vi.spyOn(prisma.settings, 'findUnique').mockResolvedValue({
+			cookiePath: null,
+			maxDurationSeconds: 7200,
+			rydEnabled: false,
+		} as any);
+		vi.spyOn(ytdlpService, 'fetchMetadata').mockResolvedValue({
+			title: 'Too long',
+			videoId: 'qskip1',
+			videoType: 'regular',
+			liveStatus: null,
+			duration: 3 * 3600,
+		} as any);
+		const handleErrorSpy = vi
+			.spyOn(downloadService as any, 'handleDownloadError')
+			.mockResolvedValue(undefined);
+
+		await registered.get('metadata')({ payload: { downloadId: ID } });
+
+		expect(handleErrorSpy).not.toHaveBeenCalled();
+		expect(enqueueCalls).toHaveLength(0);
+		// The skipped record is discarded, not left as FAILED.
+		expect(downloads[ID]).toBeUndefined();
+	});
+});
+
+describe('event log actor attribution', () => {
+	it('records the acting admin, not the download owner, on admin deletion', async () => {
+		seedDownload({ userId: 'user-x' });
+
+		await downloadService.deleteDownload(ID, 'admin-1');
+
+		expect(prisma.eventLog.create).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ userId: 'admin-1' }) }),
+		);
+	});
+
+	it('falls back to the download owner when no actor is known', async () => {
+		seedDownload({ userId: 'user-x' });
+
+		await downloadService.deleteDownload(ID);
+
+		expect(prisma.eventLog.create).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ userId: 'user-x' }) }),
+		);
 	});
 });

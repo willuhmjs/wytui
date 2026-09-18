@@ -118,6 +118,12 @@ export function connectSSE() {
 		dispatchCallbacks('download:deleted', data);
 	});
 
+	eventSource.addEventListener('download:skipped', (e) => {
+		const data = JSON.parse(e.data);
+		downloads = downloads.filter((d) => d.id !== data.id);
+		dispatchCallbacks('download:skipped', data);
+	});
+
 	eventSource.addEventListener('download:tasks', (e) => {
 		const data = JSON.parse(e.data);
 		dispatchCallbacks('download:tasks', data);

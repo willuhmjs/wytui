@@ -17,6 +17,7 @@ import {
 	runYtdlpJson,
 } from '../utils/ytdlp-json';
 import { armRateLimitCooldown, isRateLimitCooldownActive } from '../utils/rate-limit-cooldown';
+import { eventLogService, EventTypes } from './event-log.service';
 
 class SubscriptionService {
 	private static readonly CHECK_DEPTH = 15;
@@ -146,6 +147,10 @@ class SubscriptionService {
 
 		this.activeChecks.add(subscriptionId);
 
+		// Hoisted for the catch block's event-log entry, where the subscription
+		// row is no longer in scope.
+		let subName: string | null = null;
+
 		try {
 			const subscription = await prisma.subscription.findUnique({
 				where: { id: subscriptionId },
@@ -157,6 +162,7 @@ class SubscriptionService {
 				return;
 			}
 
+			subName = subscription.name;
 			console.log(`[Subscriptions] Checking ${subscription.name}...`);
 
 			// Feed-based detection: if the owner linked YouTube and enabled feed mode,
@@ -257,6 +263,26 @@ class SubscriptionService {
 				void this.refreshChannelMeta(subscriptionId).catch(() => {});
 			}
 
+			// No-op polls would flood the feed (one row per subscription per
+			// interval, ~48/day each); lastChecked + the live SSE broadcast
+			// already carry that information. Record only productive checks —
+			// and manual force-checks, which the user explicitly triggered.
+			// The broadcast below stays unconditional: the subscriptions UI
+			// counts on it to refresh lastChecked live.
+			if (newVideos.length > 0 || opts.force) {
+				eventLogService
+					.record(
+						EventTypes.SUBSCRIPTION_CHECKED,
+						`Polled "${subscription.name}": ${
+							newVideos.length === 0
+								? 'no new videos'
+								: `${newVideos.length} new video${newVideos.length === 1 ? '' : 's'}${subscription.autoDownload ? '' : ' (auto-download off)'}`
+						}`,
+						subscription.userId ?? undefined,
+					)
+					.catch(() => {});
+			}
+
 			sseEmitter.broadcast('subscription:checked', {
 				id: subscriptionId,
 				name: subscription.name,
@@ -285,6 +311,17 @@ class SubscriptionService {
 						).slice(0, 500),
 					},
 				})
+				.catch(() => {});
+
+			eventLogService
+				.record(
+					EventTypes.SUBSCRIPTION_CHECK_FAILED,
+					`Check failed for "${subName ?? subscriptionId}": ${
+						rateLimited
+							? 'YouTube rate limit reached'
+							: (error?.message ?? 'Unknown error').slice(0, 200)
+					}`,
+				)
 				.catch(() => {});
 
 			// Notify connected clients so the UI can surface the failure.
@@ -837,7 +874,13 @@ class SubscriptionService {
 				// on every sync. Once the cooldown lapses the entry is dropped and
 				// the video becomes eligible again (completed downloads still block
 				// re-queue via the existing-download check below).
-				if (archived.reason === 'failed') {
+				//
+				// Duration-limit skips join the same cooldown cycle: if the limit
+				// is later raised, the video self-heals on the next check instead
+				// of being permanently blocked by a stale config decision. While
+				// the limit stands, each re-queue just re-skips and re-arms the
+				// cooldown. Deliberate skips (excluded shorts) stay permanent.
+				if (archived.reason === 'failed' || archived.reason === 'duration') {
 					const FAILED_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 					if (archived.failedAt && Date.now() - archived.failedAt.getTime() < FAILED_COOLDOWN_MS) {
 						continue;

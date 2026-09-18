@@ -65,7 +65,7 @@ export const POST = apiRoute(
 				throw error(409, 'Only failed or cancelled downloads can be retried');
 			}
 
-			const updated = await downloadService.retryDownload(params.id);
+			const updated = await downloadService.retryDownload(params.id, locals.session.user.id);
 			return json(updated);
 		} catch (e: any) {
 			console.error('Failed to retry download:', e);

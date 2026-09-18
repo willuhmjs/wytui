@@ -685,3 +685,16 @@ model JobQueue {
   @@index([type])
   @@map("job_queue")
 }
+
+// User-facing event log (activity feed for the admin Logs page)
+model EventLog {
+  id        String   @id @default(cuid())
+  type      String   // EventTypes value, e.g. "download.completed"
+  message   String   // Human-readable summary, e.g. 'Downloaded "Some title"'
+  userId    String?  // Acting user when known
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@map("event_logs")
+}

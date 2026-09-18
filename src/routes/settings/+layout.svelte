@@ -1,5 +1,5 @@
 <script lang="ts">
-	import "./settings.css";
+	import './settings.css';
 	import { onMount } from 'svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { addToast } from '$lib/stores/toast.svelte';
@@ -33,7 +33,7 @@
 		};
 	}
 
-	let { data, children }: { data: any, children: import("svelte").Snippet } = $props();
+	let { data, children }: { data: any; children: import('svelte').Snippet } = $props();
 
 	let settings = $state<any>(null);
 	let settingsError = $state<string | null>(null);
@@ -58,19 +58,19 @@
 	let activeTab = $derived($page.url.pathname.split('/').filter(Boolean).pop() || 'account');
 	let activeSection = $state<string>('');
 
-import { untrack } from 'svelte';
-$effect(() => {
-    const tab = activeTab;
-    const valid = settingsSections.map((s) => s.id);
-    
-    untrack(() => {
-        if (!activeSection || !valid.includes(activeSection)) {
-            if (tab === 'account') activeSection = 'account';
-            else if (tab === 'app') activeSection = 'storage';
-            else if (tab === 'users') activeSection = 'user-management';
-        }
-    });
-});
+	import { untrack } from 'svelte';
+	$effect(() => {
+		const tab = activeTab;
+		const valid = settingsSections.map((s) => s.id);
+
+		untrack(() => {
+			if (!activeSection || !valid.includes(activeSection)) {
+				if (tab === 'account') activeSection = 'account';
+				else if (tab === 'app') activeSection = 'storage';
+				else if (tab === 'users') activeSection = 'user-management';
+			}
+		});
+	});
 
 	// Settings sections grouped into labeled categories. The flat list of
 	// section ids (derived below) is used for scroll-spy / IntersectionObserver.
@@ -618,9 +618,10 @@ $effect(() => {
 	}
 
 	// Cookie management
-	let cookieStatus = $state<{ hasCookies: boolean; path: string | null }>({
+	let cookieStatus = $state<{ hasCookies: boolean; path: string | null; expired: boolean }>({
 		hasCookies: false,
 		path: null,
+		expired: false,
 	});
 	let uploadingCookies = $state(false);
 	let cookieError = $state<string | null>(null);
@@ -674,7 +675,7 @@ $effect(() => {
 				method: 'DELETE',
 			});
 			if (res.ok) {
-				cookieStatus = { hasCookies: false, path: null };
+				cookieStatus = { hasCookies: false, path: null, expired: false };
 				addToast('success', 'Cookie file removed');
 			} else {
 				addToast('error', 'Failed to remove cookie file');
@@ -1653,637 +1654,1143 @@ $effect(() => {
 		}
 	}
 
-
 	const __state = {
-		get data() { return data; },
-		get settings() { return settings; },
-		set settings(v) { /* 
-			@ts-ignore */
-			try { settings = v; } catch(e) {} },
-		get settingsError() { return settingsError; },
-		set settingsError(v) { /* 
-			@ts-ignore */
-			try { settingsError = v; } catch(e) {} },
-		get users() { return users; },
-		set users(v) { /* 
-			@ts-ignore */
-			try { users = v; } catch(e) {} },
-		get USERS_PAGE_SIZE() { return USERS_PAGE_SIZE; },
-		
-		get userSearch() { return userSearch; },
-		set userSearch(v) { /* 
-			@ts-ignore */
-			try { userSearch = v; } catch(e) {} },
-		get usersOffset() { return usersOffset; },
-		set usersOffset(v) { /* 
-			@ts-ignore */
-			try { usersOffset = v; } catch(e) {} },
-		get usersTotal() { return usersTotal; },
-		set usersTotal(v) { /* 
-			@ts-ignore */
-			try { usersTotal = v; } catch(e) {} },
-		get usersLoading() { return usersLoading; },
-		set usersLoading(v) { /* 
-			@ts-ignore */
-			try { usersLoading = v; } catch(e) {} },
-		get userSearchTimeout() { return userSearchTimeout; },
-		set userSearchTimeout(v) { /* 
-			@ts-ignore */
-			try { userSearchTimeout = v; } catch(e) {} },
-		get loading() { return loading; },
-		set loading(v) { /* 
-			@ts-ignore */
-			try { loading = v; } catch(e) {} },
-		get saving() { return saving; },
-		set saving(v) { /* 
-			@ts-ignore */
-			try { saving = v; } catch(e) {} },
-		get settingsLoaded() { return settingsLoaded; },
-		set settingsLoaded(v) { /* 
-			@ts-ignore */
-			try { settingsLoaded = v; } catch(e) {} },
-		get settingsSnapshot() { return settingsSnapshot; },
-		set settingsSnapshot(v) { /* 
-			@ts-ignore */
-			try { settingsSnapshot = v; } catch(e) {} },
-		get ytdlpExtraFlagsText() { return ytdlpExtraFlagsText; },
-		set ytdlpExtraFlagsText(v) { /* 
-			@ts-ignore */
-			try { ytdlpExtraFlagsText = v; } catch(e) {} },
-		get saveTimeout() { return saveTimeout; },
-		set saveTimeout(v) { /* 
-			@ts-ignore */
-			try { saveTimeout = v; } catch(e) {} },
-		get isAdmin() { return isAdmin; },
-		set isAdmin(v) { /* 
-			@ts-ignore */
-			try { isAdmin = v; } catch(e) {} },
-		get activeSection() { return activeSection; },
-		set activeSection(v) { /* 
-			@ts-ignore */
-			try { activeSection = v; } catch(e) {} },
-		get settingsGroups() { return settingsGroups; },
-		set settingsGroups(v) { /* 
-			@ts-ignore */
-			try { settingsGroups = v; } catch(e) {} },
-		get accountGroups() { return accountGroups; },
-		set accountGroups(v) { /* 
-			@ts-ignore */
-			try { accountGroups = v; } catch(e) {} },
-		get usersGroups() { return usersGroups; },
-		set usersGroups(v) { /* 
-			@ts-ignore */
-			try { usersGroups = v; } catch(e) {} },
-		get navGroups() { return navGroups; },
-		set navGroups(v) { /* 
-			@ts-ignore */
-			try { navGroups = v; } catch(e) {} },
-		get settingsSections() { return settingsSections; },
-		set settingsSections(v) { /* 
-			@ts-ignore */
-			try { settingsSections = v; } catch(e) {} },
-		get selectTab() { return selectTab; },
-		set selectTab(v) { /* 
-			@ts-ignore */
-			try { selectTab = v; } catch(e) {} },
-		get suppressSpy() { return suppressSpy; },
-		set suppressSpy(v) { /* 
-			@ts-ignore */
-			try { suppressSpy = v; } catch(e) {} },
-		get suppressSpyTimeout() { return suppressSpyTimeout; },
-		set suppressSpyTimeout(v) { /* 
-			@ts-ignore */
-			try { suppressSpyTimeout = v; } catch(e) {} },
-		get showCreateUser() { return showCreateUser; },
-		set showCreateUser(v) { /* 
-			@ts-ignore */
-			try { showCreateUser = v; } catch(e) {} },
-		get newUser() { return newUser; },
-		set newUser(v) { /* 
-			@ts-ignore */
-			try { newUser = v; } catch(e) {} },
-		get createUserError() { return createUserError; },
-		set createUserError(v) { /* 
-			@ts-ignore */
-			try { createUserError = v; } catch(e) {} },
-		get apiKeys() { return apiKeys; },
-		set apiKeys(v) { /* 
-			@ts-ignore */
-			try { apiKeys = v; } catch(e) {} },
-		get newKeyName() { return newKeyName; },
-		set newKeyName(v) { /* 
-			@ts-ignore */
-			try { newKeyName = v; } catch(e) {} },
-		get newKeyResult() { return newKeyResult; },
-		set newKeyResult(v) { /* 
-			@ts-ignore */
-			try { newKeyResult = v; } catch(e) {} },
-		get youtubeLink() { return youtubeLink; },
-		set youtubeLink(v) { /* 
-			@ts-ignore */
-			try { youtubeLink = v; } catch(e) {} },
-		get youtubeLoading() { return youtubeLoading; },
-		set youtubeLoading(v) { /* 
-			@ts-ignore */
-			try { youtubeLoading = v; } catch(e) {} },
-		get showImportModal() { return showImportModal; },
-		set showImportModal(v) { /* 
-			@ts-ignore */
-			try { showImportModal = v; } catch(e) {} },
-		get accountProxyUrl() { return accountProxyUrl; },
-		set accountProxyUrl(v) { /* 
-			@ts-ignore */
-			try { accountProxyUrl = v; } catch(e) {} },
-		get accountExtraFlagsText() { return accountExtraFlagsText; },
-		set accountExtraFlagsText(v) { /* 
-			@ts-ignore */
-			try { accountExtraFlagsText = v; } catch(e) {} },
-		get accountAppriseUrl() { return accountAppriseUrl; },
-		set accountAppriseUrl(v) { /* 
-			@ts-ignore */
-			try { accountAppriseUrl = v; } catch(e) {} },
-		get accountNotifyOnComplete() { return accountNotifyOnComplete; },
-		set accountNotifyOnComplete(v) { /* 
-			@ts-ignore */
-			try { accountNotifyOnComplete = v; } catch(e) {} },
-		get accountNotifyOnFail() { return accountNotifyOnFail; },
-		set accountNotifyOnFail(v) { /* 
-			@ts-ignore */
-			try { accountNotifyOnFail = v; } catch(e) {} },
-		get savingAccountSettings() { return savingAccountSettings; },
-		set savingAccountSettings(v) { /* 
-			@ts-ignore */
-			try { savingAccountSettings = v; } catch(e) {} },
-		get accountSettingsResult() { return accountSettingsResult; },
-		set accountSettingsResult(v) { /* 
-			@ts-ignore */
-			try { accountSettingsResult = v; } catch(e) {} },
-		get ACCOUNT_PROXY_SCHEMES() { return ACCOUNT_PROXY_SCHEMES; },
-		
-		get accountProxyUrlError() { return accountProxyUrlError; },
-		set accountProxyUrlError(v) { /* 
-			@ts-ignore */
-			try { accountProxyUrlError = v; } catch(e) {} },
-		get libraryRequests() { return libraryRequests; },
-		set libraryRequests(v) { /* 
-			@ts-ignore */
-			try { libraryRequests = v; } catch(e) {} },
-		get loadingRequests() { return loadingRequests; },
-		set loadingRequests(v) { /* 
-			@ts-ignore */
-			try { loadingRequests = v; } catch(e) {} },
-		get processingRequestId() { return processingRequestId; },
-		set processingRequestId(v) { /* 
-			@ts-ignore */
-			try { processingRequestId = v; } catch(e) {} },
-		get userQuotaDrafts() { return userQuotaDrafts; },
-		set userQuotaDrafts(v) { /* 
-			@ts-ignore */
-			try { userQuotaDrafts = v; } catch(e) {} },
-		get passwordChangeUserId() { return passwordChangeUserId; },
-		set passwordChangeUserId(v) { /* 
-			@ts-ignore */
-			try { passwordChangeUserId = v; } catch(e) {} },
-		get passwordModalEl() { return passwordModalEl; },
-		set passwordModalEl(v) { /* 
-			@ts-ignore */
-			try { passwordModalEl = v; } catch(e) {} },
-		get passwordForm() { return passwordForm; },
-		set passwordForm(v) { /* 
-			@ts-ignore */
-			try { passwordForm = v; } catch(e) {} },
-		get passwordError() { return passwordError; },
-		set passwordError(v) { /* 
-			@ts-ignore */
-			try { passwordError = v; } catch(e) {} },
-		get rescanning() { return rescanning; },
-		set rescanning(v) { /* 
-			@ts-ignore */
-			try { rescanning = v; } catch(e) {} },
-		get rescanReport() { return rescanReport; },
-		set rescanReport(v) { /* 
-			@ts-ignore */
-			try { rescanReport = v; } catch(e) {} },
-		get reconciling() { return reconciling; },
-		set reconciling(v) { /* 
-			@ts-ignore */
-			try { reconciling = v; } catch(e) {} },
-		get runRescan() { return runRescan; },
-		set runRescan(v) { /* 
-			@ts-ignore */
-			try { runRescan = v; } catch(e) {} },
-		get deleteRescanRecords() { return deleteRescanRecords; },
-		set deleteRescanRecords(v) { /* 
-			@ts-ignore */
-			try { deleteRescanRecords = v; } catch(e) {} },
-		get markRescanMissing() { return markRescanMissing; },
-		set markRescanMissing(v) { /* 
-			@ts-ignore */
-			try { markRescanMissing = v; } catch(e) {} },
-		get loadSettings() { return loadSettings; },
-		set loadSettings(v) { /* 
-			@ts-ignore */
-			try { loadSettings = v; } catch(e) {} },
-		get loadUsers() { return loadUsers; },
-		set loadUsers(v) { /* 
-			@ts-ignore */
-			try { loadUsers = v; } catch(e) {} },
-		get onUserSearchInput() { return onUserSearchInput; },
-		set onUserSearchInput(v) { /* 
-			@ts-ignore */
-			try { onUserSearchInput = v; } catch(e) {} },
-		get usersPrevPage() { return usersPrevPage; },
-		set usersPrevPage(v) { /* 
-			@ts-ignore */
-			try { usersPrevPage = v; } catch(e) {} },
-		get usersNextPage() { return usersNextPage; },
-		set usersNextPage(v) { /* 
-			@ts-ignore */
-			try { usersNextPage = v; } catch(e) {} },
-		get reloadUsersClamped() { return reloadUsersClamped; },
-		set reloadUsersClamped(v) { /* 
-			@ts-ignore */
-			try { reloadUsersClamped = v; } catch(e) {} },
-		get SAVEABLE_FIELDS() { return SAVEABLE_FIELDS; },
-		
-		get diskInfo() { return diskInfo; },
-		set diskInfo(v) { /* 
-			@ts-ignore */
-			try { diskInfo = v; } catch(e) {} },
-		get diskTotalGB() { return diskTotalGB; },
-		set diskTotalGB(v) { /* 
-			@ts-ignore */
-			try { diskTotalGB = v; } catch(e) {} },
-		get cacheQuotaGB() { return cacheQuotaGB; },
-		set cacheQuotaGB(v) { /* 
-			@ts-ignore */
-			try { cacheQuotaGB = v; } catch(e) {} },
-		get cacheQuotaExceedsDisk() { return cacheQuotaExceedsDisk; },
-		set cacheQuotaExceedsDisk(v) { /* 
-			@ts-ignore */
-			try { cacheQuotaExceedsDisk = v; } catch(e) {} },
-		get totalCacheGB() { return totalCacheGB; },
-		set totalCacheGB(v) { /* 
-			@ts-ignore */
-			try { totalCacheGB = v; } catch(e) {} },
-		get autoTotalCacheGB() { return autoTotalCacheGB; },
-		set autoTotalCacheGB(v) { /* 
-			@ts-ignore */
-			try { autoTotalCacheGB = v; } catch(e) {} },
-		get totalCacheExceedsDisk() { return totalCacheExceedsDisk; },
-		set totalCacheExceedsDisk(v) { /* 
-			@ts-ignore */
-			try { totalCacheExceedsDisk = v; } catch(e) {} },
-		get libraryEnabled() { return libraryEnabled; },
-		set libraryEnabled(v) { /* 
-			@ts-ignore */
-			try { libraryEnabled = v; } catch(e) {} },
-		get jellyfinEnabled() { return jellyfinEnabled; },
-		set jellyfinEnabled(v) { /* 
-			@ts-ignore */
-			try { jellyfinEnabled = v; } catch(e) {} },
-		get plexEnabled() { return plexEnabled; },
-		set plexEnabled(v) { /* 
-			@ts-ignore */
-			try { plexEnabled = v; } catch(e) {} },
-		get cleanupEnabled() { return cleanupEnabled; },
-		set cleanupEnabled(v) { /* 
-			@ts-ignore */
-			try { cleanupEnabled = v; } catch(e) {} },
-		get loadDiskInfo() { return loadDiskInfo; },
-		set loadDiskInfo(v) { /* 
-			@ts-ignore */
-			try { loadDiskInfo = v; } catch(e) {} },
-		get cleaningDownloads() { return cleaningDownloads; },
-		set cleaningDownloads(v) { /* 
-			@ts-ignore */
-			try { cleaningDownloads = v; } catch(e) {} },
-		get downloadsCleanupResult() { return downloadsCleanupResult; },
-		set downloadsCleanupResult(v) { /* 
-			@ts-ignore */
-			try { downloadsCleanupResult = v; } catch(e) {} },
-		get runDownloadsCleanup() { return runDownloadsCleanup; },
-		set runDownloadsCleanup(v) { /* 
-			@ts-ignore */
-			try { runDownloadsCleanup = v; } catch(e) {} },
-		get updateCacheQuota() { return updateCacheQuota; },
-		set updateCacheQuota(v) { /* 
-			@ts-ignore */
-			try { updateCacheQuota = v; } catch(e) {} },
-		get updateTotalCacheQuota() { return updateTotalCacheQuota; },
-		set updateTotalCacheQuota(v) { /* 
-			@ts-ignore */
-			try { updateTotalCacheQuota = v; } catch(e) {} },
-		get toggleLibrary() { return toggleLibrary; },
-		set toggleLibrary(v) { /* 
-			@ts-ignore */
-			try { toggleLibrary = v; } catch(e) {} },
-		get testingJellyfin() { return testingJellyfin; },
-		set testingJellyfin(v) { /* 
-			@ts-ignore */
-			try { testingJellyfin = v; } catch(e) {} },
-		get jellyfinSetupResult() { return jellyfinSetupResult; },
-		set jellyfinSetupResult(v) { /* 
-			@ts-ignore */
-			try { jellyfinSetupResult = v; } catch(e) {} },
-		get jellyfinTestResult() { return jellyfinTestResult; },
-		set jellyfinTestResult(v) { /* 
-			@ts-ignore */
-			try { jellyfinTestResult = v; } catch(e) {} },
-		get jellyfinUsers() { return jellyfinUsers; },
-		set jellyfinUsers(v) { /* 
-			@ts-ignore */
-			try { jellyfinUsers = v; } catch(e) {} },
-		get loadingJellyfinUsers() { return loadingJellyfinUsers; },
-		set loadingJellyfinUsers(v) { /* 
-			@ts-ignore */
-			try { loadingJellyfinUsers = v; } catch(e) {} },
-		get jellyfinUsersError() { return jellyfinUsersError; },
-		set jellyfinUsersError(v) { /* 
-			@ts-ignore */
-			try { jellyfinUsersError = v; } catch(e) {} },
-		get loadJellyfinUsers() { return loadJellyfinUsers; },
-		set loadJellyfinUsers(v) { /* 
-			@ts-ignore */
-			try { loadJellyfinUsers = v; } catch(e) {} },
-		get toggleCleanupUser() { return toggleCleanupUser; },
-		set toggleCleanupUser(v) { /* 
-			@ts-ignore */
-			try { toggleCleanupUser = v; } catch(e) {} },
-		get cookieStatus() { return cookieStatus; },
-		set cookieStatus(v) { /* 
-			@ts-ignore */
-			try { cookieStatus = v; } catch(e) {} },
-		get uploadingCookies() { return uploadingCookies; },
-		set uploadingCookies(v) { /* 
-			@ts-ignore */
-			try { uploadingCookies = v; } catch(e) {} },
-		get cookieError() { return cookieError; },
-		set cookieError(v) { /* 
-			@ts-ignore */
-			try { cookieError = v; } catch(e) {} },
-		get loadCookieStatus() { return loadCookieStatus; },
-		set loadCookieStatus(v) { /* 
-			@ts-ignore */
-			try { loadCookieStatus = v; } catch(e) {} },
-		get uploadCookieFile() { return uploadCookieFile; },
-		set uploadCookieFile(v) { /* 
-			@ts-ignore */
-			try { uploadCookieFile = v; } catch(e) {} },
-		get deleteCookieFile() { return deleteCookieFile; },
-		set deleteCookieFile(v) { /* 
-			@ts-ignore */
-			try { deleteCookieFile = v; } catch(e) {} },
-		get exportingConfig() { return exportingConfig; },
-		set exportingConfig(v) { /* 
-			@ts-ignore */
-			try { exportingConfig = v; } catch(e) {} },
-		get importingConfig() { return importingConfig; },
-		set importingConfig(v) { /* 
-			@ts-ignore */
-			try { importingConfig = v; } catch(e) {} },
-		get applyingImport() { return applyingImport; },
-		set applyingImport(v) { /* 
-			@ts-ignore */
-			try { applyingImport = v; } catch(e) {} },
-		get importError() { return importError; },
-		set importError(v) { /* 
-			@ts-ignore */
-			try { importError = v; } catch(e) {} },
-		get pendingImportYaml() { return pendingImportYaml; },
-		set pendingImportYaml(v) { /* 
-			@ts-ignore */
-			try { pendingImportYaml = v; } catch(e) {} },
-		get importPreview() { return importPreview; },
-		set importPreview(v) { /* 
-			@ts-ignore */
-			try { importPreview = v; } catch(e) {} },
-		get exportConfig() { return exportConfig; },
-		set exportConfig(v) { /* 
-			@ts-ignore */
-			try { exportConfig = v; } catch(e) {} },
-		get handleImportFile() { return handleImportFile; },
-		set handleImportFile(v) { /* 
-			@ts-ignore */
-			try { handleImportFile = v; } catch(e) {} },
-		get closeImportPreview() { return closeImportPreview; },
-		set closeImportPreview(v) { /* 
-			@ts-ignore */
-			try { closeImportPreview = v; } catch(e) {} },
-		get formatSettingValue() { return formatSettingValue; },
-		set formatSettingValue(v) { /* 
-			@ts-ignore */
-			try { formatSettingValue = v; } catch(e) {} },
-		get applyImport() { return applyImport; },
-		set applyImport(v) { /* 
-			@ts-ignore */
-			try { applyImport = v; } catch(e) {} },
-		get testingNotification() { return testingNotification; },
-		set testingNotification(v) { /* 
-			@ts-ignore */
-			try { testingNotification = v; } catch(e) {} },
-		get notificationTestResult() { return notificationTestResult; },
-		set notificationTestResult(v) { /* 
-			@ts-ignore */
-			try { notificationTestResult = v; } catch(e) {} },
-		get testNotification() { return testNotification; },
-		set testNotification(v) { /* 
-			@ts-ignore */
-			try { testNotification = v; } catch(e) {} },
-		get toggleJellyfin() { return toggleJellyfin; },
-		set toggleJellyfin(v) { /* 
-			@ts-ignore */
-			try { toggleJellyfin = v; } catch(e) {} },
-		get testJellyfinConnection() { return testJellyfinConnection; },
-		set testJellyfinConnection(v) { /* 
-			@ts-ignore */
-			try { testJellyfinConnection = v; } catch(e) {} },
-		get settingUpJellyfin() { return settingUpJellyfin; },
-		set settingUpJellyfin(v) { /* 
-			@ts-ignore */
-			try { settingUpJellyfin = v; } catch(e) {} },
-		get writingNfo() { return writingNfo; },
-		set writingNfo(v) { /* 
-			@ts-ignore */
-			try { writingNfo = v; } catch(e) {} },
-		get setupJellyfinLibrary() { return setupJellyfinLibrary; },
-		set setupJellyfinLibrary(v) { /* 
-			@ts-ignore */
-			try { setupJellyfinLibrary = v; } catch(e) {} },
-		get writeJellyfinMetadata() { return writeJellyfinMetadata; },
-		set writeJellyfinMetadata(v) { /* 
-			@ts-ignore */
-			try { writeJellyfinMetadata = v; } catch(e) {} },
-		get testingPlex() { return testingPlex; },
-		set testingPlex(v) { /* 
-			@ts-ignore */
-			try { testingPlex = v; } catch(e) {} },
-		get plexTestResult() { return plexTestResult; },
-		set plexTestResult(v) { /* 
-			@ts-ignore */
-			try { plexTestResult = v; } catch(e) {} },
-		get togglePlex() { return togglePlex; },
-		set togglePlex(v) { /* 
-			@ts-ignore */
-			try { togglePlex = v; } catch(e) {} },
-		get testPlexConnection() { return testPlexConnection; },
-		set testPlexConnection(v) { /* 
-			@ts-ignore */
-			try { testPlexConnection = v; } catch(e) {} },
-		get YT_DLP_PROXY_SCHEMES() { return YT_DLP_PROXY_SCHEMES; },
-		
-		get ytdlpProxyUrlError() { return ytdlpProxyUrlError; },
-		set ytdlpProxyUrlError(v) { /* 
-			@ts-ignore */
-			try { ytdlpProxyUrlError = v; } catch(e) {} },
-		get aria2cSocksConflict() { return aria2cSocksConflict; },
-		set aria2cSocksConflict(v) { /* 
-			@ts-ignore */
-			try { aria2cSocksConflict = v; } catch(e) {} },
-		get saveSettings() { return saveSettings; },
-		set saveSettings(v) { /* 
-			@ts-ignore */
-			try { saveSettings = v; } catch(e) {} },
-		get debouncedSave() { return debouncedSave; },
-		set debouncedSave(v) { /* 
-			@ts-ignore */
-			try { debouncedSave = v; } catch(e) {} },
-		get toggleAdmin() { return toggleAdmin; },
-		set toggleAdmin(v) { /* 
-			@ts-ignore */
-			try { toggleAdmin = v; } catch(e) {} },
-		get deleteUser() { return deleteUser; },
-		set deleteUser(v) { /* 
-			@ts-ignore */
-			try { deleteUser = v; } catch(e) {} },
-		get clearingDownloads() { return clearingDownloads; },
-		set clearingDownloads(v) { /* 
-			@ts-ignore */
-			try { clearingDownloads = v; } catch(e) {} },
-		get clearUserDownloads() { return clearUserDownloads; },
-		set clearUserDownloads(v) { /* 
-			@ts-ignore */
-			try { clearUserDownloads = v; } catch(e) {} },
-		get clearAllDownloads() { return clearAllDownloads; },
-		set clearAllDownloads(v) { /* 
-			@ts-ignore */
-			try { clearAllDownloads = v; } catch(e) {} },
-		get createUser() { return createUser; },
-		set createUser(v) { /* 
-			@ts-ignore */
-			try { createUser = v; } catch(e) {} },
-		get openPasswordChange() { return openPasswordChange; },
-		set openPasswordChange(v) { /* 
-			@ts-ignore */
-			try { openPasswordChange = v; } catch(e) {} },
-		get closePasswordChange() { return closePasswordChange; },
-		set closePasswordChange(v) { /* 
-			@ts-ignore */
-			try { closePasswordChange = v; } catch(e) {} },
-		get loadApiKeys() { return loadApiKeys; },
-		set loadApiKeys(v) { /* 
-			@ts-ignore */
-			try { loadApiKeys = v; } catch(e) {} },
-		get createApiKey() { return createApiKey; },
-		set createApiKey(v) { /* 
-			@ts-ignore */
-			try { createApiKey = v; } catch(e) {} },
-		get revokeApiKey() { return revokeApiKey; },
-		set revokeApiKey(v) { /* 
-			@ts-ignore */
-			try { revokeApiKey = v; } catch(e) {} },
-		get loadYouTubeLink() { return loadYouTubeLink; },
-		set loadYouTubeLink(v) { /* 
-			@ts-ignore */
-			try { loadYouTubeLink = v; } catch(e) {} },
-		get updateYouTubeToggle() { return updateYouTubeToggle; },
-		set updateYouTubeToggle(v) { /* 
-			@ts-ignore */
-			try { updateYouTubeToggle = v; } catch(e) {} },
-		get applyAccountState() { return applyAccountState; },
-		set applyAccountState(v) { /* 
-			@ts-ignore */
-			try { applyAccountState = v; } catch(e) {} },
-		get saveAccountSettings() { return saveAccountSettings; },
-		set saveAccountSettings(v) { /* 
-			@ts-ignore */
-			try { saveAccountSettings = v; } catch(e) {} },
-		get testAccountNotifications() { return testAccountNotifications; },
-		set testAccountNotifications(v) { /* 
-			@ts-ignore */
-			try { testAccountNotifications = v; } catch(e) {} },
-		get unlinkYouTube() { return unlinkYouTube; },
-		set unlinkYouTube(v) { /* 
-			@ts-ignore */
-			try { unlinkYouTube = v; } catch(e) {} },
-		get syncingWatchLater() { return syncingWatchLater; },
-		set syncingWatchLater(v) { /* 
-			@ts-ignore */
-			try { syncingWatchLater = v; } catch(e) {} },
-		get syncingHistory() { return syncingHistory; },
-		set syncingHistory(v) { /* 
-			@ts-ignore */
-			try { syncingHistory = v; } catch(e) {} },
-		get jellyfinUserChoice() { return jellyfinUserChoice; },
-		set jellyfinUserChoice(v) { /* 
-			@ts-ignore */
-			try { jellyfinUserChoice = v; } catch(e) {} },
-		get exportingOPML() { return exportingOPML; },
-		set exportingOPML(v) { /* 
-			@ts-ignore */
-			try { exportingOPML = v; } catch(e) {} },
-		get exportingCSV() { return exportingCSV; },
-		set exportingCSV(v) { /* 
-			@ts-ignore */
-			try { exportingCSV = v; } catch(e) {} },
-		get syncWatchLater() { return syncWatchLater; },
-		set syncWatchLater(v) { /* 
-			@ts-ignore */
-			try { syncWatchLater = v; } catch(e) {} },
-		get syncHistory() { return syncHistory; },
-		set syncHistory(v) { /* 
-			@ts-ignore */
-			try { syncHistory = v; } catch(e) {} },
-		get updateJellyfinUser() { return updateJellyfinUser; },
-		set updateJellyfinUser(v) { /* 
-			@ts-ignore */
-			try { updateJellyfinUser = v; } catch(e) {} },
-		get exportSubscriptions() { return exportSubscriptions; },
-		set exportSubscriptions(v) { /* 
-			@ts-ignore */
-			try { exportSubscriptions = v; } catch(e) {} },
-		get loadLibraryRequests() { return loadLibraryRequests; },
-		set loadLibraryRequests(v) { /* 
-			@ts-ignore */
-			try { loadLibraryRequests = v; } catch(e) {} },
-		get handleLibraryRequest() { return handleLibraryRequest; },
-		set handleLibraryRequest(v) { /* 
-			@ts-ignore */
-			try { handleLibraryRequest = v; } catch(e) {} },
-		get updateUserLibraryAccess() { return updateUserLibraryAccess; },
-		set updateUserLibraryAccess(v) { /* 
-			@ts-ignore */
-			try { updateUserLibraryAccess = v; } catch(e) {} },
-		get userAccessValue() { return userAccessValue; },
-		set userAccessValue(v) { /* 
-			@ts-ignore */
-			try { userAccessValue = v; } catch(e) {} },
-		get userQuotaDisplay() { return userQuotaDisplay; },
-		set userQuotaDisplay(v) { /* 
-			@ts-ignore */
-			try { userQuotaDisplay = v; } catch(e) {} },
-		get saveUserQuota() { return saveUserQuota; },
-		set saveUserQuota(v) { /* 
-			@ts-ignore */
-			try { saveUserQuota = v; } catch(e) {} },
-		get changePassword() { return changePassword; },
-		set changePassword(v) { /* 
-			@ts-ignore */
-			try { changePassword = v; } catch(e) {} },
+		get data() {
+			return data;
+		},
+		get settings() {
+			return settings;
+		},
+		set settings(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settings = v;
+			} catch (e) {}
+		},
+		get settingsError() {
+			return settingsError;
+		},
+		set settingsError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingsError = v;
+			} catch (e) {}
+		},
+		get users() {
+			return users;
+		},
+		set users(v) {
+			/* 
+			@ts-ignore */
+			try {
+				users = v;
+			} catch (e) {}
+		},
+		get USERS_PAGE_SIZE() {
+			return USERS_PAGE_SIZE;
+		},
+
+		get userSearch() {
+			return userSearch;
+		},
+		set userSearch(v) {
+			/* 
+			@ts-ignore */
+			try {
+				userSearch = v;
+			} catch (e) {}
+		},
+		get usersOffset() {
+			return usersOffset;
+		},
+		set usersOffset(v) {
+			/* 
+			@ts-ignore */
+			try {
+				usersOffset = v;
+			} catch (e) {}
+		},
+		get usersTotal() {
+			return usersTotal;
+		},
+		set usersTotal(v) {
+			/* 
+			@ts-ignore */
+			try {
+				usersTotal = v;
+			} catch (e) {}
+		},
+		get usersLoading() {
+			return usersLoading;
+		},
+		set usersLoading(v) {
+			/* 
+			@ts-ignore */
+			try {
+				usersLoading = v;
+			} catch (e) {}
+		},
+		get userSearchTimeout() {
+			return userSearchTimeout;
+		},
+		set userSearchTimeout(v) {
+			/* 
+			@ts-ignore */
+			try {
+				userSearchTimeout = v;
+			} catch (e) {}
+		},
+		get loading() {
+			return loading;
+		},
+		set loading(v) {
+			/* 
+			@ts-ignore */
+			try {
+				loading = v;
+			} catch (e) {}
+		},
+		get saving() {
+			return saving;
+		},
+		set saving(v) {
+			/* 
+			@ts-ignore */
+			try {
+				saving = v;
+			} catch (e) {}
+		},
+		get settingsLoaded() {
+			return settingsLoaded;
+		},
+		set settingsLoaded(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingsLoaded = v;
+			} catch (e) {}
+		},
+		get settingsSnapshot() {
+			return settingsSnapshot;
+		},
+		set settingsSnapshot(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingsSnapshot = v;
+			} catch (e) {}
+		},
+		get ytdlpExtraFlagsText() {
+			return ytdlpExtraFlagsText;
+		},
+		set ytdlpExtraFlagsText(v) {
+			/* 
+			@ts-ignore */
+			try {
+				ytdlpExtraFlagsText = v;
+			} catch (e) {}
+		},
+		get saveTimeout() {
+			return saveTimeout;
+		},
+		set saveTimeout(v) {
+			/* 
+			@ts-ignore */
+			try {
+				saveTimeout = v;
+			} catch (e) {}
+		},
+		get isAdmin() {
+			return isAdmin;
+		},
+		set isAdmin(v) {
+			/* 
+			@ts-ignore */
+			try {
+				isAdmin = v;
+			} catch (e) {}
+		},
+		get activeSection() {
+			return activeSection;
+		},
+		set activeSection(v) {
+			/* 
+			@ts-ignore */
+			try {
+				activeSection = v;
+			} catch (e) {}
+		},
+		get settingsGroups() {
+			return settingsGroups;
+		},
+		set settingsGroups(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingsGroups = v;
+			} catch (e) {}
+		},
+		get accountGroups() {
+			return accountGroups;
+		},
+		set accountGroups(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountGroups = v;
+			} catch (e) {}
+		},
+		get usersGroups() {
+			return usersGroups;
+		},
+		set usersGroups(v) {
+			/* 
+			@ts-ignore */
+			try {
+				usersGroups = v;
+			} catch (e) {}
+		},
+		get navGroups() {
+			return navGroups;
+		},
+		set navGroups(v) {
+			/* 
+			@ts-ignore */
+			try {
+				navGroups = v;
+			} catch (e) {}
+		},
+		get settingsSections() {
+			return settingsSections;
+		},
+		set settingsSections(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingsSections = v;
+			} catch (e) {}
+		},
+		get selectTab() {
+			return selectTab;
+		},
+		get suppressSpy() {
+			return suppressSpy;
+		},
+		set suppressSpy(v) {
+			/* 
+			@ts-ignore */
+			try {
+				suppressSpy = v;
+			} catch (e) {}
+		},
+		get suppressSpyTimeout() {
+			return suppressSpyTimeout;
+		},
+		set suppressSpyTimeout(v) {
+			/* 
+			@ts-ignore */
+			try {
+				suppressSpyTimeout = v;
+			} catch (e) {}
+		},
+		get showCreateUser() {
+			return showCreateUser;
+		},
+		set showCreateUser(v) {
+			/* 
+			@ts-ignore */
+			try {
+				showCreateUser = v;
+			} catch (e) {}
+		},
+		get newUser() {
+			return newUser;
+		},
+		set newUser(v) {
+			/* 
+			@ts-ignore */
+			try {
+				newUser = v;
+			} catch (e) {}
+		},
+		get createUserError() {
+			return createUserError;
+		},
+		set createUserError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				createUserError = v;
+			} catch (e) {}
+		},
+		get apiKeys() {
+			return apiKeys;
+		},
+		set apiKeys(v) {
+			/* 
+			@ts-ignore */
+			try {
+				apiKeys = v;
+			} catch (e) {}
+		},
+		get newKeyName() {
+			return newKeyName;
+		},
+		set newKeyName(v) {
+			/* 
+			@ts-ignore */
+			try {
+				newKeyName = v;
+			} catch (e) {}
+		},
+		get newKeyResult() {
+			return newKeyResult;
+		},
+		set newKeyResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				newKeyResult = v;
+			} catch (e) {}
+		},
+		get youtubeLink() {
+			return youtubeLink;
+		},
+		set youtubeLink(v) {
+			/* 
+			@ts-ignore */
+			try {
+				youtubeLink = v;
+			} catch (e) {}
+		},
+		get youtubeLoading() {
+			return youtubeLoading;
+		},
+		set youtubeLoading(v) {
+			/* 
+			@ts-ignore */
+			try {
+				youtubeLoading = v;
+			} catch (e) {}
+		},
+		get showImportModal() {
+			return showImportModal;
+		},
+		set showImportModal(v) {
+			/* 
+			@ts-ignore */
+			try {
+				showImportModal = v;
+			} catch (e) {}
+		},
+		get accountProxyUrl() {
+			return accountProxyUrl;
+		},
+		set accountProxyUrl(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountProxyUrl = v;
+			} catch (e) {}
+		},
+		get accountExtraFlagsText() {
+			return accountExtraFlagsText;
+		},
+		set accountExtraFlagsText(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountExtraFlagsText = v;
+			} catch (e) {}
+		},
+		get accountAppriseUrl() {
+			return accountAppriseUrl;
+		},
+		set accountAppriseUrl(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountAppriseUrl = v;
+			} catch (e) {}
+		},
+		get accountNotifyOnComplete() {
+			return accountNotifyOnComplete;
+		},
+		set accountNotifyOnComplete(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountNotifyOnComplete = v;
+			} catch (e) {}
+		},
+		get accountNotifyOnFail() {
+			return accountNotifyOnFail;
+		},
+		set accountNotifyOnFail(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountNotifyOnFail = v;
+			} catch (e) {}
+		},
+		get savingAccountSettings() {
+			return savingAccountSettings;
+		},
+		set savingAccountSettings(v) {
+			/* 
+			@ts-ignore */
+			try {
+				savingAccountSettings = v;
+			} catch (e) {}
+		},
+		get accountSettingsResult() {
+			return accountSettingsResult;
+		},
+		set accountSettingsResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountSettingsResult = v;
+			} catch (e) {}
+		},
+		get ACCOUNT_PROXY_SCHEMES() {
+			return ACCOUNT_PROXY_SCHEMES;
+		},
+
+		get accountProxyUrlError() {
+			return accountProxyUrlError;
+		},
+		set accountProxyUrlError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				accountProxyUrlError = v;
+			} catch (e) {}
+		},
+		get libraryRequests() {
+			return libraryRequests;
+		},
+		set libraryRequests(v) {
+			/* 
+			@ts-ignore */
+			try {
+				libraryRequests = v;
+			} catch (e) {}
+		},
+		get loadingRequests() {
+			return loadingRequests;
+		},
+		set loadingRequests(v) {
+			/* 
+			@ts-ignore */
+			try {
+				loadingRequests = v;
+			} catch (e) {}
+		},
+		get processingRequestId() {
+			return processingRequestId;
+		},
+		set processingRequestId(v) {
+			/* 
+			@ts-ignore */
+			try {
+				processingRequestId = v;
+			} catch (e) {}
+		},
+		get userQuotaDrafts() {
+			return userQuotaDrafts;
+		},
+		set userQuotaDrafts(v) {
+			/* 
+			@ts-ignore */
+			try {
+				userQuotaDrafts = v;
+			} catch (e) {}
+		},
+		get passwordChangeUserId() {
+			return passwordChangeUserId;
+		},
+		set passwordChangeUserId(v) {
+			/* 
+			@ts-ignore */
+			try {
+				passwordChangeUserId = v;
+			} catch (e) {}
+		},
+		get passwordModalEl() {
+			return passwordModalEl;
+		},
+		set passwordModalEl(v) {
+			/* 
+			@ts-ignore */
+			try {
+				passwordModalEl = v;
+			} catch (e) {}
+		},
+		get passwordForm() {
+			return passwordForm;
+		},
+		set passwordForm(v) {
+			/* 
+			@ts-ignore */
+			try {
+				passwordForm = v;
+			} catch (e) {}
+		},
+		get passwordError() {
+			return passwordError;
+		},
+		set passwordError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				passwordError = v;
+			} catch (e) {}
+		},
+		get rescanning() {
+			return rescanning;
+		},
+		set rescanning(v) {
+			/* 
+			@ts-ignore */
+			try {
+				rescanning = v;
+			} catch (e) {}
+		},
+		get rescanReport() {
+			return rescanReport;
+		},
+		set rescanReport(v) {
+			/* 
+			@ts-ignore */
+			try {
+				rescanReport = v;
+			} catch (e) {}
+		},
+		get reconciling() {
+			return reconciling;
+		},
+		set reconciling(v) {
+			/* 
+			@ts-ignore */
+			try {
+				reconciling = v;
+			} catch (e) {}
+		},
+		get runRescan() {
+			return runRescan;
+		},
+		get deleteRescanRecords() {
+			return deleteRescanRecords;
+		},
+		get markRescanMissing() {
+			return markRescanMissing;
+		},
+		get loadSettings() {
+			return loadSettings;
+		},
+		get loadUsers() {
+			return loadUsers;
+		},
+		get onUserSearchInput() {
+			return onUserSearchInput;
+		},
+		get usersPrevPage() {
+			return usersPrevPage;
+		},
+		get usersNextPage() {
+			return usersNextPage;
+		},
+		get reloadUsersClamped() {
+			return reloadUsersClamped;
+		},
+		get SAVEABLE_FIELDS() {
+			return SAVEABLE_FIELDS;
+		},
+
+		get diskInfo() {
+			return diskInfo;
+		},
+		set diskInfo(v) {
+			/* 
+			@ts-ignore */
+			try {
+				diskInfo = v;
+			} catch (e) {}
+		},
+		get diskTotalGB() {
+			return diskTotalGB;
+		},
+		set diskTotalGB(v) {
+			/* 
+			@ts-ignore */
+			try {
+				diskTotalGB = v;
+			} catch (e) {}
+		},
+		get cacheQuotaGB() {
+			return cacheQuotaGB;
+		},
+		set cacheQuotaGB(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cacheQuotaGB = v;
+			} catch (e) {}
+		},
+		get cacheQuotaExceedsDisk() {
+			return cacheQuotaExceedsDisk;
+		},
+		set cacheQuotaExceedsDisk(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cacheQuotaExceedsDisk = v;
+			} catch (e) {}
+		},
+		get totalCacheGB() {
+			return totalCacheGB;
+		},
+		set totalCacheGB(v) {
+			/* 
+			@ts-ignore */
+			try {
+				totalCacheGB = v;
+			} catch (e) {}
+		},
+		get autoTotalCacheGB() {
+			return autoTotalCacheGB;
+		},
+		set autoTotalCacheGB(v) {
+			/* 
+			@ts-ignore */
+			try {
+				autoTotalCacheGB = v;
+			} catch (e) {}
+		},
+		get totalCacheExceedsDisk() {
+			return totalCacheExceedsDisk;
+		},
+		set totalCacheExceedsDisk(v) {
+			/* 
+			@ts-ignore */
+			try {
+				totalCacheExceedsDisk = v;
+			} catch (e) {}
+		},
+		get libraryEnabled() {
+			return libraryEnabled;
+		},
+		set libraryEnabled(v) {
+			/* 
+			@ts-ignore */
+			try {
+				libraryEnabled = v;
+			} catch (e) {}
+		},
+		get jellyfinEnabled() {
+			return jellyfinEnabled;
+		},
+		set jellyfinEnabled(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinEnabled = v;
+			} catch (e) {}
+		},
+		get plexEnabled() {
+			return plexEnabled;
+		},
+		set plexEnabled(v) {
+			/* 
+			@ts-ignore */
+			try {
+				plexEnabled = v;
+			} catch (e) {}
+		},
+		get cleanupEnabled() {
+			return cleanupEnabled;
+		},
+		set cleanupEnabled(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cleanupEnabled = v;
+			} catch (e) {}
+		},
+		get loadDiskInfo() {
+			return loadDiskInfo;
+		},
+		get cleaningDownloads() {
+			return cleaningDownloads;
+		},
+		set cleaningDownloads(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cleaningDownloads = v;
+			} catch (e) {}
+		},
+		get downloadsCleanupResult() {
+			return downloadsCleanupResult;
+		},
+		set downloadsCleanupResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				downloadsCleanupResult = v;
+			} catch (e) {}
+		},
+		get runDownloadsCleanup() {
+			return runDownloadsCleanup;
+		},
+		get updateCacheQuota() {
+			return updateCacheQuota;
+		},
+		get updateTotalCacheQuota() {
+			return updateTotalCacheQuota;
+		},
+		get toggleLibrary() {
+			return toggleLibrary;
+		},
+		get testingJellyfin() {
+			return testingJellyfin;
+		},
+		set testingJellyfin(v) {
+			/* 
+			@ts-ignore */
+			try {
+				testingJellyfin = v;
+			} catch (e) {}
+		},
+		get jellyfinSetupResult() {
+			return jellyfinSetupResult;
+		},
+		set jellyfinSetupResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinSetupResult = v;
+			} catch (e) {}
+		},
+		get jellyfinTestResult() {
+			return jellyfinTestResult;
+		},
+		set jellyfinTestResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinTestResult = v;
+			} catch (e) {}
+		},
+		get jellyfinUsers() {
+			return jellyfinUsers;
+		},
+		set jellyfinUsers(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinUsers = v;
+			} catch (e) {}
+		},
+		get loadingJellyfinUsers() {
+			return loadingJellyfinUsers;
+		},
+		set loadingJellyfinUsers(v) {
+			/* 
+			@ts-ignore */
+			try {
+				loadingJellyfinUsers = v;
+			} catch (e) {}
+		},
+		get jellyfinUsersError() {
+			return jellyfinUsersError;
+		},
+		set jellyfinUsersError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinUsersError = v;
+			} catch (e) {}
+		},
+		get loadJellyfinUsers() {
+			return loadJellyfinUsers;
+		},
+		get toggleCleanupUser() {
+			return toggleCleanupUser;
+		},
+		get cookieStatus() {
+			return cookieStatus;
+		},
+		set cookieStatus(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cookieStatus = v;
+			} catch (e) {}
+		},
+		get uploadingCookies() {
+			return uploadingCookies;
+		},
+		set uploadingCookies(v) {
+			/* 
+			@ts-ignore */
+			try {
+				uploadingCookies = v;
+			} catch (e) {}
+		},
+		get cookieError() {
+			return cookieError;
+		},
+		set cookieError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				cookieError = v;
+			} catch (e) {}
+		},
+		get loadCookieStatus() {
+			return loadCookieStatus;
+		},
+		get uploadCookieFile() {
+			return uploadCookieFile;
+		},
+		get deleteCookieFile() {
+			return deleteCookieFile;
+		},
+		get exportingConfig() {
+			return exportingConfig;
+		},
+		set exportingConfig(v) {
+			/* 
+			@ts-ignore */
+			try {
+				exportingConfig = v;
+			} catch (e) {}
+		},
+		get importingConfig() {
+			return importingConfig;
+		},
+		set importingConfig(v) {
+			/* 
+			@ts-ignore */
+			try {
+				importingConfig = v;
+			} catch (e) {}
+		},
+		get applyingImport() {
+			return applyingImport;
+		},
+		set applyingImport(v) {
+			/* 
+			@ts-ignore */
+			try {
+				applyingImport = v;
+			} catch (e) {}
+		},
+		get importError() {
+			return importError;
+		},
+		set importError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				importError = v;
+			} catch (e) {}
+		},
+		get pendingImportYaml() {
+			return pendingImportYaml;
+		},
+		set pendingImportYaml(v) {
+			/* 
+			@ts-ignore */
+			try {
+				pendingImportYaml = v;
+			} catch (e) {}
+		},
+		get importPreview() {
+			return importPreview;
+		},
+		set importPreview(v) {
+			/* 
+			@ts-ignore */
+			try {
+				importPreview = v;
+			} catch (e) {}
+		},
+		get exportConfig() {
+			return exportConfig;
+		},
+		get handleImportFile() {
+			return handleImportFile;
+		},
+		get closeImportPreview() {
+			return closeImportPreview;
+		},
+		get formatSettingValue() {
+			return formatSettingValue;
+		},
+		get applyImport() {
+			return applyImport;
+		},
+		get testingNotification() {
+			return testingNotification;
+		},
+		set testingNotification(v) {
+			/* 
+			@ts-ignore */
+			try {
+				testingNotification = v;
+			} catch (e) {}
+		},
+		get notificationTestResult() {
+			return notificationTestResult;
+		},
+		set notificationTestResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				notificationTestResult = v;
+			} catch (e) {}
+		},
+		get testNotification() {
+			return testNotification;
+		},
+		get toggleJellyfin() {
+			return toggleJellyfin;
+		},
+		get testJellyfinConnection() {
+			return testJellyfinConnection;
+		},
+		get settingUpJellyfin() {
+			return settingUpJellyfin;
+		},
+		set settingUpJellyfin(v) {
+			/* 
+			@ts-ignore */
+			try {
+				settingUpJellyfin = v;
+			} catch (e) {}
+		},
+		get writingNfo() {
+			return writingNfo;
+		},
+		set writingNfo(v) {
+			/* 
+			@ts-ignore */
+			try {
+				writingNfo = v;
+			} catch (e) {}
+		},
+		get setupJellyfinLibrary() {
+			return setupJellyfinLibrary;
+		},
+		get writeJellyfinMetadata() {
+			return writeJellyfinMetadata;
+		},
+		get testingPlex() {
+			return testingPlex;
+		},
+		set testingPlex(v) {
+			/* 
+			@ts-ignore */
+			try {
+				testingPlex = v;
+			} catch (e) {}
+		},
+		get plexTestResult() {
+			return plexTestResult;
+		},
+		set plexTestResult(v) {
+			/* 
+			@ts-ignore */
+			try {
+				plexTestResult = v;
+			} catch (e) {}
+		},
+		get togglePlex() {
+			return togglePlex;
+		},
+		get testPlexConnection() {
+			return testPlexConnection;
+		},
+		get YT_DLP_PROXY_SCHEMES() {
+			return YT_DLP_PROXY_SCHEMES;
+		},
+
+		get ytdlpProxyUrlError() {
+			return ytdlpProxyUrlError;
+		},
+		set ytdlpProxyUrlError(v) {
+			/* 
+			@ts-ignore */
+			try {
+				ytdlpProxyUrlError = v;
+			} catch (e) {}
+		},
+		get aria2cSocksConflict() {
+			return aria2cSocksConflict;
+		},
+		set aria2cSocksConflict(v) {
+			/* 
+			@ts-ignore */
+			try {
+				aria2cSocksConflict = v;
+			} catch (e) {}
+		},
+		get saveSettings() {
+			return saveSettings;
+		},
+		get debouncedSave() {
+			return debouncedSave;
+		},
+		get toggleAdmin() {
+			return toggleAdmin;
+		},
+		get deleteUser() {
+			return deleteUser;
+		},
+		get clearingDownloads() {
+			return clearingDownloads;
+		},
+		set clearingDownloads(v) {
+			/* 
+			@ts-ignore */
+			try {
+				clearingDownloads = v;
+			} catch (e) {}
+		},
+		get clearUserDownloads() {
+			return clearUserDownloads;
+		},
+		get clearAllDownloads() {
+			return clearAllDownloads;
+		},
+		get createUser() {
+			return createUser;
+		},
+		get openPasswordChange() {
+			return openPasswordChange;
+		},
+		get closePasswordChange() {
+			return closePasswordChange;
+		},
+		get loadApiKeys() {
+			return loadApiKeys;
+		},
+		get createApiKey() {
+			return createApiKey;
+		},
+		get revokeApiKey() {
+			return revokeApiKey;
+		},
+		get loadYouTubeLink() {
+			return loadYouTubeLink;
+		},
+		get updateYouTubeToggle() {
+			return updateYouTubeToggle;
+		},
+		get applyAccountState() {
+			return applyAccountState;
+		},
+		get saveAccountSettings() {
+			return saveAccountSettings;
+		},
+		get testAccountNotifications() {
+			return testAccountNotifications;
+		},
+		get unlinkYouTube() {
+			return unlinkYouTube;
+		},
+		get syncingWatchLater() {
+			return syncingWatchLater;
+		},
+		set syncingWatchLater(v) {
+			/* 
+			@ts-ignore */
+			try {
+				syncingWatchLater = v;
+			} catch (e) {}
+		},
+		get syncingHistory() {
+			return syncingHistory;
+		},
+		set syncingHistory(v) {
+			/* 
+			@ts-ignore */
+			try {
+				syncingHistory = v;
+			} catch (e) {}
+		},
+		get jellyfinUserChoice() {
+			return jellyfinUserChoice;
+		},
+		set jellyfinUserChoice(v) {
+			/* 
+			@ts-ignore */
+			try {
+				jellyfinUserChoice = v;
+			} catch (e) {}
+		},
+		get exportingOPML() {
+			return exportingOPML;
+		},
+		set exportingOPML(v) {
+			/* 
+			@ts-ignore */
+			try {
+				exportingOPML = v;
+			} catch (e) {}
+		},
+		get exportingCSV() {
+			return exportingCSV;
+		},
+		set exportingCSV(v) {
+			/* 
+			@ts-ignore */
+			try {
+				exportingCSV = v;
+			} catch (e) {}
+		},
+		get syncWatchLater() {
+			return syncWatchLater;
+		},
+		get syncHistory() {
+			return syncHistory;
+		},
+		get updateJellyfinUser() {
+			return updateJellyfinUser;
+		},
+		get exportSubscriptions() {
+			return exportSubscriptions;
+		},
+		get loadLibraryRequests() {
+			return loadLibraryRequests;
+		},
+		get handleLibraryRequest() {
+			return handleLibraryRequest;
+		},
+		get updateUserLibraryAccess() {
+			return updateUserLibraryAccess;
+		},
+		get userAccessValue() {
+			return userAccessValue;
+		},
+		get userQuotaDisplay() {
+			return userQuotaDisplay;
+		},
+		get saveUserQuota() {
+			return saveUserQuota;
+		},
+		get changePassword() {
+			return changePassword;
+		},
 	};
 	setContext('settingsState', __state);
-
 </script>
+
 <svelte:head>
 	<title>Settings - wytui</title>
 </svelte:head>
@@ -2368,8 +2875,6 @@ $effect(() => {
 		</nav>
 	{/snippet}
 
-	
-
 	<div class="settings-container">
 		{@render quickNav()}
 		<div class="general-settings">
@@ -2393,8 +2898,7 @@ $effect(() => {
 			{/if}
 		</div>
 	</div>
-
-	</div>
+</div>
 
 <!-- Password Change Modal (triggered from Account and Users tabs) -->
 {#if passwordChangeUserId}
@@ -2438,11 +2942,21 @@ $effect(() => {
 						/>
 						{#if passwordForm.newPassword.length > 0}
 							<div class="password-suggestions">
-								<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}>8+ characters</span>
-								<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}>lowercase</span>
-								<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}>uppercase</span>
-								<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}>number</span>
-								<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}>special character</span>
+								<span class="suggestion" class:met={passwordForm.newPassword.length >= 8}
+									>8+ characters</span
+								>
+								<span class="suggestion" class:met={/[a-z]/.test(passwordForm.newPassword)}
+									>lowercase</span
+								>
+								<span class="suggestion" class:met={/[A-Z]/.test(passwordForm.newPassword)}
+									>uppercase</span
+								>
+								<span class="suggestion" class:met={/[0-9]/.test(passwordForm.newPassword)}
+									>number</span
+								>
+								<span class="suggestion" class:met={/[^a-zA-Z0-9]/.test(passwordForm.newPassword)}
+									>special character</span
+								>
 							</div>
 						{/if}
 					</div>

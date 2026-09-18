@@ -78,6 +78,10 @@ vi.mock('../db', () => ({
 			findUnique: vi.fn(async () => settingsDb.singleton),
 			create: vi.fn(async () => settingsDb.singleton),
 		},
+		eventLog: {
+			create: vi.fn(async () => ({})),
+			deleteMany: vi.fn(async () => ({ count: 0 })),
+		},
 		download: {
 			// Return copies: the real client never mutates the row the caller
 			// already holds, and the promote flow relies on that.

@@ -170,7 +170,7 @@ export const DELETE = apiRoute(
 				throw error(403, 'Access denied');
 			}
 
-			await downloadService.deleteDownload(params.id);
+			await downloadService.deleteDownload(params.id, locals.session.user.id);
 			return json({ success: true });
 		} catch (e: any) {
 			console.error('Failed to delete download:', e);

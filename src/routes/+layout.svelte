@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { navigating } from '$app/stores';
-	import { connectSSE, disconnectSSE, getSSEState } from '$lib/stores/sse.svelte';
+	import { connectSSE, disconnectSSE, getSSEState, onSSEEvent } from '$lib/stores/sse.svelte';
+	import { addToast } from '$lib/stores/toast.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
 	import Sidebar from '$lib/components/ui/Sidebar.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
@@ -24,7 +25,39 @@
 
 	onMount(() => {
 		connectSSE();
+
+		// Surface cookies that were marked expired by a failed download
+		// (failure-driven: no proactive checking) once per full page load
+		// (onMount does not re-run on client-side navigation). Admin only —
+		// the endpoint requires it anyway. Best-effort: never block page load.
+		if (isAdmin) {
+			fetch('/api/settings/cookies')
+				.then((res) => (res.ok ? res.json() : null))
+				.then((cookieStatus: { hasCookies: boolean; expired: boolean } | null) => {
+					if (!cookieStatus?.hasCookies || !cookieStatus.expired) return;
+					addToast(
+						'error',
+						'YouTube cookies were marked expired — a download failed authentication. Re-upload them in Settings → Cookies.',
+						8000,
+					);
+				})
+				.catch(() => {
+					// Ignore network/API failures — this is a courtesy check.
+				});
+		}
+
+		// A manual download skipped at the duration boundary vanishes with no
+		// FAILED row — the server emits download:skipped so the owner learns why.
+		const unsubSkipped = onSSEEvent('download:skipped', ({ message }: any) => {
+			addToast(
+				'info',
+				message || 'Download skipped: it exceeds the configured duration limit.',
+				8000,
+			);
+		});
+
 		return () => {
+			unsubSkipped();
 			disconnectSSE();
 		};
 	});

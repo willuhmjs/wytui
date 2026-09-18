@@ -40,11 +40,12 @@
 	];
 
 	// Settings is available to ALL users (Account tab: password + API keys).
-	// Analytics/Scheduler are admin-only.
+	// Analytics/Scheduler/Logs are admin-only.
 	const settingsItem: NavItem = { label: 'Settings', href: '/settings', icon: 'gear' };
 	const adminItems: NavItem[] = [
 		{ label: 'Analytics', href: '/analytics', icon: 'chart' },
 		{ label: 'Scheduler', href: '/scheduler', icon: 'clock' },
+		{ label: 'Logs', href: '/logs', icon: 'log' },
 	];
 	let systemItems = $derived(isAdmin ? [settingsItem, ...adminItems] : [settingsItem]);
 
@@ -233,6 +234,11 @@
 						{:else if item.icon === 'clock'}
 							<circle cx="10" cy="10" r="7" />
 							<path d="M10 6v4l3 2" />
+						{:else if item.icon === 'log'}
+							<rect x="3.5" y="2.5" width="13" height="15" rx="2" />
+							<path d="M7 7h6" />
+							<path d="M7 10h6" />
+							<path d="M7 13h4" />
 						{/if}
 					</svg>
 					{#if !collapsed}<span class="nav-text">{item.label}</span>{/if}
