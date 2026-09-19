@@ -34,9 +34,11 @@ describe('NFO builders', () => {
 			plot: 'A <plot>',
 			runtimeSeconds: 120,
 			videoId: 'vid1',
+			channel: 'Chan & Co',
 		});
 		expect(nfo).toContain('<movie>');
 		expect(nfo).toContain('<title>A Video</title>');
+		expect(nfo).toContain('<studio>Chan &amp; Co</studio>');
 		expect(nfo).toContain('<premiered>2024-05-01</premiered>');
 		expect(nfo).toContain('<plot>A &lt;plot&gt;</plot>');
 		expect(nfo).toContain('<runtime>2</runtime>');
@@ -45,6 +47,7 @@ describe('NFO builders', () => {
 
 	it('omits optional fields when absent', () => {
 		const nfo = buildMovieNfo({ title: 'A Video' });
+		expect(nfo).not.toContain('<studio>');
 		expect(nfo).not.toContain('<premiered>');
 		expect(nfo).not.toContain('<plot>');
 		expect(nfo).not.toContain('<runtime>');
@@ -113,6 +116,7 @@ describe('nfoService.syncChannel', () => {
 		const earlyNfo = await readFile(join(early, 'Early.nfo'), 'utf-8');
 		expect(earlyNfo).toContain('<movie>');
 		expect(earlyNfo).toContain('<title>Early &amp; Fast</title>');
+		expect(earlyNfo).toContain('<studio>Chan</studio>');
 		expect(earlyNfo).toContain('<premiered>2024-05-01</premiered>');
 		expect(earlyNfo).toContain('<plot>First one</plot>');
 		expect(earlyNfo).toContain('>v-early</uniqueid>');
@@ -144,6 +148,8 @@ describe('nfoService.syncChannel', () => {
 		const nfoA = await readFile(join(a, 'A.nfo'), 'utf-8');
 		expect(nfoA).toContain('<title>A</title>');
 		expect(nfoA).not.toContain('<premiered>');
+		// The studio falls back to the channel folder name.
+		expect(nfoA).toContain(`<studio>${basename(dir)}</studio>`);
 		// Channel title falls back to the folder name.
 		const collection = await readFile(join(dir, 'collection.xml'), 'utf-8');
 		expect(collection).toContain(`<title>${basename(dir)}</title>`);

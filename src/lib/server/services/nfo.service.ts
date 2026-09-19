@@ -9,7 +9,10 @@ import { join, resolve, extname, basename, dirname, sep } from 'path';
  * release dates are first-class in the Movies UI instead of hidden in an
  * episode list. The channel folder's collection.xml both flags it as a BoxSet
  * (Jellyfin requires it for subfolder collections) and carries the channel's
- * title and YouTube channel id.
+ * title and YouTube channel id. Each movie also carries its channel as the
+ * studio — Jellyfin movies have no creator field, and the studio is the
+ * standard slot, so the channel stays visible wherever a movie is shown
+ * outside its channel collection.
  */
 
 /** Video extensions recognized inside per-video library folders. */
@@ -48,11 +51,15 @@ export interface MovieNfoInput {
 	plot?: string | null;
 	runtimeSeconds?: number | null;
 	videoId?: string | null;
+	channel?: string | null;
 }
 
 export function buildMovieNfo(input: MovieNfoInput): string {
 	const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<movie>'];
 	lines.push(`\t<title>${escapeXml(input.title)}</title>`);
+	if (input.channel) {
+		lines.push(`\t<studio>${escapeXml(input.channel)}</studio>`);
+	}
 	if (input.premiered) {
 		lines.push(`\t<premiered>${input.premiered.toISOString().slice(0, 10)}</premiered>`);
 	}
@@ -117,6 +124,13 @@ class NfoService {
 			}
 		}
 
+		const byCompleted = [...rows].sort(
+			(a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0),
+		);
+		const channelTitle = byCompleted.find((r) => r.uploader)?.uploader ?? basename(resolved);
+		const channelUrl = byCompleted.find((r) => r.channelUrl)?.channelUrl ?? undefined;
+		const channelId = channelUrl?.match(/\/channel\/(UC[\w-]+)/)?.[1] ?? undefined;
+
 		let written = 0;
 		for (const entry of channelEntries) {
 			if (!entry.isDirectory()) continue;
@@ -134,18 +148,12 @@ class NfoService {
 				plot: row?.description ?? null,
 				runtimeSeconds: row?.duration ?? null,
 				videoId: row?.videoId ?? null,
+				channel: row?.uploader ?? channelTitle,
 			});
 			await this.writeIfChanged(join(videoDir, `${basename(media, extname(media))}.nfo`), nfo);
 			await this.removeLegacyPoster(videoDir);
 			written++;
 		}
-
-		const byCompleted = [...rows].sort(
-			(a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0),
-		);
-		const channelTitle = byCompleted.find((r) => r.uploader)?.uploader ?? basename(resolved);
-		const channelUrl = byCompleted.find((r) => r.channelUrl)?.channelUrl ?? undefined;
-		const channelId = channelUrl?.match(/\/channel\/(UC[\w-]+)/)?.[1] ?? undefined;
 
 		await this.writeIfChanged(
 			join(resolved, 'collection.xml'),
