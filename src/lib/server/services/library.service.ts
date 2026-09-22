@@ -7,6 +7,7 @@ import {
 	mkdir,
 	rmdir,
 	readdir,
+	rename,
 	access,
 	stat,
 	statfs,
@@ -28,12 +29,36 @@ function sanitizeFilename(name: string): string {
 }
 
 class LibraryService {
+	/** Promotions currently running, by download id. */
+	private promotionInFlight = new Map<string, Promise<void>>();
+
 	/**
 	 * Event-log attribution resolves the acting user from the request
 	 * context; the download's owner is only the fallback for background
 	 * callers (completion-hook promotions).
+	 *
+	 * Concurrent promotions of the same download are coalesced: the
+	 * completion hook and the scheduler's interrupted-promotion healer can
+	 * both fire while a large copy is still running, and a second parallel
+	 * copy makes the collision check read a half-written destination and
+	 * fork a " (1)" duplicate folder.
 	 */
 	async promoteToLibrary(downloadId: string): Promise<void> {
+		const inFlight = this.promotionInFlight.get(downloadId);
+		if (inFlight) {
+			await inFlight;
+			return;
+		}
+		const promise = this.promoteToLibraryInternal(downloadId);
+		this.promotionInFlight.set(downloadId, promise);
+		try {
+			await promise;
+		} finally {
+			this.promotionInFlight.delete(downloadId);
+		}
+	}
+
+	private async promoteToLibraryInternal(downloadId: string): Promise<void> {
 		const download = await prisma.download.findUnique({
 			where: { id: downloadId },
 			include: { profile: true },
@@ -130,7 +155,7 @@ class LibraryService {
 		}
 
 		if (!alreadyCopied) {
-			await copyFile(download.filepath, destPath);
+			await this.copyAtomic(download.filepath, destPath);
 		}
 		// Point the record at the destination before removing the source: every
 		// intermediate state must leave the row describing an existing file, or a
@@ -163,6 +188,19 @@ class LibraryService {
 		await this.ensureChannelArt(resolve(targetLibrary, artistDir), download.channelUrl);
 	}
 
+	/**
+	 * Copy src to dest via a temp file + rename so no reader — a racing
+	 * promotion's collision check, the husk sweeper, or a Jellyfin scan —
+	 * ever sees a partial file where the finished one belongs. An
+	 * interrupted copy leaves only "<dest>.part" behind, which the next
+	 * promotion overwrites and the husk sweeper reclaims once stale.
+	 */
+	private async copyAtomic(src: string, dest: string): Promise<void> {
+		const tempPath = `${dest}.part`;
+		await copyFile(src, tempPath);
+		await rename(tempPath, dest);
+	}
+
 	private async promoteVideoToLibrary(
 		download: any,
 		resolvedLibrary: string,
@@ -184,20 +222,27 @@ class LibraryService {
 		while (true) {
 			try {
 				await access(videoDir);
-				// A promotion interrupted between the copy and the record update
-				// leaves the video folder behind - same title plus same file size
-				// means it is this video, so finish that promotion instead of
-				// forking a " (1)" duplicate folder.
-				const existing = join(videoDir, basename(videoDir) + ext);
-				if (await this.isSameSize(existing, download.filepath)) {
-					alreadyCopied = true;
-					break;
-				}
-				videoDir = resolve(targetLibrary, uploaderDir, `${baseFilename} (${suffix})`);
-				suffix++;
 			} catch {
+				break; // folder is free — take it
+			}
+
+			const existing = join(videoDir, basename(videoDir) + ext);
+			const existingSize = await stat(existing)
+				.then((s) => (s.isFile() ? s.size : null))
+				.catch(() => null);
+			// A folder without its media file is an interrupted promotion
+			// (or a leftover husk) — take it over instead of forking a
+			// " (1)" sibling.
+			if (existingSize === null) break;
+			// Same title plus same file size means it is this video, so
+			// finish that promotion instead of forking a " (1)" duplicate
+			// folder.
+			if (await this.isSameSize(existing, download.filepath)) {
+				alreadyCopied = true;
 				break;
 			}
+			videoDir = resolve(targetLibrary, uploaderDir, `${baseFilename} (${suffix})`);
+			suffix++;
 		}
 
 		await mkdir(videoDir, { recursive: true });
@@ -206,7 +251,7 @@ class LibraryService {
 		const destPath = join(videoDir, destFilename + ext);
 
 		if (!alreadyCopied) {
-			await copyFile(download.filepath, destPath);
+			await this.copyAtomic(download.filepath, destPath);
 		}
 		// Point the record at the destination before removing the source: every
 		// intermediate state must leave the row describing an existing file, or a
@@ -1075,7 +1120,8 @@ class LibraryService {
 	 * Remove library video directories that no longer contain playable media —
 	 * the artwork-only husks older deletion paths left behind. Only
 	 * <channel>/<video> directories are considered; channel folders and any
-	 * directory still holding a media file are left alone.
+	 * directory still holding a media file are left alone, as is a directory
+	 * holding a fresh ".part" temp (a promotion copy in progress).
 	 */
 	async sweepLibraryHusks(): Promise<number> {
 		const settings = await this.getSettings();
@@ -1115,6 +1161,22 @@ class LibraryService {
 					);
 					if (hasMedia) continue;
 
+					// A promotion copy in progress leaves a fresh ".part" temp in
+					// the folder — it only looks like a husk until the copy
+					// finishes and renames the temp into place.
+					let copyInProgress = false;
+					for (const f of files) {
+						if (!f.endsWith('.part')) continue;
+						try {
+							const partStat = await stat(join(videoDir, f));
+							if (Date.now() - partStat.mtimeMs < LibraryService.PROMOTION_COPY_GRACE_MS) {
+								copyInProgress = true;
+								break;
+							}
+						} catch {}
+					}
+					if (copyInProgress) continue;
+
 					for (const f of files) {
 						await unlink(join(videoDir, f)).catch(() => {});
 					}
@@ -1146,6 +1208,12 @@ class LibraryService {
 		'ogg',
 		'wav',
 	]);
+
+	/**
+	 * A ".part" temp younger than this is a promotion copy in progress, not
+	 * husk junk; once stale, the husk sweeper reclaims its folder.
+	 */
+	private static readonly PROMOTION_COPY_GRACE_MS = 60 * 60 * 1000;
 
 	/** Artwork file names written into per-video library folders. */
 	private static readonly ARTWORK_FILES = new Set([

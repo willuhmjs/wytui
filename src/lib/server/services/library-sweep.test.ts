@@ -249,4 +249,20 @@ describe('sweepLibraryHusks', () => {
 		expect(dirs.has('/media/Chan/Alive')).toBe(true);
 		expect(exists('/media/Chan/folder.jpg')).toBe(true);
 	});
+
+	it('keeps folders holding a fresh .part (promotion copy in progress) but reclaims stale ones', async () => {
+		addDir('/media/Chan');
+		addDir('/media/Chan/Copying');
+		addFile('/media/Chan/Copying/Copying.mp4.part', 40, 5 * 60 * 1000); // fresh
+		addFile('/media/Chan/Copying/backdrop.jpg', 4);
+		addDir('/media/Chan/Crashed');
+		addFile('/media/Chan/Crashed/Crashed.mp4.part', 40, 2 * DAY); // stale
+		addFile('/media/Chan/Crashed/backdrop.jpg', 4);
+
+		const removed = await libraryService.sweepLibraryHusks();
+
+		expect(removed).toBe(1);
+		expect(dirs.has('/media/Chan/Copying')).toBe(true);
+		expect(dirs.has('/media/Chan/Crashed')).toBe(false);
+	});
 });

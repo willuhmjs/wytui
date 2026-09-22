@@ -55,6 +55,21 @@ vi.mock('fs/promises', () => {
 			addFile(dest, f.size);
 		}),
 		mkdir: vi.fn(async (dir: string) => addDir(dir)),
+		rename: vi.fn(async (from: string, to: string) => {
+			calls.push(`rename:${to}`);
+			const f = files.get(from);
+			if (!f) throw new Error(`ENOENT: ${from}`);
+			files.delete(from);
+			const fromDir = from.slice(0, from.lastIndexOf('/'));
+			const fromName = from.slice(from.lastIndexOf('/') + 1);
+			const entries = dirs.get(fromDir);
+			if (entries)
+				dirs.set(
+					fromDir,
+					entries.filter((e) => e !== fromName),
+				);
+			addFile(to, f.size);
+		}),
 		writeFile: vi.fn(async () => {}),
 	};
 	return { ...mocked, default: mocked };
@@ -123,6 +138,7 @@ vi.mock('./ytdlp.service', () => ({
 }));
 
 import { libraryService } from './library.service';
+import * as fsp from 'fs/promises';
 
 function makeDownload(id: string, overrides: Record<string, any> = {}) {
 	return {
@@ -156,13 +172,42 @@ describe('promoteToLibrary', () => {
 
 		await libraryService.promoteToLibrary('d1');
 
-		const seq = calls.filter((c) => /^(copy|update|unlink):/.test(c));
+		const seq = calls.filter((c) => /^(copy|rename|update|unlink):/.test(c));
 		expect(seq).toEqual([
-			'copy:/media/Chan/My Video/My Video.mp4',
+			'copy:/media/Chan/My Video/My Video.mp4.part',
+			'rename:/media/Chan/My Video/My Video.mp4',
 			'update:/media/Chan/My Video/My Video.mp4',
 			'unlink:/downloads/video.mp4',
 		]);
 		expect(downloadDb.get('d1').filepath).toBe('/media/Chan/My Video/My Video.mp4');
+	});
+
+	it('coalesces concurrent promotions of the same download instead of racing them', async () => {
+		downloadDb.set('race', makeDownload('race'));
+		addFile('/downloads/video.mp4', 100);
+
+		const originalCopy = (fsp.copyFile as any).getMockImplementation();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		(fsp.copyFile as any).mockClear();
+		(fsp.copyFile as any).mockImplementation(async (src: string, dest: string) => {
+			await gate;
+			return originalCopy(src, dest);
+		});
+		try {
+			const first = libraryService.promoteToLibrary('race');
+			await vi.waitFor(() => expect((fsp.copyFile as any).mock.calls.length).toBe(1));
+			const second = libraryService.promoteToLibrary('race');
+			release();
+			await Promise.all([first, second]);
+
+			expect(calls.filter((c) => c.startsWith('copy:'))).toHaveLength(1);
+			expect(calls.filter((c) => c.startsWith('update:'))).toHaveLength(1);
+			expect(dirs.has('/media/Chan/My Video (1)')).toBe(false);
+			expect(downloadDb.get('race').filepath).toBe('/media/Chan/My Video/My Video.mp4');
+		} finally {
+			(fsp.copyFile as any).mockImplementation(originalCopy);
+		}
 	});
 
 	it('reuses a destination left by an interrupted promotion instead of forking a duplicate', async () => {
@@ -193,6 +238,21 @@ describe('promoteToLibrary', () => {
 		expect(files.has('/media/Chan/My Video (1)/My Video (1).mp4')).toBe(true);
 		expect(files.has('/media/Chan/My Video/My Video.mp4')).toBe(true);
 	});
+
+	it('takes over a folder left by a promotion interrupted mid-copy instead of forking', async () => {
+		downloadDb.set('crashed', makeDownload('crashed'));
+		addFile('/downloads/video.mp4', 100);
+		addDir('/media/Chan/My Video');
+		addFile('/media/Chan/My Video/My Video.mp4.part', 40); // partial copy from the crash
+		addFile('/media/Chan/My Video/backdrop.jpg', 4);
+
+		await libraryService.promoteToLibrary('crashed');
+
+		expect(dirs.has('/media/Chan/My Video (1)')).toBe(false);
+		expect(downloadDb.get('crashed').filepath).toBe('/media/Chan/My Video/My Video.mp4');
+		expect(files.get('/media/Chan/My Video/My Video.mp4')?.size).toBe(100);
+		expect(files.has('/media/Chan/My Video/My Video.mp4.part')).toBe(false);
+	});
 });
 
 describe('resumeInterruptedPromotions', () => {
@@ -215,5 +275,34 @@ describe('resumeInterruptedPromotions', () => {
 		expect(downloadDb.get('stuck').filepath).toBe('/media/Chan/My Video/My Video.mp4');
 		expect(files.has('/downloads/stuck.mp4')).toBe(false);
 		expect(downloadDb.get('fine').filepath).toBe('/media/Chan/Done/Done.mp4');
+	});
+
+	it('coalesces with a promotion already in flight instead of copying twice', async () => {
+		downloadDb.set('stuck', makeDownload('stuck', { filepath: '/downloads/stuck.mp4' }));
+		addFile('/downloads/stuck.mp4', 100);
+
+		const originalCopy = (fsp.copyFile as any).getMockImplementation();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		(fsp.copyFile as any).mockClear();
+		(fsp.copyFile as any).mockImplementation(async (src: string, dest: string) => {
+			await gate;
+			return originalCopy(src, dest);
+		});
+		try {
+			const promote = libraryService.promoteToLibrary('stuck');
+			await vi.waitFor(() => expect((fsp.copyFile as any).mock.calls.length).toBe(1));
+			const resumePromise = libraryService.resumeInterruptedPromotions();
+			release();
+			const resumed = await resumePromise;
+			await promote;
+
+			expect(resumed).toBe(1);
+			expect((fsp.copyFile as any).mock.calls).toHaveLength(1);
+			expect(dirs.has('/media/Chan/My Video (1)')).toBe(false);
+			expect(downloadDb.get('stuck').filepath).toBe('/media/Chan/My Video/My Video.mp4');
+		} finally {
+			(fsp.copyFile as any).mockImplementation(originalCopy);
+		}
 	});
 });
