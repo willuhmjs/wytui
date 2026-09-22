@@ -49,7 +49,10 @@ vi.mock('./auth', () => ({
 }));
 
 vi.mock('./services/download.service', () => ({
-	downloadService: { resumeDownload: vi.fn() },
+	downloadService: {
+		resumeDownload: vi.fn(),
+		sweepStaleDuplicateRows: vi.fn(async () => 0),
+	},
 }));
 
 vi.mock('./services/library.service', () => ({

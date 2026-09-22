@@ -5,7 +5,7 @@ import { sseEmitter } from '../sse/emitter';
 import { DownloadStatus } from '@prisma/client';
 import type { ChildProcess } from 'child_process';
 import type { Download } from '$lib/types';
-import { unlink, stat, readdir } from 'fs/promises';
+import { unlink, stat, readdir, access } from 'fs/promises';
 import { dirname, basename, extname, join } from 'path';
 import { libraryService } from './library.service';
 import { channelOverrideService } from './channel-override.service';
@@ -153,6 +153,56 @@ class DownloadService {
 		await prisma.download.delete({ where: { id: downloadId } }).catch(() => {});
 		this.emitToOwner('download:deleted', { id: downloadId }, downloadId);
 		this.downloadOwners.delete(downloadId);
+	}
+
+	/**
+	 * Whether a path still exists on disk. Split out so tests can stub the
+	 * filesystem check — vitest's module mocking doesn't reach builtin imports
+	 * inside source files.
+	 */
+	private async fileExistsOnDisk(path: string): Promise<boolean> {
+		try {
+			await access(path);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Find a COMPLETED row for the same video under the same profile whose
+	 * file still exists on disk — i.e. the video is already downloaded. The
+	 * profile is the "template" the download was created with: a twin under a
+	 * different profile means the settings were changed on purpose and the
+	 * video should be fetched again.
+	 *
+	 * The videoId falls back to parsing the URL so rows that never got past
+	 * metadata (checker rows carry their videoId, manual ones don't) still
+	 * match. Returns null when no twin holds an existing file.
+	 */
+	private async findCompletedDuplicate(download: {
+		id: string;
+		url: string;
+		videoId: string | null;
+		profileId: string;
+	}): Promise<{ id: string; filepath: string } | null> {
+		const videoId = download.videoId || this.extractVideoId(download.url);
+		const twins = await prisma.download.findMany({
+			where: {
+				id: { not: download.id },
+				status: DownloadStatus.COMPLETED,
+				profileId: download.profileId,
+				filepath: { not: null },
+				...(videoId ? { videoId } : { url: download.url }),
+			},
+			select: { id: true, filepath: true },
+		});
+		for (const twin of twins) {
+			if (twin.filepath && (await this.fileExistsOnDisk(twin.filepath))) {
+				return { id: twin.id, filepath: twin.filepath };
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -1126,6 +1176,44 @@ class DownloadService {
 		libraryService.enforceTotalCacheQuota().catch((error) => {
 			console.error('[DownloadService] Total cache quota enforcement failed:', error);
 		});
+
+		// FAILED/PENDING rows for the same video are now stale — the video is
+		// downloaded, so their retry would only duplicate it.
+		this.sweepSupersededRows(download).catch((error) => {
+			console.error('[DownloadService] Superseded-row sweep failed:', error);
+		});
+	}
+
+	/**
+	 * Remove FAILED/PENDING rows superseded by a completed download. The
+	 * checker re-queues failed videos as new rows instead of reusing the
+	 * failed one, so a video that failed and later succeeded (or is about to
+	 * run via a re-queued twin) accumulates obsolete rows in the fail queue.
+	 * Same-profile rows only — a row under a different profile is a deliberate
+	 * template change whose retry is still meaningful.
+	 */
+	private async sweepSupersededRows(completed: {
+		id: string;
+		url: string;
+		videoId: string | null;
+		profileId: string;
+	}): Promise<void> {
+		const videoId = completed.videoId || this.extractVideoId(completed.url);
+		const superseded = await prisma.download.findMany({
+			where: {
+				id: { not: completed.id },
+				status: { in: [DownloadStatus.FAILED, DownloadStatus.PENDING] },
+				profileId: completed.profileId,
+				...(videoId ? { videoId } : { url: completed.url }),
+			},
+			select: { id: true, title: true, url: true },
+		});
+		for (const row of superseded) {
+			console.log(
+				`[DownloadService] Removing superseded row ${row.id} — "${row.title || row.url}" is already downloaded`,
+			);
+			await this.discardDownloadRecord(row.id);
+		}
 	}
 
 	/**
@@ -1238,6 +1326,21 @@ class DownloadService {
 						},
 					});
 				}
+
+				// The checker's cooldown re-queue stacks a new FAILED row for the
+				// same video on every lapse while it keeps failing. Keep only this
+				// row — it carries the freshest error.
+				const dedupeId = download.videoId || videoId;
+				await prisma.download
+					.deleteMany({
+						where: {
+							id: { not: downloadId },
+							status: DownloadStatus.FAILED,
+							profileId: download.profileId,
+							...(dedupeId ? { videoId: dedupeId } : { url: download.url }),
+						},
+					})
+					.catch(() => {});
 
 				await this.updateDownload(downloadId, {
 					status: DownloadStatus.FAILED,
@@ -1442,6 +1545,28 @@ class DownloadService {
 			throw new Error('Only failed or cancelled downloads can be retried');
 		}
 
+		// The video may already be downloaded: the subscription checker
+		// re-queues failed videos as new rows once the failure cooldown
+		// lapses, so a later row can have completed while this one sat
+		// failed. Retrying would re-fetch metadata (and re-download) a video
+		// the library already has — drop the stale row instead. A twin under
+		// a different profile means the template was changed on purpose and
+		// the retry falls through to a real re-download.
+		const duplicate = await this.findCompletedDuplicate(download);
+		if (duplicate) {
+			this.cancelledDownloads.delete(downloadId);
+			this.lastErrorLine.delete(downloadId);
+			await this.discardDownloadRecord(downloadId);
+			eventLogService
+				.record(
+					EventTypes.DOWNLOAD_SKIPPED,
+					`Skipped retry of "${download.title || download.url}": already downloaded`,
+					download.userId ?? undefined,
+				)
+				.catch(() => {});
+			return { ...serializeDownload(download), duplicateOf: duplicate.id };
+		}
+
 		// Drop the failed-archive marker so subscription sync doesn't treat this
 		// video as known-bad while the retry is in flight.
 		const videoId = this.extractVideoId(download.url);
@@ -1484,6 +1609,67 @@ class DownloadService {
 
 		await this.processDownload(downloadId);
 		return updated;
+	}
+
+	/**
+	 * One-shot reconciliation for rows that predate the duplicate guards:
+	 *
+	 * - FAILED/PENDING rows whose video already completed under the same
+	 *   profile (file still on disk) — the video is downloaded, the row is
+	 *   noise in the fail queue.
+	 * - FAILED rows stacked by the checker's cooldown re-queue cycle — keep
+	 *   the newest per (video, profile), which carries the freshest error.
+	 *
+	 * Returns the number of rows removed.
+	 */
+	async sweepStaleDuplicateRows(): Promise<number> {
+		const candidates = await prisma.download.findMany({
+			where: { status: { in: [DownloadStatus.FAILED, DownloadStatus.PENDING] } },
+			select: {
+				id: true,
+				url: true,
+				videoId: true,
+				profileId: true,
+				createdAt: true,
+				status: true,
+			},
+			orderBy: { createdAt: 'asc' },
+		});
+
+		let removed = 0;
+		const removedIds = new Set<string>();
+
+		for (const candidate of candidates) {
+			const duplicate = await this.findCompletedDuplicate(candidate);
+			if (duplicate) {
+				console.log(
+					`[DownloadService] Sweeping stale row ${candidate.id} — video already downloaded`,
+				);
+				await this.discardDownloadRecord(candidate.id);
+				removedIds.add(candidate.id);
+				removed++;
+			}
+		}
+
+		// Candidates iterate oldest-first, so the last row per key is the newest.
+		const newestByKey = new Map<string, string>();
+		for (const candidate of candidates) {
+			if (removedIds.has(candidate.id) || candidate.status !== DownloadStatus.FAILED) continue;
+			const videoId = candidate.videoId || this.extractVideoId(candidate.url);
+			const key = `${candidate.profileId}|${videoId || candidate.url}`;
+			const previous = newestByKey.get(key);
+			if (previous) {
+				console.log(
+					`[DownloadService] Sweeping duplicate FAILED row ${previous} — superseded by ${candidate.id}`,
+				);
+				await this.discardDownloadRecord(previous);
+				removedIds.add(previous);
+				removed++;
+			}
+			newestByKey.set(key, candidate.id);
+		}
+
+		return removed;
 	}
 
 	/**

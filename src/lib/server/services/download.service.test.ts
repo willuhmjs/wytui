@@ -7,57 +7,102 @@ const archiveDb: Record<string, any> = {};
 const jobQueueRows: any[] = [];
 const enqueueCalls: any[] = [];
 
-vi.mock('../db', () => ({
-	prisma: {
-		download: {
-			findUnique: vi.fn(async ({ where }: any) => {
-				const d = downloads[where.id];
-				return d ? { ...d, profile: {} } : null;
-			}),
-			update: vi.fn(async ({ where, data }: any) => {
-				downloads[where.id] = { ...downloads[where.id], ...data };
-				return { ...downloads[where.id], profile: {} };
-			}),
-			delete: vi.fn(async ({ where }: any) => {
-				delete downloads[where.id];
-			}),
-			findFirst: vi.fn(async () => null),
-		},
-		archive: {
-			upsert: vi.fn(async ({ where, update, create }: any) => {
-				archiveDb[where.videoId] = archiveDb[where.videoId]
-					? { ...archiveDb[where.videoId], ...update }
-					: { ...create };
-				return archiveDb[where.videoId];
-			}),
-			deleteMany: vi.fn(async ({ where }: any) => {
-				let count = 0;
-				for (const k of Object.keys(archiveDb)) {
-					if (k === where.videoId) {
-						delete archiveDb[k];
-						count++;
+// Filesystem paths treated as existing on disk — wired into the service via
+// the fileExistsOnDisk spy in beforeEach (builtin-import mocking doesn't
+// reach source files under vitest).
+const existingFiles = new Set<string>();
+
+vi.mock('../db', () => {
+	// Shared where-clause matcher for the download-table mocks below. Supports
+	// the shapes the service uses: scalar status, status.in, id.not, and
+	// equality on profileId/videoId/url plus filepath not-null.
+	const matchesWhere = (d: any, where: any = {}) => {
+		if (where.id?.not !== undefined && d.id === where.id.not) return false;
+		if (where.status !== undefined) {
+			if (where.status?.in) {
+				if (!where.status.in.includes(d.status)) return false;
+			} else if (d.status !== where.status) {
+				return false;
+			}
+		}
+		if (where.profileId !== undefined && d.profileId !== where.profileId) return false;
+		if (where.videoId !== undefined && d.videoId !== where.videoId) return false;
+		if (where.url !== undefined && d.url !== where.url) return false;
+		if (where.filepath?.not === null && d.filepath == null) return false;
+		return true;
+	};
+
+	return {
+		prisma: {
+			download: {
+				findUnique: vi.fn(async ({ where }: any) => {
+					const d = downloads[where.id];
+					return d ? { ...d, profile: {} } : null;
+				}),
+				update: vi.fn(async ({ where, data }: any) => {
+					downloads[where.id] = { ...downloads[where.id], ...data };
+					return { ...downloads[where.id], profile: {} };
+				}),
+				delete: vi.fn(async ({ where }: any) => {
+					delete downloads[where.id];
+				}),
+				deleteMany: vi.fn(async ({ where }: any) => {
+					let count = 0;
+					for (const id of Object.keys(downloads)) {
+						if (matchesWhere(downloads[id], where)) {
+							delete downloads[id];
+							count++;
+						}
 					}
-				}
-				return { count };
-			}),
+					return { count };
+				}),
+				findMany: vi.fn(async ({ where }: any) => {
+					const rows = Object.values(downloads)
+						.filter((d: any) => matchesWhere(d, where))
+						.sort(
+							(a: any, b: any) =>
+								new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+						);
+					return rows.map((d: any) => ({ ...d }));
+				}),
+				findFirst: vi.fn(async () => null),
+			},
+			archive: {
+				upsert: vi.fn(async ({ where, update, create }: any) => {
+					archiveDb[where.videoId] = archiveDb[where.videoId]
+						? { ...archiveDb[where.videoId], ...update }
+						: { ...create };
+					return archiveDb[where.videoId];
+				}),
+				deleteMany: vi.fn(async ({ where }: any) => {
+					let count = 0;
+					for (const k of Object.keys(archiveDb)) {
+						if (k === where.videoId) {
+							delete archiveDb[k];
+							count++;
+						}
+					}
+					return { count };
+				}),
+			},
+			jobQueue: {
+				findMany: vi.fn(async () =>
+					jobQueueRows.filter((j) => j.status === 'PENDING' || j.status === 'RUNNING'),
+				),
+			},
+			eventLog: {
+				create: vi.fn(async () => ({})),
+				deleteMany: vi.fn(async () => ({ count: 0 })),
+			},
+			settings: {
+				findUnique: vi.fn(async () => ({})),
+			},
+			subscription: {
+				findUnique: vi.fn(async () => null),
+			},
 		},
-		jobQueue: {
-			findMany: vi.fn(async () =>
-				jobQueueRows.filter((j) => j.status === 'PENDING' || j.status === 'RUNNING'),
-			),
-		},
-		eventLog: {
-			create: vi.fn(async () => ({})),
-			deleteMany: vi.fn(async () => ({ count: 0 })),
-		},
-		settings: {
-			findUnique: vi.fn(async () => ({})),
-		},
-		subscription: {
-			findUnique: vi.fn(async () => null),
-		},
-	},
-}));
+	};
+});
 
 vi.mock('../sse/emitter', () => ({
 	sseEmitter: {
@@ -112,10 +157,17 @@ beforeEach(() => {
 	for (const k of Object.keys(archiveDb)) delete archiveDb[k];
 	jobQueueRows.length = 0;
 	enqueueCalls.length = 0;
+	existingFiles.clear();
 	(downloadService as any).cancelledDownloads.clear();
 	(downloadService as any).handlingError.clear();
 	(downloadService as any).retryTimeouts.clear();
+	(downloadService as any).downloadOwners.clear();
 	vi.restoreAllMocks();
+	// Established after restoreAllMocks so it survives to every test: the
+	// "file exists on disk" check consults existingFiles.
+	vi.spyOn(downloadService as any, 'fileExistsOnDisk').mockImplementation(async (path: any) =>
+		existingFiles.has(path),
+	);
 });
 
 describe('handleDownloadError terminal path', () => {
@@ -194,6 +246,35 @@ describe('handleDownloadError terminal path', () => {
 		expect(downloads[ID].retryCount).toBe(0);
 		expect(isRateLimitCooldownActive()).toBe(false);
 	});
+
+	it('dedupes older FAILED rows for the same video when marking a terminal failure', async () => {
+		// The checker re-queues after each cooldown lapse, so the same video
+		// stacks FAILED rows — only the newest (this one) should survive.
+		seedDownload({ retryCount: 3, videoId: 'vid1', profileId: 'p1' });
+		downloads['older-dupe'] = {
+			id: 'older-dupe',
+			url: 'https://www.youtube.com/watch?v=vid1',
+			status: DownloadStatus.FAILED,
+			videoId: 'vid1',
+			profileId: 'p1',
+			userId: null,
+		};
+		downloads['other-video'] = {
+			id: 'other-video',
+			url: 'https://www.youtube.com/watch?v=vid9',
+			status: DownloadStatus.FAILED,
+			videoId: 'vid9',
+			profileId: 'p1',
+			userId: null,
+		};
+
+		await (downloadService as any).handleDownloadError(ID, 'yt-dlp exited with code 1');
+
+		expect(downloads[ID].status).toBe(DownloadStatus.FAILED);
+		expect(downloads['older-dupe']).toBeUndefined();
+		// Different video, same profile — untouched.
+		expect(downloads['other-video']).toBeDefined();
+	});
 });
 
 describe('retryDownload', () => {
@@ -246,6 +327,73 @@ describe('retryDownload', () => {
 			'Only failed or cancelled downloads can be retried',
 		);
 		expect(enqueueCalls).toHaveLength(0);
+	});
+
+	it('discards the row instead of re-downloading when the video already completed under the same profile', async () => {
+		seedDownload({ status: DownloadStatus.FAILED, videoId: 'vid1', profileId: 'p1' });
+		downloads['twin-1'] = {
+			id: 'twin-1',
+			url: 'https://www.youtube.com/watch?v=vid1',
+			status: DownloadStatus.COMPLETED,
+			videoId: 'vid1',
+			profileId: 'p1',
+			filepath: '/media/library/vid1.mp4',
+			userId: null,
+		};
+		existingFiles.add('/media/library/vid1.mp4');
+
+		const result = await downloadService.retryDownload(ID);
+
+		// Stale row removed, nothing enqueued, response names the completed twin.
+		expect(downloads[ID]).toBeUndefined();
+		expect(enqueueCalls).toHaveLength(0);
+		expect(result.duplicateOf).toBe('twin-1');
+		// The client needs download:deleted to drop the row live.
+		const deleted = (sseEmitter.broadcast as any).mock.calls.filter(
+			(c: any[]) => c[0] === 'download:deleted',
+		);
+		expect(deleted).toHaveLength(1);
+		expect(deleted[0][1]).toEqual({ id: ID });
+	});
+
+	it('re-downloads when the completed twin used a different profile (template changed)', async () => {
+		seedDownload({ status: DownloadStatus.FAILED, videoId: 'vid1', profileId: 'p1' });
+		downloads['twin-1'] = {
+			id: 'twin-1',
+			url: 'https://www.youtube.com/watch?v=vid1',
+			status: DownloadStatus.COMPLETED,
+			videoId: 'vid1',
+			profileId: 'p2',
+			filepath: '/media/library/vid1.mp4',
+			userId: null,
+		};
+		existingFiles.add('/media/library/vid1.mp4');
+
+		const updated = await downloadService.retryDownload(ID);
+
+		expect(updated.status).toBe(DownloadStatus.PENDING);
+		expect(enqueueCalls).toHaveLength(1);
+		expect(downloads[ID]).toBeDefined();
+	});
+
+	it('re-downloads when the completed twin no longer exists on disk', async () => {
+		seedDownload({ status: DownloadStatus.FAILED, videoId: 'vid1', profileId: 'p1' });
+		downloads['twin-1'] = {
+			id: 'twin-1',
+			url: 'https://www.youtube.com/watch?v=vid1',
+			status: DownloadStatus.COMPLETED,
+			videoId: 'vid1',
+			profileId: 'p1',
+			filepath: '/media/library/vid1.mp4',
+			userId: null,
+		};
+		// Not added to existingFiles — access() throws ENOENT.
+
+		const updated = await downloadService.retryDownload(ID);
+
+		expect(updated.status).toBe(DownloadStatus.PENDING);
+		expect(enqueueCalls).toHaveLength(1);
+		expect(downloads[ID]).toBeDefined();
 	});
 });
 
@@ -384,5 +532,153 @@ describe('event log actor attribution', () => {
 		expect(prisma.eventLog.create).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ userId: 'user-x' }) }),
 		);
+	});
+});
+
+describe('sweepSupersededRows (completion sweep)', () => {
+	it('removes FAILED and PENDING siblings of the completed row under the same profile', async () => {
+		downloads['done'] = {
+			id: 'done',
+			url: 'https://www.youtube.com/watch?v=vidS',
+			videoId: 'vidS',
+			profileId: 'p1',
+			status: DownloadStatus.COMPLETED,
+			filepath: '/media/library/vidS.mp4',
+			userId: null,
+		};
+		downloads['stale-failed'] = {
+			id: 'stale-failed',
+			url: 'https://www.youtube.com/watch?v=vidS',
+			videoId: 'vidS',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			userId: null,
+		};
+		downloads['stale-pending'] = {
+			id: 'stale-pending',
+			url: 'https://www.youtube.com/watch?v=vidS',
+			videoId: 'vidS',
+			profileId: 'p1',
+			status: DownloadStatus.PENDING,
+			userId: null,
+		};
+		downloads['other-profile'] = {
+			id: 'other-profile',
+			url: 'https://www.youtube.com/watch?v=vidS',
+			videoId: 'vidS',
+			profileId: 'p2',
+			status: DownloadStatus.FAILED,
+			userId: null,
+		};
+		downloads['other-video'] = {
+			id: 'other-video',
+			url: 'https://www.youtube.com/watch?v=vidZ',
+			videoId: 'vidZ',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			userId: null,
+		};
+
+		await (downloadService as any).sweepSupersededRows(downloads['done']);
+
+		expect(downloads['stale-failed']).toBeUndefined();
+		expect(downloads['stale-pending']).toBeUndefined();
+		// A different profile is a deliberate template change — keep it.
+		expect(downloads['other-profile']).toBeDefined();
+		expect(downloads['other-video']).toBeDefined();
+	});
+});
+
+describe('sweepStaleDuplicateRows (boot sweep)', () => {
+	it('removes FAILED and PENDING rows whose video already completed under the same profile', async () => {
+		downloads['done'] = {
+			id: 'done',
+			url: 'https://www.youtube.com/watch?v=vidC',
+			videoId: 'vidC',
+			profileId: 'p1',
+			status: DownloadStatus.COMPLETED,
+			filepath: '/media/library/vidC.mp4',
+			userId: null,
+		};
+		existingFiles.add('/media/library/vidC.mp4');
+		downloads['stale-failed'] = {
+			id: 'stale-failed',
+			url: 'https://www.youtube.com/watch?v=vidC',
+			videoId: 'vidC',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			createdAt: new Date('2026-09-01'),
+			userId: null,
+		};
+		downloads['stale-pending'] = {
+			id: 'stale-pending',
+			url: 'https://www.youtube.com/watch?v=vidC',
+			videoId: 'vidC',
+			profileId: 'p1',
+			status: DownloadStatus.PENDING,
+			createdAt: new Date('2026-09-02'),
+			userId: null,
+		};
+
+		const removed = await downloadService.sweepStaleDuplicateRows();
+
+		expect(removed).toBe(2);
+		expect(downloads['stale-failed']).toBeUndefined();
+		expect(downloads['stale-pending']).toBeUndefined();
+		expect(downloads['done']).toBeDefined();
+	});
+
+	it('keeps a failed row whose completed twin lost its file on disk', async () => {
+		downloads['done'] = {
+			id: 'done',
+			url: 'https://www.youtube.com/watch?v=vidC',
+			videoId: 'vidC',
+			profileId: 'p1',
+			status: DownloadStatus.COMPLETED,
+			filepath: '/media/library/vidC.mp4',
+			userId: null,
+		};
+		downloads['stale-failed'] = {
+			id: 'stale-failed',
+			url: 'https://www.youtube.com/watch?v=vidC',
+			videoId: 'vidC',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			createdAt: new Date('2026-09-01'),
+			userId: null,
+		};
+		// File gone — the video is no longer "already downloaded".
+
+		const removed = await downloadService.sweepStaleDuplicateRows();
+
+		expect(removed).toBe(0);
+		expect(downloads['stale-failed']).toBeDefined();
+	});
+
+	it('keeps only the newest FAILED row per video and profile', async () => {
+		downloads['old-dupe'] = {
+			id: 'old-dupe',
+			url: 'https://www.youtube.com/watch?v=vidD',
+			videoId: 'vidD',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			createdAt: new Date('2026-09-01'),
+			userId: null,
+		};
+		downloads['new-dupe'] = {
+			id: 'new-dupe',
+			url: 'https://www.youtube.com/watch?v=vidD',
+			videoId: 'vidD',
+			profileId: 'p1',
+			status: DownloadStatus.FAILED,
+			createdAt: new Date('2026-09-10'),
+			userId: null,
+		};
+
+		const removed = await downloadService.sweepStaleDuplicateRows();
+
+		expect(removed).toBe(1);
+		expect(downloads['old-dupe']).toBeUndefined();
+		expect(downloads['new-dupe']).toBeDefined();
 	});
 });

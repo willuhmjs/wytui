@@ -207,6 +207,17 @@ export async function ensureDefaults(): Promise<void> {
 		console.log(`[Init] Reset ${orphaned.count} interrupted download(s) to PENDING`);
 	}
 
+	// Rows for videos that already completed under the same profile (and
+	// FAILED rows stacked by the failure-cooldown re-queue cycle) are stale
+	// duplicates — remove them before resuming so the fail queue reflects
+	// reality and no PENDING row re-downloads a library file.
+	try {
+		const swept = await downloadService.sweepStaleDuplicateRows();
+		if (swept > 0) console.log(`[Init] Removed ${swept} stale duplicate download row(s)`);
+	} catch (error) {
+		console.error('[Init] Stale duplicate download sweep failed:', error);
+	}
+
 	// Resume all PENDING downloads
 	const pending = await prisma.download.findMany({
 		where: { status: 'PENDING' },

@@ -82,6 +82,13 @@
 			// prune) — the desired end state is achieved, drop it silently.
 			if (res.ok || res.status === 404) {
 				removeRow(download.id);
+				// The video was already downloaded under the same profile: the
+				// server discarded the row instead of re-downloading. Say so
+				// instead of looking like a silent no-op.
+				const data = await res.json().catch(() => null);
+				if (res.ok && data?.duplicateOf) {
+					addToast('success', `"${download.title || download.url}" is already downloaded`);
+				}
 			} else {
 				addToast('error', `Failed to retry "${download.title || download.url}"`);
 			}
@@ -119,11 +126,14 @@
 		// failedDownloads as it's re-queued.
 		retryingAll = true;
 		let failures = 0;
+		let alreadyDownloaded = 0;
 		for (const download of [...failedDownloads]) {
 			try {
 				const res = await csrfFetch(`/api/downloads/${download.id}/retry`, { method: 'POST' });
 				if (res.ok || res.status === 404) {
 					removeRow(download.id);
+					const data = await res.json().catch(() => null);
+					if (res.ok && data?.duplicateOf) alreadyDownloaded += 1;
 				} else {
 					failures += 1;
 				}
@@ -134,6 +144,12 @@
 		}
 		retryingAll = false;
 
+		if (alreadyDownloaded > 0) {
+			addToast(
+				'success',
+				`${alreadyDownloaded} download${alreadyDownloaded !== 1 ? 's' : ''} already in the library`,
+			);
+		}
 		if (failures > 0) {
 			addToast('error', `Failed to retry ${failures} download${failures !== 1 ? 's' : ''}`);
 		}

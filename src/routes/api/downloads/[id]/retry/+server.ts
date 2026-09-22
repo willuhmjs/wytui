@@ -13,7 +13,8 @@ export const POST = apiRoute(
 		params: { id: { type: 'string', description: 'Download ID' } },
 		responses: {
 			200: {
-				description: 'Reset download object, re-queued for processing',
+				description:
+					'Reset download object, re-queued for processing. When the video is already downloaded under the same profile, the retried row is removed instead and duplicateOf names the completed row that made it redundant.',
 				schema: {
 					type: 'object',
 					properties: {
@@ -38,6 +39,11 @@ export const POST = apiRoute(
 						storagePool: { type: 'string', enum: ['cache', 'library'] },
 						createdAt: { type: 'string', format: 'date-time' },
 						completedAt: { type: 'string', format: 'date-time', nullable: true },
+						duplicateOf: {
+							type: 'string',
+							nullable: true,
+							description: 'Present when the row was discarded as an already-downloaded duplicate',
+						},
 					},
 				},
 			},
