@@ -66,4 +66,6 @@ ENV NODE_ENV=production PORT=3000 GIT_SHA=$GIT_SHA
 # reparented to PID 1 after the stall watchdog kills the process group; plain
 # sh/node never wait() them, so zombies accumulate for the pod's lifetime).
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy && node build"]
+# Migrations are owned by the dedicated migrate containers (compose `migrate`
+# service / chart `migrate` init container); the app must not run them too.
+CMD ["node", "build"]
