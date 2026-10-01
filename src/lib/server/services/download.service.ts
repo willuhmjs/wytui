@@ -346,6 +346,15 @@ class DownloadService {
 				await this.handleDownloadError(payload.downloadId, err.message);
 			}
 		});
+
+		// Bulk removal for a deleted subscription. It runs here rather than in the
+		// request so a channel's worth of files can't outrun the HTTP timeout, and
+		// so a pod restart resumes it from the job row instead of losing half a purge.
+		queueService.registerHandler('purge', async (job) => {
+			const payload = job.payload as any;
+			if (!Array.isArray(payload?.items)) throw new Error('Missing items in purge payload');
+			await this.purgeDownloadItems(payload.items, payload.userId ?? null);
+		});
 	}
 
 	private async processDownload(downloadId: string): Promise<void> {
@@ -1515,6 +1524,99 @@ class DownloadService {
 		}
 
 		return deleted;
+	}
+
+	/**
+	 * Snapshot a subscription's deletable downloads and hand the removal to the
+	 * queue. The route only pays for this query, so deleting a whole channel
+	 * returns immediately while the purge streams progress over SSE.
+	 *
+	 * The snapshot has to happen while the Subscription row still exists: the
+	 * relation is `onDelete: SetNull`, so the rows stop being addressable by
+	 * subscriptionId the moment it is gone. Pinned (`protected`) rows are excluded
+	 * here — pinning means "never delete this without asking me", and a bulk purge
+	 * cannot ask per item; the single-download route stays the way to remove one.
+	 */
+	async queueSubscriptionPurge(
+		subscriptionId: string,
+		pools: string[],
+		userId: string | null,
+	): Promise<{ queued: number; cache: number; library: number; skippedProtected: number }> {
+		const summary = { queued: 0, cache: 0, library: 0, skippedProtected: 0 };
+		if (pools.length === 0) {
+			return summary;
+		}
+
+		const rows = await prisma.download.findMany({
+			where: { subscriptionId, storagePool: { in: pools } },
+			select: { id: true, storagePool: true, protected: true },
+		});
+
+		const items: Array<{ id: string; pool: string }> = [];
+		for (const row of rows) {
+			if (row.protected) {
+				summary.skippedProtected++;
+				continue;
+			}
+			items.push({ id: row.id, pool: row.storagePool });
+			if (row.storagePool === 'library') summary.library++;
+			else summary.cache++;
+		}
+		summary.queued = items.length;
+
+		if (items.length > 0) {
+			await queueService.enqueue('purge', { items, userId }, { priority: 5 });
+		}
+
+		return summary;
+	}
+
+	/**
+	 * Delete a captured list of downloads, broadcasting progress so the caller's
+	 * sticky toast can count up. A row that vanished between capture and execution
+	 * counts as a failure rather than being silently skipped.
+	 */
+	async purgeDownloadItems(
+		items: Array<{ id: string; pool?: string | null }>,
+		userId: string | null = null,
+	): Promise<{ deleted: number; failed: number; libraryDeleted: number }> {
+		const total = items.length;
+		let done = 0;
+		let deleted = 0;
+		let failed = 0;
+		let libraryDeleted = 0;
+
+		for (const item of items) {
+			try {
+				await this.deleteDownload(item.id);
+				deleted++;
+				if (item.pool === 'library') libraryDeleted++;
+			} catch (e) {
+				failed++;
+				console.error(`[DownloadService] Purge failed for download ${item.id}:`, e);
+			}
+			done++;
+			this.emitPurge('subscription:purge:progress', { done, total, id: item.id }, userId);
+		}
+
+		if (libraryDeleted > 0) {
+			// Jellyfin keeps listing the removed items until it rescans. Best-effort,
+			// never fatal — same contract as the auto-delete pass.
+			await libraryService.triggerLibraryScan().catch(() => {});
+		}
+
+		this.emitPurge('subscription:purge:complete', { total, deleted, failed }, userId);
+
+		return { deleted, failed, libraryDeleted };
+	}
+
+	/** Purge progress goes to whoever asked for it, or everyone if we don't know. */
+	private emitPurge(event: string, data: any, userId: string | null): void {
+		if (userId) {
+			sseEmitter.broadcastToUser(event, data, userId);
+		} else {
+			sseEmitter.broadcast(event, data);
+		}
 	}
 
 	/**

@@ -2,7 +2,13 @@
 	import { onMount } from 'svelte';
 	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
-	import { addToast, removeToast } from '$lib/stores/toast.svelte';
+	import {
+		addToast,
+		removeToast,
+		addStickyToast,
+		updateToast,
+		resolveToast,
+	} from '$lib/stores/toast.svelte';
 	import { csrfFetch, safeFetchJson, isFetchError, type FetchError } from '$lib/utils/fetch';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -16,12 +22,19 @@
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
 	import ImportSubscriptionsModal from '$lib/components/youtube/ImportSubscriptionsModal.svelte';
+	import DeleteSubscriptionModal from '$lib/components/youtube/DeleteSubscriptionModal.svelte';
 
 	// Shared state
 	let profiles = $state<any[]>([]);
 	let libraryConfigured = $state(false);
 	let youtubeLinked = $state(false);
 	let showImportModal = $state(false);
+	let showDeleteModal = $state(false);
+	let deleteTarget = $state<any>(null);
+	let deleteInProgress = $state(false);
+	// The purge runs on the queue, so this is the sticky toast its SSE progress
+	// events drive. Null when no purge was started by this page instance.
+	let purgeToastId: string | null = null;
 
 	// Subscriptions state
 	const SUBS_PAGE_SIZE = 50;
@@ -302,10 +315,45 @@
 			},
 		);
 
+		const unsubPurgeProgress = onSSEEvent('subscription:purge:progress', ({ done, total }) => {
+			if (!purgeToastId) return;
+			updateToast(purgeToastId, {
+				message: `Deleting videos… ${done} of ${total}`,
+				progress: total > 0 ? done / total : 0,
+			});
+		});
+
+		const unsubPurgeComplete = onSSEEvent(
+			'subscription:purge:complete',
+			({ total, deleted, failed }) => {
+				if (!purgeToastId) return;
+				const toastId = purgeToastId;
+				purgeToastId = null;
+				resolveToast(
+					toastId,
+					failed > 0 ? 'error' : 'success',
+					failed > 0
+						? `Deleted ${deleted} of ${total} video(s) — ${failed} failed`
+						: `Deleted ${deleted} video${deleted === 1 ? '' : 's'}`,
+					{ duration: 6000 },
+				);
+			},
+		);
+
 		return () => {
 			unsubChecked();
 			unsubCheckError();
 			unsubBackfill();
+			unsubPurgeProgress();
+			unsubPurgeComplete();
+			// The purge keeps running on the queue, but nothing here reports it any
+			// more — make the toast self-dismissing rather than sticky forever.
+			if (purgeToastId) {
+				resolveToast(purgeToastId, 'info', 'Deleting videos in the background…', {
+					duration: 5000,
+				});
+				purgeToastId = null;
+			}
 		};
 	});
 
@@ -448,19 +496,60 @@
 		}
 	}
 
-	async function deleteSubscription(id: string) {
-		const confirmed = await showConfirm(
-			'Delete Subscription',
-			'Are you sure you want to delete this subscription?',
-			'Delete',
-		);
-		if (!confirmed) return;
+	async function deleteSubscription(sub: any) {
+		deleteTarget = sub;
+		showDeleteModal = true;
+	}
+
+	async function confirmDeleteSubscription({
+		deleteCache,
+		deleteLibrary,
+	}: {
+		deleteCache: boolean;
+		deleteLibrary: boolean;
+	}) {
+		const target = deleteTarget;
+		if (!target || deleteInProgress) return;
+		deleteInProgress = true;
 
 		try {
-			await csrfFetch(`/api/subscriptions/${id}`, { method: 'DELETE' });
+			const params = new URLSearchParams();
+			if (deleteCache) params.set('deleteCache', '1');
+			if (deleteLibrary) params.set('deleteLibrary', '1');
+			const qs = params.toString();
+
+			const res = await csrfFetch(`/api/subscriptions/${target.id}${qs ? `?${qs}` : ''}`, {
+				method: 'DELETE',
+			});
+			// csrfFetch is plain fetch: it resolves on 4xx/5xx, and a failed
+			// delete must not be reported as a success.
+			if (!res.ok) {
+				addToast('error', `Failed to delete "${target.name}"`);
+				return;
+			}
+
+			const data = await res.json().catch(() => ({}));
+			showDeleteModal = false;
 			await loadSubscriptions();
+
+			const queued = data?.queued ?? 0;
+			const pinned = data?.skippedProtected ?? 0;
+			const pinnedNote = pinned > 0 ? ` (kept ${pinned} pinned)` : '';
+			if (queued > 0) {
+				// The purge runs on the queue; subscription:purge:* resolves this toast.
+				purgeToastId = addStickyToast(
+					'info',
+					`Deleting ${queued} video(s) from "${target.name}"…${pinnedNote}`,
+					0,
+				);
+			} else {
+				addToast('success', `Deleted "${target.name}"${pinnedNote}`);
+			}
 		} catch (e) {
 			console.error('Failed to delete subscription:', e);
+			addToast('error', 'Failed to delete subscription');
+		} finally {
+			deleteInProgress = false;
 		}
 	}
 
@@ -1049,7 +1138,7 @@
 										</button>
 										<button
 											class="btn btn-sm btn-danger"
-											onclick={() => deleteSubscription(sub.id)}
+											onclick={() => deleteSubscription(sub)}
 											aria-label="Delete"
 											title="Delete"
 										>
@@ -1122,6 +1211,12 @@
 </div>
 
 <ImportSubscriptionsModal bind:open={showImportModal} onImported={() => loadSubscriptions()} />
+<DeleteSubscriptionModal
+	bind:open={showDeleteModal}
+	name={deleteTarget?.name}
+	deleting={deleteInProgress}
+	onConfirm={confirmDeleteSubscription}
+/>
 
 <style>
 	.page {

@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { subscriptionService } from '$lib/server/services/subscription.service';
+import { downloadService } from '$lib/server/services/download.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { normalizeMaxDuration } from '$lib/server/utils/max-duration';
 import { eventLogService, EventTypes } from '$lib/server/services/event-log.service';
@@ -247,9 +248,21 @@ export const DELETE = apiRoute(
 	'DELETE',
 	{
 		summary: 'Delete a subscription',
+		description:
+			'Always unschedules and deletes the subscription. Query flags additionally remove its downloads: `deleteCache` for files still in the download cache, `deleteLibrary` for promoted library media. Downloads pinned as protected are never removed. Removal runs on the job queue and reports `subscription:purge:progress` / `subscription:purge:complete` over SSE.',
 		tags: ['Subscriptions'],
 		auth: true,
 		params: { id: { type: 'string', description: 'Subscription ID' } },
+		query: {
+			deleteCache: {
+				type: 'boolean',
+				description: 'Also delete this subscription’s cached downloads (default false)',
+			},
+			deleteLibrary: {
+				type: 'boolean',
+				description: 'Also delete this subscription’s library downloads (default false)',
+			},
+		},
 		responses: {
 			200: {
 				description: 'Subscription deleted',
@@ -257,13 +270,20 @@ export const DELETE = apiRoute(
 					type: 'object',
 					properties: {
 						success: { type: 'boolean' },
+						queued: { type: 'integer', description: 'Downloads handed to the purge job' },
+						cache: { type: 'integer', description: 'Cached downloads queued for removal' },
+						library: { type: 'integer', description: 'Library downloads queued for removal' },
+						skippedProtected: {
+							type: 'integer',
+							description: 'Pinned (protected) downloads deliberately kept',
+						},
 					},
 				},
 			},
 			404: { description: 'Subscription not found' },
 		},
 	},
-	async ({ params, locals }) => {
+	async ({ params, locals, url }) => {
 		try {
 			if (!locals.session?.user?.id) {
 				throw error(401, 'Authentication required');
@@ -281,17 +301,48 @@ export const DELETE = apiRoute(
 				throw error(403, 'Access denied');
 			}
 
+			const flag = (name: string) => {
+				const v = url.searchParams.get(name);
+				return v === '1' || v === 'true';
+			};
+			const deleteCache = flag('deleteCache');
+			const deleteLibrary = flag('deleteLibrary');
+
 			subscriptionService.unscheduleSubscription(params.id);
+
+			// Before the Subscription row goes: the Download relation is
+			// `onDelete: SetNull`, so the rows stop being findable by subscriptionId
+			// the instant it is deleted.
+			const pools = [...(deleteCache ? ['cache'] : []), ...(deleteLibrary ? ['library'] : [])];
+			// Captured here (while subscriptionId still resolves) and removed on the
+			// queue, so a channel's worth of files can't outrun the request timeout.
+			const purge = await downloadService.queueSubscriptionPurge(
+				params.id,
+				pools,
+				locals.session.user.id,
+			);
 
 			await prisma.subscription.delete({
 				where: { id: params.id },
 			});
 
+			const detail =
+				purge.queued > 0
+					? ` (${purge.cache} cache, ${purge.library} library download(s) queued for removal` +
+						(purge.skippedProtected > 0 ? `, ${purge.skippedProtected} pinned kept` : '') +
+						')'
+					: '';
 			eventLogService
-				.record(EventTypes.SUBSCRIPTION_DELETED, `Deleted subscription "${existing.name}"`)
+				.record(EventTypes.SUBSCRIPTION_DELETED, `Deleted subscription "${existing.name}"${detail}`)
 				.catch(() => {});
 
-			return json({ success: true });
+			return json({
+				success: true,
+				queued: purge.queued,
+				cache: purge.cache,
+				library: purge.library,
+				skippedProtected: purge.skippedProtected,
+			});
 		} catch (e: any) {
 			console.error('Failed to delete subscription:', e);
 			if (e.status) throw e;

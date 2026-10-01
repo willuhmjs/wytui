@@ -155,4 +155,42 @@ describe('SSE store', () => {
 		expect(FakeEventSource.instances.length).toBe(1);
 		expect(sse.getSSEState().connected).toBe(true);
 	});
+
+	it('forwards every subscription event to its onSSEEvent subscribers', async () => {
+		const sse = await freshStore();
+		sse.connectSSE();
+		const es = FakeEventSource.instances[0];
+		es.emit('connected');
+
+		// The EventSource only forwards types that got an explicit listen() call in
+		// connectSSE(); anything else is parsed and dropped with no error, so the
+		// subscriber's UI just silently never updates. This list is the guard.
+		const seen: Record<string, any> = {};
+		const types = [
+			'subscription:checked',
+			'subscription:check:error',
+			'subscription:backfill',
+			'subscription:purge:progress',
+			'subscription:purge:complete',
+		];
+		for (const type of types) {
+			sse.onSSEEvent(type, (data: any) => {
+				seen[type] = data;
+			});
+		}
+
+		es.emit('subscription:checked', { id: 's1', name: 'Chan', newVideos: 2 });
+		es.emit('subscription:check:error', { id: 's1', rateLimited: true, message: 'slow down' });
+		es.emit('subscription:backfill', { id: 's1', name: 'Chan', totalVideos: 40, newVideos: 3 });
+		es.emit('subscription:purge:progress', { done: 1, total: 2, id: 'd1' });
+		es.emit('subscription:purge:complete', { total: 2, deleted: 2, failed: 0 });
+
+		expect(seen).toEqual({
+			'subscription:checked': { id: 's1', name: 'Chan', newVideos: 2 },
+			'subscription:check:error': { id: 's1', rateLimited: true, message: 'slow down' },
+			'subscription:backfill': { id: 's1', name: 'Chan', totalVideos: 40, newVideos: 3 },
+			'subscription:purge:progress': { done: 1, total: 2, id: 'd1' },
+			'subscription:purge:complete': { total: 2, deleted: 2, failed: 0 },
+		});
+	});
 });

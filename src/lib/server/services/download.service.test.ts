@@ -28,6 +28,16 @@ vi.mock('../db', () => {
 		if (where.profileId !== undefined && d.profileId !== where.profileId) return false;
 		if (where.videoId !== undefined && d.videoId !== where.videoId) return false;
 		if (where.url !== undefined && d.url !== where.url) return false;
+		if (where.subscriptionId !== undefined && d.subscriptionId !== where.subscriptionId) {
+			return false;
+		}
+		if (where.storagePool !== undefined) {
+			if (where.storagePool?.in) {
+				if (!where.storagePool.in.includes(d.storagePool)) return false;
+			} else if (d.storagePool !== where.storagePool) {
+				return false;
+			}
+		}
 		if (where.filepath?.not === null && d.filepath == null) return false;
 		return true;
 	};
@@ -134,6 +144,7 @@ import { queueService } from './queue.service';
 import { sseEmitter } from '../sse/emitter';
 import { prisma } from '../db';
 import { ytdlpService } from './ytdlp.service';
+import { libraryService } from './library.service';
 import { runWithRequestContext, setActingUser } from '../request-context';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
 
@@ -680,5 +691,164 @@ describe('sweepStaleDuplicateRows (boot sweep)', () => {
 		expect(removed).toBe(1);
 		expect(downloads['old-dupe']).toBeUndefined();
 		expect(downloads['new-dupe']).toBeDefined();
+	});
+});
+
+describe('subscription purge (queued, reports over SSE)', () => {
+	function seedOwned(id: string, storagePool: string, extra: Record<string, any> = {}) {
+		downloads[id] = {
+			id,
+			url: `https://www.youtube.com/watch?v=${id}`,
+			videoId: id,
+			title: `Video ${id}`,
+			status: DownloadStatus.COMPLETED,
+			storagePool,
+			subscriptionId: 'sub-1',
+			filepath: null,
+			userId: null,
+			...extra,
+		};
+	}
+
+	describe('capture (queueSubscriptionPurge)', () => {
+		it('snapshots the selected pools and hands them to the queue without deleting yet', async () => {
+			seedOwned('c1', 'cache');
+			seedOwned('c2', 'cache');
+			seedOwned('l1', 'library');
+			seedOwned('other-sub', 'cache', { subscriptionId: 'sub-2' });
+
+			const summary = await downloadService.queueSubscriptionPurge('sub-1', ['cache'], 'user-9');
+
+			expect(summary).toEqual({ queued: 2, cache: 2, library: 0, skippedProtected: 0 });
+			// The request only captures the list — the queue worker does the deleting,
+			// which is what keeps a large library off the HTTP timeout.
+			expect(downloads['c1']).toBeDefined();
+			expect(downloads['c2']).toBeDefined();
+
+			expect(enqueueCalls).toHaveLength(1);
+			expect(enqueueCalls[0].type).toBe('purge');
+			expect(enqueueCalls[0].payload.userId).toBe('user-9');
+			expect(enqueueCalls[0].payload.items.map((i: any) => i.id).sort()).toEqual(['c1', 'c2']);
+			// The library twin and another subscription's row are both out of scope.
+			expect(enqueueCalls[0].payload.items.some((i: any) => i.id === 'l1')).toBe(false);
+			expect(enqueueCalls[0].payload.items.some((i: any) => i.id === 'other-sub')).toBe(false);
+		});
+
+		it('excludes pinned rows in either pool and reports how many were kept', async () => {
+			seedOwned('c1', 'cache');
+			seedOwned('pinned-cache', 'cache', { protected: true });
+			seedOwned('pinned-library', 'library', { protected: true });
+
+			const summary = await downloadService.queueSubscriptionPurge(
+				'sub-1',
+				['cache', 'library'],
+				'user-9',
+			);
+
+			expect(summary).toEqual({ queued: 1, cache: 1, library: 0, skippedProtected: 2 });
+			expect(enqueueCalls[0].payload.items).toEqual([{ id: 'c1', pool: 'cache' }]);
+		});
+
+		it('queues nothing when neither checkbox is selected', async () => {
+			seedOwned('c1', 'cache');
+			seedOwned('l1', 'library');
+
+			const summary = await downloadService.queueSubscriptionPurge('sub-1', [], 'user-9');
+
+			expect(summary).toEqual({ queued: 0, cache: 0, library: 0, skippedProtected: 0 });
+			expect(enqueueCalls).toHaveLength(0);
+			expect(downloads['c1']).toBeDefined();
+			expect(downloads['l1']).toBeDefined();
+		});
+	});
+
+	describe('execution (purgeDownloadItems)', () => {
+		it('deletes the captured rows and streams progress then completion to the requester', async () => {
+			seedOwned('c1', 'cache');
+			seedOwned('l1', 'library');
+			archiveDb['c1'] = { videoId: 'c1', url: 'https://www.youtube.com/watch?v=c1', title: 'c1' };
+
+			const result = await downloadService.purgeDownloadItems(
+				[
+					{ id: 'c1', pool: 'cache' },
+					{ id: 'l1', pool: 'library' },
+				],
+				'user-9',
+			);
+
+			expect(result).toEqual({ deleted: 2, failed: 0, libraryDeleted: 1 });
+			expect(downloads['c1']).toBeUndefined();
+			expect(downloads['l1']).toBeUndefined();
+			// Archive entry goes too, so re-adding the subscription re-downloads.
+			expect(archiveDb['c1']).toBeUndefined();
+
+			expect(sseEmitter.broadcastToUser).toHaveBeenCalledWith(
+				'subscription:purge:progress',
+				{ done: 1, total: 2, id: 'c1' },
+				'user-9',
+			);
+			expect(sseEmitter.broadcastToUser).toHaveBeenCalledWith(
+				'subscription:purge:progress',
+				{ done: 2, total: 2, id: 'l1' },
+				'user-9',
+			);
+			expect(sseEmitter.broadcastToUser).toHaveBeenCalledWith(
+				'subscription:purge:complete',
+				{ total: 2, deleted: 2, failed: 0 },
+				'user-9',
+			);
+		});
+
+		it('broadcasts to everyone when no requester is known', async () => {
+			seedOwned('c1', 'cache');
+
+			await downloadService.purgeDownloadItems([{ id: 'c1', pool: 'cache' }]);
+
+			expect(sseEmitter.broadcast).toHaveBeenCalledWith('subscription:purge:complete', {
+				total: 1,
+				deleted: 1,
+				failed: 0,
+			});
+		});
+
+		it('keeps going past a failing delete and reports it in the completion', async () => {
+			seedOwned('c1', 'cache');
+			seedOwned('c2', 'cache');
+			const deleteSpy = vi
+				.spyOn(downloadService, 'deleteDownload')
+				.mockImplementation(async (id: string) => {
+					if (id === 'c1') throw new Error('EBUSY');
+					delete downloads[id];
+				});
+
+			const result = await downloadService.purgeDownloadItems(
+				[
+					{ id: 'c1', pool: 'cache' },
+					{ id: 'c2', pool: 'cache' },
+				],
+				null,
+			);
+
+			expect(result).toEqual({ deleted: 1, failed: 1, libraryDeleted: 0 });
+			expect(deleteSpy).toHaveBeenCalledTimes(2);
+			expect(sseEmitter.broadcast).toHaveBeenCalledWith('subscription:purge:complete', {
+				total: 2,
+				deleted: 1,
+				failed: 1,
+			});
+			deleteSpy.mockRestore();
+		});
+
+		it('asks Jellyfin to rescan only when library media was removed', async () => {
+			const scanSpy = vi.spyOn(libraryService, 'triggerLibraryScan').mockResolvedValue(undefined);
+
+			seedOwned('c1', 'cache');
+			await downloadService.purgeDownloadItems([{ id: 'c1', pool: 'cache' }]);
+			expect(scanSpy).not.toHaveBeenCalled();
+
+			seedOwned('l1', 'library');
+			await downloadService.purgeDownloadItems([{ id: 'l1', pool: 'library' }]);
+			expect(scanSpy).toHaveBeenCalledTimes(1);
+		});
 	});
 });
