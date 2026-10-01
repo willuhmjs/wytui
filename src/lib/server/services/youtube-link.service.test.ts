@@ -130,8 +130,6 @@ describe('account settings overrides', () => {
 			notifyOnComplete: true,
 			notifyOnFail: false,
 		});
-		// Both URLs carry credentials, so what is stored and what is served differ:
-		// the row keeps the value, the status payload reports only that one is set.
 		expect(store['u1'].proxyUrl).toBe('socks5://h:1080');
 		expect(store['u1'].appriseUrl).toBe('http://apprise:8000');
 		const status: any = await youtubeLinkService.getLinkStatus('u1');
@@ -160,7 +158,6 @@ describe('account settings overrides', () => {
 		const shown: any = await youtubeLinkService.getLinkStatus('u1');
 		expect(shown.ytdlp.proxyUrl).toBe(SECRET_MASK);
 
-		// The account form posts the masked fields straight back on save.
 		await youtubeLinkService.updateAccountSettings('u1', {
 			proxyUrl: shown.ytdlp.proxyUrl,
 			appriseUrl: shown.notifications.appriseUrl,
@@ -169,14 +166,11 @@ describe('account settings overrides', () => {
 
 		expect(store['u1'].proxyUrl).toBe('socks5://h:1080');
 		expect(store['u1'].appriseUrl).toBe('http://apprise:8000');
-		// Only the two masked fields are skipped — the rest of the PATCH applied.
 		expect(store['u1'].notifyOnComplete).toBe(true);
 	});
 
 	it('treats explicit undefined fields as not provided (API route passes every key)', async () => {
 		await youtubeLinkService.storeCookies('u1', cookies);
-		// /api/youtube/link destructures all account fields and forwards them,
-		// so unsubmitted ones arrive as { key: undefined } — not absent keys.
 		await youtubeLinkService.updateAccountSettings('u1', {
 			proxyUrl: undefined,
 			extraFlags: undefined,
@@ -206,8 +200,6 @@ describe('account settings overrides', () => {
 		expect(healthy.usable).toBe(true);
 		expect(healthy.cookieUpdatedAt).toBeInstanceOf(Date);
 
-		// A blob that predates a key rotation (or was written corrupted) still
-		// counts as linked — the UI has to say "re-link", not "link".
 		store['u1'].cookiesEnc = 'not-a-ciphertext';
 		expect(await youtubeLinkService.getSessionHealth('u1')).toMatchObject({
 			linked: true,
@@ -225,25 +217,16 @@ describe('session is bound to its owner (AAD)', () => {
 		await youtubeLinkService.storeCookies('u1', cookies);
 		expect(await youtubeLinkService.getCookiesTxt('u1')).toContain('SAPISID');
 
-		// The attack the binding closes: the blob itself is copied onto another
-		// account's row (a bad migration, a restored backup, an injection that can
-		// write a column but not derive the key). It is still valid ciphertext, and
-		// it still has to be worthless there.
 		store['u2'] = { ...store['u1'], userId: 'u2' };
 		expect(await youtubeLinkService.getCookiesTxt('u2')).toBeNull();
 		expect(await youtubeLinkService.getSessionHealth('u2')).toMatchObject({
 			linked: true,
 			usable: false,
 		});
-		// The real owner is untouched.
 		expect(await youtubeLinkService.getCookiesTxt('u1')).toContain('SAPISID');
 	});
 
 	it('treats a pre-binding blob as a dead session, and re-linking repairs it', async () => {
-		// Every stored session was written before the binding existed. The upgrade
-		// is intentional and one-time: the old blob must fail, the account must read
-		// as needing a re-link rather than as never linked, and the next push from
-		// the extension must produce a working session again.
 		await youtubeLinkService.storeCookies('u1', cookies);
 		store['u1'].cookiesEnc = encryptSecret(
 			'# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSAPISID\tabc',
@@ -254,13 +237,10 @@ describe('session is bound to its owner (AAD)', () => {
 			linked: true,
 			usable: false,
 		});
-		// This is what the settings UI renders as "re-link via the extension".
 		const status = await computeCookieStatus('u1');
 		expect(status.needsRelink).toBe(true);
 		expect(status.linked).toBe(true);
 
-		// Re-linking: the stale blob reads as a change (it cannot be compared), so
-		// the cookie-gated downloads get re-armed, and the session works after.
 		const relinked = await youtubeLinkService.storeCookies('u1', cookies);
 		expect(relinked.changed).toBe(true);
 		expect(await youtubeLinkService.getCookiesTxt('u1')).toContain('SAPISID');
@@ -268,8 +248,7 @@ describe('session is bound to its owner (AAD)', () => {
 	});
 
 	it('still recognises an unchanged jar now that compare is bound too', async () => {
-		// sameStoredCookies has to decrypt with the same AAD as the writer, or every
-		// hourly refresh looks like new credentials and restarts the retry cycle.
+		// The compare must decrypt with the same AAD as the writer, or every refresh reads as new credentials.
 		await youtubeLinkService.storeCookies('u1', cookies);
 		expect((await youtubeLinkService.storeCookies('u1', cookies)).changed).toBe(false);
 		expect(

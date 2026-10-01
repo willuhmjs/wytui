@@ -318,10 +318,7 @@ class LibraryService {
 		userId?: string | null,
 	): Promise<void> {
 		if (!channelUrl) return;
-		// Channel art is a YouTube browse call, so run it as the download's owner:
-		// an anonymous request for a members-only channel returns nothing to browse.
-		// Both thumbnail calls below share one resolver scope, which keeps the temp
-		// cookie file alive across the pair.
+		// Both thumbnail calls below share one resolver scope so the temp cookie file stays alive across the pair.
 		await withYouTubeCookies(userId, async (ctx) => {
 			const defaults = { cookiePath: ctx.cookiePath, proxyUrl: ctx.proxyUrl };
 			const folderJpg = join(dirPath, 'folder.jpg');
@@ -340,7 +337,6 @@ class LibraryService {
 				}
 			}
 			if (!generatePoster) return;
-			// Channel-level 2:3 poster (folder.jpg stays the BoxSet primary image).
 			const posterJpg = join(dirPath, 'poster.jpg');
 			try {
 				await access(posterJpg);
@@ -372,10 +368,7 @@ class LibraryService {
 			if (!entry.isDirectory()) continue;
 			const channelDir = join(root, entry.name);
 			const result = await nfoService.syncChannel(channelDir);
-			// A library folder has no single owner, so this sweep has no user to
-			// authenticate as — the resolver falls back to the admin cookies and the
-			// global proxy. Per-download promotions (which do know the owner) are the
-			// path that uses a linked session.
+			// A library folder has no single owner, so this sweep resolves to the admin cookies and global proxy.
 			await this.ensureChannelArt(channelDir, result.channelUrl, settings.generateJellyfinPosters);
 			if (result.movies > 0) {
 				channels++;

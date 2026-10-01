@@ -58,22 +58,7 @@ export function validateCsrfToken(cookies: Cookies, request: Request): boolean {
 // permissions can spoof this Origin header, trust is scoped to the small set
 // of routes the wytui extension actually calls, rather than exempting
 // extension origins app-wide.
-//
-// Two separate lists, because the Origin header is used for two different
-// decisions and they no longer want the same set:
-//
-//   EXTENSION_CORS_PATHS — routes an extension Origin may *read* (it gets
-//     Access-Control-Allow-Origin). Needed because the extension's background
-//     worker is a cross-origin caller; a path missing here breaks the extension
-//     even when the request is authenticated by other means.
-//
-//   EXTENSION_CSRF_EXEMPT_PATHS — routes where an extension Origin may skip the
-//     CSRF token check. This is the one that grants power: it lets a request
-//     that carries only the victim's session cookie mutate state. It is
-//     therefore the smaller set, and it deliberately excludes the two calls the
-//     extension makes with a Bearer API key — a Bearer request is already exempt
-//     (an attacker cannot make a cross-site request that sets that header), so
-//     listing them here bought nothing but a cookie-only path to the same route.
+// The CORS grant and the CSRF-token exemption are separate grants — do not merge the two lists.
 const EXTENSION_CORS_PATHS: RegExp[] = [
 	/^\/api\/downloads\/quick$/,
 	/^\/api\/downloads\/(?!quick$|batch$|refresh$)[^/]+$/,
@@ -83,27 +68,6 @@ const EXTENSION_CORS_PATHS: RegExp[] = [
 	/^\/api\/auth\/me$/,
 ];
 
-/**
- * Paths where a `*-extension://` Origin skips the CSRF token check.
- *
- * Not exempted (state-changing, and the wytui extension reaches them with a
- * Bearer key, which `isCsrfExempt` already handles):
- *   POST   /api/youtube/link   — now requires the API key outright (see
- *                                routes/api/youtube/link/+server.ts): a
- *                                session-cookie-only POST let any installed
- *                                extension swap in its own YouTube jar.
- *   DELETE /api/downloads/{id} — keyless fallback dropped; the web UI sends
- *                                x-csrf-token and is unaffected.
- *   PATCH/DELETE /api/youtube/link — web-UI-only calls (the extension never
- *                                issues them) that still rely on the token.
- *
- * Still exempt: /api/downloads/quick (the extension POSTs a quick download
- * there in keyless mode, carrying only the session cookie) and /api/profiles,
- * /api/settings, /api/auth/me — which the extension only ever GETs, so their
- * entries are dead weight kept for symmetry rather than need. Retiring the
- * keyless mode entirely would let this list shrink to nothing, but that is a
- * separate change to the extension.
- */
 const EXTENSION_CSRF_EXEMPT_PATHS: RegExp[] = [
 	/^\/api\/downloads\/quick$/,
 	/^\/api\/profiles$/,
@@ -111,12 +75,10 @@ const EXTENSION_CSRF_EXEMPT_PATHS: RegExp[] = [
 	/^\/api\/auth\/me$/,
 ];
 
-/** Whether an extension Origin is allowed to call this path at all (CORS). */
 export function isExtensionAllowedPath(pathname: string): boolean {
 	return EXTENSION_CORS_PATHS.some((pattern) => pattern.test(pathname));
 }
 
-/** Whether an extension Origin skips the CSRF check for this path. */
 export function isExtensionCsrfExemptPath(pathname: string): boolean {
 	return EXTENSION_CSRF_EXEMPT_PATHS.some((pattern) => pattern.test(pathname));
 }

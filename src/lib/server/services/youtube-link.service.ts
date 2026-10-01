@@ -9,19 +9,12 @@ import { validateProxyUrlInput } from '../utils/proxy-url';
 import { SECRET_MASK } from './settings-validation';
 import { ytdlpService } from './ytdlp.service';
 
-/**
- * Compare an incoming session against the stored one. Browser cookie order is
- * not stable, so compare the set of cookie lines rather than the serialized
- * file byte-for-byte.
- */
+/** Cookie order is unstable, so compare the set of cookie lines rather than the serialized file. */
 function sameStoredCookies(userId: string, storedEnc: string, nextNetscape: string): boolean {
 	let stored: string;
 	try {
 		stored = decryptSecret(storedEnc, userId);
 	} catch {
-		// Corrupt blob, rotated key, or a payload bound to a different account:
-		// the stored value is unreadable, so the incoming write counts as a change
-		// by definition.
 		return false;
 	}
 	const normalize = (s: string) =>
@@ -48,13 +41,9 @@ class YouTubeLinkService {
 			where: { userId },
 			select: { cookiesEnc: true },
 		});
-		// Callers use `changed` to decide whether cookie-blocked downloads deserve
-		// a fresh attempt. The extension's hourly refresh pushes whatever the
-		// browser holds whether or not Google rotated anything, so an unchanged
-		// session must not read as new credentials and restart a dead retry cycle.
+		// An unchanged session must not read as new credentials: callers re-arm cookie-blocked downloads on `changed`.
 		const changed = !existing || !sameStoredCookies(userId, existing.cookiesEnc, netscape);
-		// Bound to the owner: a blob copied onto another row (SQL injection, a bad
-		// migration, a restored backup) stops being a usable session there.
+		// AAD-bound to the owner, so a blob copied onto another row will not decrypt there.
 		const cookiesEnc = encryptSecret(netscape, userId);
 		const now = new Date();
 		await prisma.youTubeLink.upsert({
@@ -106,11 +95,6 @@ class YouTubeLinkService {
 			},
 			jellyfinUserId: link.jellyfinUserId ?? null,
 			ytdlp: {
-				// Both are credentials-bearing URLs (a proxy URL carries its own
-				// user:pass, an Apprise URL its endpoint), so they are masked the way
-				// the global secrets are: whether one is set stays visible, the value
-				// does not. Echoing the mask back on save is a no-op — see
-				// updateAccountSettings.
 				proxyUrl: link.proxyUrl ? SECRET_MASK : null,
 				extraFlags: link.extraFlags ?? [],
 			},
@@ -181,9 +165,7 @@ class YouTubeLinkService {
 				throw new Error('jellyfinUserId must be a string or null');
 			}
 		}
-		// A value that is exactly the mask means the form echoed back what the
-		// masked status payload showed it — "unchanged", not "this is the new
-		// proxy". Same rule the settings PATCH applies to SECRET_SETTINGS_FIELDS.
+		// A value that is exactly the mask means the form echoed back what the masked status showed — "unchanged", not a new proxy.
 		if (updates.proxyUrl !== undefined && updates.proxyUrl !== SECRET_MASK) {
 			const check = validateProxyUrlInput(updates.proxyUrl);
 			if (!check.ok) throw new Error(`Proxy URL ${check.error}`);
@@ -221,13 +203,6 @@ class YouTubeLinkService {
 		await prisma.youTubeLink.update({ where: { userId }, data });
 	}
 
-	/**
-	 * Is there a linked account, does it still hold a session that can be handed to
-	 * yt-dlp, and when was that session last written? One read — the settings UI
-	 * shows all three at once, and "row exists but will not decrypt" has to be
-	 * distinguishable from "never linked" (a dead session needs re-linking, an
-	 * absent row needs linking).
-	 */
 	async getSessionHealth(userId: string): Promise<{
 		linked: boolean;
 		usable: boolean;

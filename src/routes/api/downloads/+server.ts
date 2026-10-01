@@ -77,8 +77,7 @@ export const POST = apiRoute(
 				throw error(400, 'Invalid URL format');
 			}
 
-			// Best-effort SSRF guard — see utils/ssrf-guard.ts for what it does and
-			// cannot do (yt-dlp resolves the name again itself).
+			// Best-effort SSRF guard — yt-dlp re-resolves the URL itself; see utils/ssrf-guard.ts.
 			const hostCheck = await checkUrlHost(url);
 			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
 

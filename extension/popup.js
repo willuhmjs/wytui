@@ -463,7 +463,6 @@ async function refreshYouTubeLinkState() {
 		nameEl.textContent = res.channelName ? `Linked as ${res.channelName}` : 'Linked';
 		wrap.style.display = 'flex';
 		linkBtn.textContent = 'Re-link YouTube';
-		// Auto-refresh needs a linked account to be worth running at all.
 		autoCookiesEl.disabled = false;
 		autoCookiesWrap.classList.remove('disabled');
 	} else {
@@ -474,10 +473,7 @@ async function refreshYouTubeLinkState() {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Opt-in cookie refresh (checkbox, off by default). The alarm lives in the
-// background worker; this only reads and writes the flag and reports results.
-// ---------------------------------------------------------------------------
+// Opt-in cookie refresh (checkbox, off by default); the alarm lives in the background worker.
 
 const autoCookiesEl = document.getElementById('auto-update-cookies');
 const autoCookiesWrap = document.getElementById('yt-auto-wrap');
@@ -511,19 +507,13 @@ function renderAutoCookiesStatus(data) {
 	}
 }
 
-// The hourly refresh runs in the background worker, which has no session of its
-// own. With a stored API key it authenticates with the bearer token; with none
-// it falls back to credentials: 'include' (see authCredentials in background.js)
-// and rides the browser's wytui session cookie. That cookie expires and nothing
-// in the background re-authenticates it, so the refreshes stop silently. Warn
-// before the user starts trusting the checkbox.
+// With no API key the background worker rides the browser session cookie, which expires silently.
 function renderApiKeyWarning(enabled, apiKey) {
 	if (!enabled || apiKey?.trim()) {
 		autoCookiesWarning.style.display = 'none';
 		return;
 	}
-	// display is set explicitly on both paths: the hide path leaves an inline
-	// "none" behind, and an inline style outranks the class rule when re-shown.
+	// Set display on both paths: an inline "none" would outrank the class rule when re-shown.
 	autoCookiesWarning.style.display = 'block';
 	autoCookiesWarning.className = 'message warn';
 	autoCookiesWarning.textContent =

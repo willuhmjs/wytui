@@ -385,8 +385,12 @@ model Settings {
   enableArchive Boolean @default(true)
   archivePath String?   // Path to archive.txt for yt-dlp
 
-  // Cookie authentication for member/age-restricted content
+  // Cookie authentication for member/age-restricted content. Legacy: the upload
+  // target before cookiesTxtEnc existed; nothing reads it any more.
   cookiePath  String?
+  // Uploaded cookies.txt as encrypted text (crypto-box, format as YouTubeLink.cookiesEnc)
+  cookiesTxtEnc    String?   @db.Text
+  cookiesUpdatedAt DateTime?
 
   // Authentication
   authMode    String    @default("password") // "password" | "oidc" | "both"

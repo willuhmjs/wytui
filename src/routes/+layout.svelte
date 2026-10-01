@@ -44,9 +44,6 @@
 						if (!cookieStatus || (!cookieStatus.expired && !cookieStatus.needsRelink)) {
 							return;
 						}
-						// Both halves follow the effective state: a session that will not
-						// decrypt was never "marked expired" by a failed download, and a
-						// link-only deployment has no cookie file to re-upload.
 						const problem = cookieStatus.needsRelink
 							? 'The linked YouTube session could not be read.'
 							: 'YouTube cookies were marked expired — a download failed authentication.';

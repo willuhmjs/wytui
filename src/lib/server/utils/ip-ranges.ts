@@ -1,11 +1,4 @@
-/**
- * Shared address parsing for the two places that ask "which range is this IP
- * in?": the trusted-proxy decision in `rate-limit.ts` (may we believe this
- * peer's X-Forwarded-For?) and the SSRF guard in `ssrf-guard.ts` (may we fetch
- * this user-supplied URL?). They want different *subsets* of the same ranges,
- * so the parsing lives here once and each caller picks its own predicate —
- * duplicating the range table is how the two drift apart.
- */
+/** Shared address parsing for the trusted-proxy check (rate-limit.ts) and the SSRF guard — do not duplicate the range table. */
 
 export type IPv4Parts = readonly [number, number, number, number];
 
@@ -13,12 +6,7 @@ export interface ParsedAddress {
 	/** Normalized text: brackets and IPv6 zone id removed, lower-cased. */
 	text: string;
 	family: 'ipv4' | 'ipv6';
-	/**
-	 * The IPv4 address the entry means: itself for IPv4, and the embedded
-	 * address for `::ffff:a.b.c.d` (v4-mapped) / `::a.b.c.d` (v4-compatible).
-	 * Node reports an IPv4 peer on a dual-stack socket as `::ffff:a.b.c.d`, so
-	 * both consumers have to see through that wrapper.
-	 */
+	/** The IPv4 address meant, through the v4-mapped/v4-compatible wrappers — Node gives `::ffff:a.b.c.d` for an IPv4 peer on a dual-stack socket. */
 	v4: IPv4Parts | null;
 	/** 127.0.0.0/8, ::1 */
 	loopback: boolean;
@@ -71,7 +59,7 @@ function flagsForV4(
 	};
 }
 
-/** Strict dotted quad. Leading zeros are tolerated (they were before too). */
+/** Strict dotted quad. Leading zeros are tolerated. */
 function parseIpv4(text: string): IPv4Parts | null {
 	if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(text)) return null;
 	const parts = text.split('.').map(Number);
@@ -83,9 +71,7 @@ function parseIpv6(text: string): ParsedAddress | null {
 	if (!text.includes(':')) return null;
 	if (!/^[0-9a-f:.]+$/.test(text)) return null;
 
-	// A dotted-quad tail (::ffff:1.2.3.4, ::1.2.3.4) stands for two 16-bit
-	// groups. Fold it into the hex form so the group expansion below is uniform,
-	// and remember it: it is the address this entry really means.
+	// A dotted-quad tail (::ffff:1.2.3.4) stands for two 16-bit groups; fold it into the hex form and keep it as the address meant.
 	let head = text;
 	let embedded: IPv4Parts | null = null;
 	const lastColon = text.lastIndexOf(':');
@@ -167,10 +153,7 @@ function parseIpv6(text: string): ParsedAddress | null {
 	};
 }
 
-/**
- * Parse an IP literal. Returns null when `raw` is not an address at all (a
- * hostname, or something malformed) — callers must not treat null as "safe".
- */
+/** Parse an IP literal; null means "not an address", which callers must not read as "allowed". */
 export function parseAddress(raw: string | null | undefined): ParsedAddress | null {
 	const text = stripToAddress(raw ?? '');
 	if (!text) return null;
@@ -180,31 +163,14 @@ export function parseAddress(raw: string | null | undefined): ParsedAddress | nu
 	return { text, family: 'ipv4', v4, ...flagsForV4(v4) };
 }
 
-/**
- * Is `raw` an address we share a trusted network with — i.e. a peer whose
- * X-Forwarded-For we can believe? Loopback plus the private ranges (RFC1918,
- * CGNAT) and their IPv6 equivalents: this app is reached through in-cluster
- * Traefik, so the direct socket peer is on the trusted network while the client
- * out there is not.
- */
+/** A peer we share a trusted network with, so its X-Forwarded-For can be believed: loopback, the private ranges, CGNAT and their IPv6 equivalents. */
 export function isPrivateOrSpecialAddress(raw: string): boolean {
 	const addr = parseAddress(raw);
 	if (!addr) return false;
 	return addr.loopback || addr.privateRange || addr.cgnat || addr.linkLocal || addr.uniqueLocal;
 }
 
-/**
- * Decode the non-dotted-quad ways of writing an IPv4 address — plain decimal
- * (`2130706433`), hex (`0x7f000001`), octal (`0177.0.0.1`) and the short
- * folded forms (`127.1`, `0x7f.1`) — into a canonical dotted quad. This is
- * glibc's `inet_aton` folding, which is also what Node's URL parser and
- * `dns.lookup` apply, so a URL host the WHATWG parser already normalized simply
- * comes back out of here unchanged.
- *
- * Returns null for anything that is not a numeric host (including a hostname
- * that merely starts with digits, e.g. `127.0.0.1.evil.com` — that one is
- * caught by resolving it instead).
- */
+/** inet_aton folding: decimal/hex/octal and short folded IPv4 forms → dotted quad, as Node's URL parser and `dns.lookup` apply it. Null for a hostname (`127.0.0.1.evil.com` is caught by resolving, not here). */
 export function parseNumericHost(host: string): string | null {
 	const text = stripToAddress(host).replace(/\.$/, ''); // one trailing dot is a root label
 	if (!text || text.includes(':')) return null;
@@ -223,9 +189,7 @@ export function parseNumericHost(host: string): string | null {
 		values.push(value);
 	}
 
-	// Every part but the last must fit in one octet and sits at its own byte from
-	// the left; the last part absorbs the remaining octets (so `127.1` means
-	// 127.0.0.1 and `2130706433` the same).
+	// Every part but the last is one octet at its own byte; the last absorbs the rest (127.1 and 2130706433 both mean 127.0.0.1).
 	for (let i = 0; i < values.length - 1; i++) if (values[i] > 255) return null;
 	if (values[values.length - 1] > Math.pow(256, 5 - values.length) - 1) return null;
 

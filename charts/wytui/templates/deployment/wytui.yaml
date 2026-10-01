@@ -17,12 +17,9 @@ spec:
       labels:
         app: wytui
     spec:
-      # 1001 is the image's own `nodejs` user/group (Dockerfile: addgroup -g 1001
-      # -S nodejs && adduser -S -D -u 1001 -G nodejs nodejs), which every COPY in
-      # the image is chowned to. The value previously here was the base image's
-      # `node` user — a uid that owns no file in the image at all. runAsGroup is
-      # set explicitly so the process's gid is 1001 even if the image's
-      # /etc/passwd disagrees.
+      # 1001 is the image's own `nodejs` user/group (see the Dockerfile's adduser),
+      # which every COPY in the image is chowned to. runAsGroup is set explicitly
+      # so the process's gid is 1001 even if the image's /etc/passwd disagrees.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
@@ -84,13 +81,6 @@ spec:
           {{- if .Values.library.persistent.subPath }}
           subPath: {{ .Values.library.persistent.subPath }}
           {{- end }}
-        {{- if .Values.config.persistent.enabled }}
-        - name: config
-          mountPath: /app/data  # Cookie uploads (settings.cookiePath) land here
-          {{- if .Values.config.persistent.subPath }}
-          subPath: {{ .Values.config.persistent.subPath }}
-          {{- end }}
-        {{- end }}
       volumes:
       - name: downloads
         persistentVolumeClaim:
@@ -98,8 +88,3 @@ spec:
       - name: library
         persistentVolumeClaim:
           claimName: {{ .Values.library.persistent.existingClaim | default "wytui-library" }}
-      {{- if .Values.config.persistent.enabled }}
-      - name: config
-        persistentVolumeClaim:
-          claimName: {{ .Values.config.persistent.existingClaim | default "wytui-config" }}
-      {{- end }}

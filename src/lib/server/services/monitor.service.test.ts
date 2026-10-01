@@ -4,10 +4,7 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-// The cookie resolver and the process spawn both run for real here (builtin
-// mocks are a no-op under this vitest version, so the "binary" is a shell script
-// in a temp dir). Only the encrypted-session source and the collaborators the
-// monitor calls out to are stubbed.
+// The spawn runs for real against a shell script: vi.mock of node builtins is a no-op under this vitest version.
 const SESSION = '# Netscape HTTP Cookie File\nSID\tvalue\n';
 
 const store = {
@@ -61,11 +58,6 @@ vi.mock('../sse/emitter', () => ({
 import { monitorService } from './monitor.service';
 import { ytdlpService } from './ytdlp.service';
 
-/**
- * A stand-in yt-dlp that records its argv and whether the file named by
- * --cookies still existed at the moment it ran — the property that matters for
- * a temp cookie file handed to a long-lived process.
- */
 async function fakeYtdlp(dir: string): Promise<{ bin: string; record: string }> {
 	const bin = join(dir, 'fake-ytdlp.sh');
 	const record = join(dir, 'argv.txt');
@@ -99,8 +91,7 @@ describe('monitor-owned downloads', () => {
 	});
 
 	it('creates the auto-download row owned by the monitor', async () => {
-		// handleStreamLive parks a 1h timer to clear the live flag; fake timers keep
-		// it from outliving the test.
+		// handleStreamLive parks a 1h timer to clear the live flag; fake timers keep it from outliving the test.
 		vi.useFakeTimers();
 		await (monitorService as any).handleStreamLive({
 			id: 'm1',
@@ -112,8 +103,6 @@ describe('monitor-owned downloads', () => {
 			customFlags: ['--limit-rate', '1M'],
 		});
 
-		// Without an owner the row could never resolve which linked session to
-		// download with.
 		expect(store.createdDownloads[0]).toEqual([
 			'https://www.youtube.com/@c/live',
 			'p1',
@@ -181,12 +170,10 @@ describe('monitor yt-dlp probes', () => {
 		expect(cookieIdx).toBeGreaterThan(-1);
 		const cookiePath = args[cookieIdx + 1];
 		expect(cookiePath).toContain('wytui-yt-');
-		// The probe is long-lived: the resolver has to keep the file alive until it
-		// exits, not just until the spawn call returned.
+		// The probe is long-lived: the resolver has to keep the file alive until it exits, not just until the spawn call returned.
 		expect(text).toContain('cookies_readable=1');
 		expect(args[args.indexOf('--proxy') + 1]).toBe('socks5h://owner7:1080');
 
-		// And the session is unlinked once the probe is gone.
 		await vi.waitFor(() => expect(existsSync(cookiePath)).toBe(false));
 	});
 
@@ -209,7 +196,6 @@ describe('monitor yt-dlp probes', () => {
 		const args = argvFrom(text);
 		expect(args).toContain('--cookies');
 		expect(text).toContain('cookies_readable=1');
-		// No per-link proxy: the server-wide one is used, matching the session source.
 		expect(args[args.indexOf('--proxy') + 1]).toBe('socks5h://global:1080');
 	});
 });

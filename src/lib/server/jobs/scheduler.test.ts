@@ -84,8 +84,6 @@ vi.mock('../services/download.service', () => ({
 			skipped: 0,
 		})),
 	},
-	// Mirrors the real constant; the pruning pass uses it to tell a row the
-	// auto-heal ladder gave up on from one that never entered it.
 	HEAL_MAX_ATTEMPTS: 4,
 }));
 
@@ -94,9 +92,6 @@ import { prisma } from '../db';
 import { queueService } from '../services/queue.service';
 import { subscriptionService } from '../services/subscription.service';
 
-// The first test spies on runJob/scheduleNextRun to drive the system handler.
-// Without this restore those spies stay live for every later test, and a test
-// asserting "nothing was enqueued" passes for the wrong reason.
 beforeEach(() => {
 	vi.restoreAllMocks();
 });
@@ -197,22 +192,17 @@ describe('pruneJobHistory', () => {
 		const near = (d: Date, days: number) =>
 			Math.abs(Date.now() - d.getTime() - days * DAY) < 60 * 1000;
 
-		// Band 1: the heal ladder gave up (>= max attempts, no further slot) → 90 days.
 		const givenUp = calls.find((w: any) => w.healAttempts?.gte !== undefined);
 		expect(givenUp).toBeDefined();
 		expect(givenUp.status).toBe('FAILED');
 		expect(givenUp.nextHealAt).toBeNull();
 		expect(near(givenUp.createdAt.lt, 90)).toBe(true);
 
-		// Band 2: everything else at 30 days, explicitly excluding band 1. The
-		// `lt` arm is what keeps never-armed rows (healAttempts 0, nextHealAt null
-		// — permanent and cookie-class failures) on the 30-day rule.
 		const rest = calls.find((w: any) => w.OR !== undefined);
 		expect(rest).toBeDefined();
 		expect(rest.OR).toEqual([{ healAttempts: { lt: 4 } }, { nextHealAt: { not: null } }]);
 		expect(near(rest.createdAt.lt, 30)).toBe(true);
 
-		// Exactly two disjoint deletes, so no row is matched by both bands.
 		expect(calls).toHaveLength(2);
 	});
 });
@@ -227,8 +217,6 @@ describe('recoverAbandonedJobRuns', () => {
 		expect(prisma.scheduledJobRun.updateMany).toHaveBeenCalledWith({
 			where: {
 				status: 'running',
-				// Only rows older than the grace window — a long run on another
-				// replica must not be labelled failed.
 				startedAt: { lt: new Date(now.getTime() - 10 * 60 * 1000) },
 			},
 			data: { status: 'failed', endedAt: now, error: 'abandoned by restart' },
@@ -281,10 +269,7 @@ describe('auto-heal job enablement (Settings.autoHealEnabled)', () => {
 		expect(jobScheduler.getJobs().find((j) => j.name === 'heal-failed-downloads')?.enabled).toBe(
 			false,
 		);
-		// Nothing new is queued…
 		expect(queueService.enqueue).not.toHaveBeenCalled();
-		// …and the run that was queued while it was still enabled is removed, so
-		// disabling takes effect without a redeploy.
 		expect(prisma.jobQueue.deleteMany).toHaveBeenCalledWith({
 			where: {
 				type: 'system',
@@ -293,7 +278,6 @@ describe('auto-heal job enablement (Settings.autoHealEnabled)', () => {
 			},
 		});
 
-		// scheduleNextRun must honour the disabled flag on its own too.
 		(prisma.jobQueue.deleteMany as any).mockClear();
 		await jobScheduler.scheduleNextRun('heal-failed-downloads');
 		expect(queueService.enqueue).not.toHaveBeenCalled();

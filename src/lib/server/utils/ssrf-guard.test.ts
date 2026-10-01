@@ -1,13 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { checkUrlHost, describeUrlHostCheck, classifyHostLiteral } from './ssrf-guard';
 
-/**
- * The table below drives both halves of the guard: the literal forms (checked
- * without DNS) and the resolved forms (a name whose answers we hand it). The
- * resolver is injected on purpose — mocking `node:dns` does not intercept the
- * import under this vitest version, and the real resolver would make the suite
- * depend on the network.
- */
+// Injected resolver: vi.mock of node:dns does not intercept the import under this vitest version.
 const resolverReturning = (...addresses: string[]) => vi.fn(async () => addresses);
 const failingResolver = vi.fn(async () => {
 	throw Object.assign(new Error('queryA ENOTFOUND'), { code: 'ENOTFOUND' });
@@ -54,8 +48,6 @@ describe('checkUrlHost: literal IP forms', () => {
 
 	for (const url of allowed) {
 		it(`allows ${url}`, async () => {
-			// A public answer, so a name in this list is allowed on its own merits.
-			// (IP literals never reach the resolver — covered separately.)
 			expect(await checkUrlHost(url, resolverReturning('203.0.113.9'))).toEqual({ ok: true });
 		});
 	}
@@ -78,7 +70,6 @@ describe('checkUrlHost: resolved names', () => {
 	});
 
 	it('blocks a name whose only public answer sits next to a metadata address', async () => {
-		// A responder may return several records; any blocked answer blocks the URL.
 		const check = await checkUrlHost(
 			'https://attacker.example/video',
 			resolverReturning('203.0.113.9', '169.254.169.254'),

@@ -604,8 +604,7 @@ class SubscriptionService {
 	): Promise<any[]> {
 		ytdlpService.validateUrl(url);
 
-		// The resolver stays open until the browse finishes (its promise is what
-		// this returns), so the temp cookie file outlives the yt-dlp read of it.
+		// Returning the resolver's promise keeps the temp cookie file alive until the browse finishes.
 		return withYouTubeCookies(opts.userId, (ctx) => this.browsePlaylist(url, opts, ctx));
 	}
 

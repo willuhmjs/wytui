@@ -39,15 +39,6 @@ services:
     volumes:
       - downloads:/downloads
       - library:/media
-      # Parity with the chart's `config` volume: cookie uploads land in
-      # /app/data and settings.cookiePath (the DB) stores that path, so without
-      # this volume every `docker compose up` leaves cookiePath pointing at a
-      # file that no longer exists. NOTE: the image does not create /app/data,
-      # so Docker cannot copy its ownership into a fresh named volume and the
-      # volume root comes up root:root 0755 — the app (uid 1001) then gets
-      # EACCES writing there. Needs `RUN mkdir -p /app/data && chown
-      # nodejs:nodejs /app/data` in the Dockerfile to be writable.
-      - config:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -58,4 +49,3 @@ volumes:
   pgdata:
   downloads:
   library:
-  config:

@@ -40,9 +40,6 @@ export const GET = apiRoute(
 	},
 	async ({ locals }) => {
 		try {
-			// Monitors run server-side probes on a schedule and record livestreams
-			// with whoever's profile they point at, so listing/creating them is
-			// admin-only — same gate PATCH and DELETE already use.
 			requireAdmin(locals);
 
 			const monitors = await prisma.monitor.findMany({
@@ -122,9 +119,6 @@ export const POST = apiRoute(
 				throw error(400, 'Invalid URL format');
 			}
 
-			// A monitor re-probes this URL on a schedule from the server, so this is
-			// a standing SSRF surface, not a one-off fetch. Best-effort only — see
-			// utils/ssrf-guard.ts (the probe resolves the name again at run time).
 			const hostCheck = await checkUrlHost(data.url);
 			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
 
@@ -133,9 +127,6 @@ export const POST = apiRoute(
 				throw error(400, 'Invalid monitor type');
 			}
 
-			// Same profile rule as PATCH /api/monitors/[id]: a monitor runs its
-			// profile's settings (cookies, proxy, custom flags) unattended, so it may
-			// only point at a system profile or the creator's own.
 			const profile = await prisma.downloadProfile.findUnique({
 				where: { id: data.profileId },
 			});

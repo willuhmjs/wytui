@@ -65,11 +65,7 @@ export const POST = apiRoute(
 				}
 			}
 
-			// Best-effort SSRF guard — see utils/ssrf-guard.ts. Checked concurrently:
-			// a batch is up to 100 URLs and each hostname costs a resolution, so
-			// awaiting them inside the loop above would add seconds to a legitimate
-			// request. The rejected URL is named (the caller supplied it); the address
-			// it resolved to never is.
+			// Best-effort SSRF guard — yt-dlp re-resolves the URL itself; see utils/ssrf-guard.ts.
 			const hostChecks = await Promise.all(urls.map((u: string) => checkUrlHost(u)));
 			for (let i = 0; i < urls.length; i++) {
 				const hostCheck = hostChecks[i];

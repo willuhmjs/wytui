@@ -127,32 +127,11 @@ export const RATE_LIMITS: Record<string, RateLimitConfig> = {
 	},
 };
 
-/**
- * Is `raw` an address we share a trusted network with — i.e. a peer whose
- * X-Forwarded-For we can believe? Loopback plus the private ranges (RFC1918,
- * CGNAT) and their IPv6 equivalents: this app is reached through in-cluster
- * Traefik, so the direct socket peer is on the trusted network while the client
- * out there is not.
- *
- * The range table itself lives in `utils/ip-ranges.ts` (shared with the SSRF
- * guard, which blocks a subset of these same ranges) — see there for why the
- * IPv6 checks are done by parsing rather than by prefix matching.
- */
 export function isTrustedProxyAddress(raw: string): boolean {
 	return isPrivateOrSpecialAddress(raw);
 }
 
-/**
- * Get client identifier for rate limiting (IP address; never the User-Agent).
- *
- * Keying on the IP alone is deliberate: including the client-controlled
- * User-Agent let a single IP mint unlimited buckets (rotate UA) and defeated
- * brute-force throttling.
- *
- * X-Forwarded-For is only consulted when the direct peer is itself trusted
- * (isTrustedProxyAddress). Otherwise it is 100% attacker-supplied, and honouring
- * it let a caller rotate the header to get unlimited auth attempts.
- */
+/** Rate-limit bucket key: the client IP; X-Forwarded-For is used only when the direct peer is a trusted proxy. */
 export function getClientIdentifier(event: RequestEvent): string {
 	const peer = event.getClientAddress();
 	if (!isTrustedProxyAddress(peer)) return peer;
@@ -160,14 +139,7 @@ export function getClientIdentifier(event: RequestEvent): string {
 	const forwarded = event.request.headers.get('x-forwarded-for');
 	if (!forwarded) return peer;
 
-	// Take the RIGHT-most entry: a proxy appends the peer it actually accepted, so
-	// the last entry is the one this trusted peer observed and nothing else in the
-	// list is under the caller's control. The leftmost entry — what used to be
-	// taken here — is supplied verbatim by the client, who could rotate it to mint
-	// unlimited buckets. Skipping further left past a private/CGNAT address is
-	// deliberately not done: home clients really do arrive from those ranges, and
-	// walking past them would hand the bucket key back to whatever the caller
-	// forged on the left.
+	// Right-most entry: the trusted peer appended it. Everything to its left is caller-supplied, so never walk further left.
 	const hops = forwarded
 		.split(',')
 		.map((hop) => hop.trim())

@@ -647,6 +647,7 @@
 	// so `hasCookies` alone does not mean "the uploaded file is what runs".
 	let cookieStatus = $state({
 		hasCookies: false,
+		stored: false,
 		path: null,
 		source: 'none',
 		linked: false,

@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Route-level coverage for who may replace the linked YouTube session. The POST
-// writes the credentials every download and sync subsequently runs as, so it
-// accepts only an API-key principal: a session cookie proves nothing to a
-// cross-site request, and a `chrome-extension://` Origin can be set by any
-// installed extension.
 const store: Record<string, any> = {};
 
 vi.mock('$lib/server/services/youtube-link.service', () => ({
@@ -84,8 +79,6 @@ describe('POST /api/youtube/link', () => {
 	});
 
 	it('rejects a keyless extension request carrying the victim cookie', async () => {
-		// The attack this closes: an extension Origin (spoofable) plus the signed-in
-		// user's cookie jar, posting a substitute session.
 		expect(await statusOf(POST, event({ authMethod: 'session', body, origin: EXT_ORIGIN }))).toBe(
 			401,
 		);
@@ -98,7 +91,6 @@ describe('POST /api/youtube/link', () => {
 	});
 
 	it('still authenticates before it reports the missing key', async () => {
-		// Unauthenticated stays 401 for the existing reason, and nothing runs.
 		expect(await statusOf(POST, event({ user: null, body }))).toBe(401);
 		expect(youtubeLinkService.storeCookies).not.toHaveBeenCalled();
 	});
@@ -127,10 +119,6 @@ describe('GET /api/youtube/link', () => {
 });
 
 describe('PATCH / DELETE /api/youtube/link', () => {
-	// These are the web UI's own calls (toggles, account settings, unlink). They
-	// keep working on a session — they are protected by the CSRF token, and the
-	// Origin exemption for this path is gone, so a spoofed extension Origin now
-	// has to produce that token too.
 	it('accepts a web session', async () => {
 		expect(
 			await statusOf(PATCH, event({ authMethod: 'session', body: { syncWatchLater: true } })),

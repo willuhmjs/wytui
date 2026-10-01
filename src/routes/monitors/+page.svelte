@@ -13,8 +13,6 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	// /api/monitors is admin-only, so non-admins get an explanation instead of an
-	// empty list they cannot act on.
 	let isAdmin = $derived(data.session?.user?.isAdmin ?? false);
 
 	// Monitors state
@@ -95,8 +93,6 @@
 	}
 
 	onMount(() => {
-		// Nothing to load for a non-admin: the API would answer both requests with
-		// 403 and the page only renders the access notice.
 		if (!isAdmin) return () => {};
 
 		loadProfiles();

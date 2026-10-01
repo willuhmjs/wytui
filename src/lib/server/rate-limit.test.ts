@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getClientIdentifier, isTrustedProxyAddress } from './rate-limit';
 
-/** Minimal stand-in for the two RequestEvent members getClientIdentifier reads. */
 function eventFor(peer: string, xff?: string): RequestEvent {
 	const headers = new Headers();
 	if (xff !== undefined) headers.set('x-forwarded-for', xff);
@@ -14,24 +13,17 @@ function eventFor(peer: string, xff?: string): RequestEvent {
 
 describe('getClientIdentifier', () => {
 	it('ignores X-Forwarded-For unless the socket peer is a trusted proxy', () => {
-		// A caller on a public IP can put anything in XFF; taking it would let one
-		// host mint unlimited auth buckets by rotating the header.
 		expect(getClientIdentifier(eventFor('203.0.113.9', '198.51.100.7'))).toBe('203.0.113.9');
 		expect(getClientIdentifier(eventFor('203.0.113.9', '1.1.1.1, 8.8.8.8'))).toBe('203.0.113.9');
 		expect(getClientIdentifier(eventFor('203.0.113.9'))).toBe('203.0.113.9');
 	});
 
 	it('takes the hop the trusted proxy appended, not the client-supplied head', () => {
-		// Traefik appends the peer it accepted, so the LAST entry is the client.
 		expect(getClientIdentifier(eventFor('10.42.0.15', '203.0.113.9'))).toBe('203.0.113.9');
-		// Classic forged prefix: "attacker-controlled, real client" must key on the
-		// address the proxy actually saw, never the forged first entry.
 		expect(getClientIdentifier(eventFor('127.0.0.1', '1.2.3.4, 198.51.100.7'))).toBe(
 			'198.51.100.7',
 		);
-		// A client arriving from CGNAT (what the trusted range list is there for):
-		// stopping at the first untrusted hop scanning right-to-left would skip the
-		// real client and fall back to the forged head, so the appended hop wins.
+		// A real client behind CGNAT must win over the forged head — do not skip private hops right-to-left.
 		expect(getClientIdentifier(eventFor('10.42.0.15', '1.2.3.4, 100.64.1.1'))).toBe('100.64.1.1');
 	});
 

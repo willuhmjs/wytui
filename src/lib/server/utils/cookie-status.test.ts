@@ -1,27 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, writeFile, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// The linked session's health and the settings row are stubbed; the file check
-// runs for real (builtin mocking is a no-op under this vitest version), because
-// "the DB still names a cookie file that is not on disk" is exactly the case the
-// endpoint has to get right.
+process.env.AUTH_SECRET = 'test-secret-for-cookie-status';
+
 const store = {
-	settings: null as null | { cookiePath: string | null },
+	settings: null as null | { cookiesTxtEnc: string | null; cookiesUpdatedAt: Date | null },
 	health: { linked: false, usable: false, cookieUpdatedAt: null as Date | null },
 	invalidatedAt: null as Date | null,
-	updatedAt: null as Date | null,
 };
 
 vi.mock('../db', () => ({
 	prisma: {
 		settings: { findUnique: vi.fn(async () => store.settings) },
 		eventLog: {
-			findFirst: vi.fn(async ({ where }: any) => {
-				const at = where?.type === 'cookies.invalidated' ? store.invalidatedAt : store.updatedAt;
-				return at ? { createdAt: at } : null;
-			}),
+			findFirst: vi.fn(async () =>
+				store.invalidatedAt ? { createdAt: store.invalidatedAt } : null,
+			),
 		},
 	},
 }));
@@ -30,7 +23,10 @@ vi.mock('../services/youtube-link.service', () => ({
 	youtubeLinkService: { getSessionHealth: vi.fn(async () => store.health) },
 }));
 
+import { encryptSecret } from './crypto-box';
+
 const USER = 'admin-1';
+const UPLOADED = '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue\n';
 
 async function freshStatus() {
 	vi.resetModules();
@@ -39,20 +35,12 @@ async function freshStatus() {
 }
 
 describe('computeCookieStatus', () => {
-	let dir: string;
-
-	beforeEach(async () => {
-		dir = await mkdtemp(join(tmpdir(), 'wytui-cookie-status-'));
+	beforeEach(() => {
 		Object.assign(store, {
 			settings: null,
 			health: { linked: false, usable: false, cookieUpdatedAt: null },
 			invalidatedAt: null,
-			updatedAt: null,
 		});
-	});
-
-	afterEach(async () => {
-		await rm(dir, { recursive: true, force: true });
 	});
 
 	it('reports a link-only deployment as having credentials, and which source is live', async () => {
@@ -61,10 +49,9 @@ describe('computeCookieStatus', () => {
 
 		const status = await freshStatus();
 
-		// The bug this guards: with no settings.cookiePath the old endpoint said
-		// "no cookies" and the expiry warning could never appear.
 		expect(status).toEqual({
 			hasCookies: true,
+			stored: false,
 			path: null,
 			source: 'link',
 			linked: true,
@@ -85,16 +72,13 @@ describe('computeCookieStatus', () => {
 		expect(await freshStatus()).toMatchObject({ source: 'link', expired: true });
 	});
 
-	it('a fresh re-link clears the expiry even when no cookie file was uploaded', async () => {
+	it('a fresh re-link clears the expiry even when no file was uploaded', async () => {
 		store.health = {
 			linked: true,
 			usable: true,
 			cookieUpdatedAt: new Date('2026-10-01T12:00:00Z'),
 		};
 		store.invalidatedAt = new Date('2026-10-01T11:00:00Z');
-		// The upload path records cookies.updated; a link refresh does not, so the
-		// link's own timestamp has to clear the condition too.
-		store.updatedAt = new Date('2026-10-01T09:00:00Z');
 
 		expect(await freshStatus()).toMatchObject({ expired: false });
 	});
@@ -108,46 +92,68 @@ describe('computeCookieStatus', () => {
 		// is not dead: needsRelink is what the UI turns into "re-link the account".
 		expect(status).toMatchObject({
 			hasCookies: false,
+			stored: false,
 			source: 'none',
 			linked: true,
 			needsRelink: true,
 		});
 	});
 
-	it('falls back to the uploaded file when no account is linked', async () => {
-		const file = join(dir, 'cookies.txt');
-		await writeFile(file, '# Netscape HTTP Cookie File\n');
-		store.settings = { cookiePath: file };
+	it('reports the stored upload as the live credential when no account is linked', async () => {
+		store.settings = {
+			cookiesTxtEnc: encryptSecret(UPLOADED),
+			cookiesUpdatedAt: new Date('2026-10-01T09:00:00Z'),
+		};
 
 		expect(await freshStatus()).toMatchObject({
 			hasCookies: true,
-			path: file,
+			stored: true,
+			path: null,
 			source: 'settings',
 			linked: false,
 			needsRelink: false,
 		});
 	});
 
-	it('treats a cookie path that outlived the container as no file at all', async () => {
-		// Same rule the spawn applies, so Remove is never offered for a file that is
-		// already gone.
-		store.settings = { cookiePath: join(dir, 'gone.txt') };
+	it('treats a stored blob that will not decrypt as no credential', async () => {
+		// Same rule the spawn applies, so Remove is never offered for a blob the
+		// next yt-dlp call cannot use.
+		store.settings = { cookiesTxtEnc: 'not:an:encrypted:blob', cookiesUpdatedAt: new Date() };
 
-		expect(await freshStatus()).toMatchObject({ hasCookies: false, path: null, source: 'none' });
+		expect(await freshStatus()).toMatchObject({ hasCookies: false, stored: false, path: null });
 	});
 
-	it('keeps the file as the live source while the account is unlinked', async () => {
-		const file = join(dir, 'cookies.txt');
-		await writeFile(file, '# Netscape HTTP Cookie File\n');
-		store.settings = { cookiePath: file };
+	it('a re-upload clears the expiry, a stale upload does not', async () => {
+		const invalidatedAt = new Date('2026-10-01T11:00:00Z');
+		store.health = { linked: false, usable: false, cookieUpdatedAt: null };
+		store.invalidatedAt = invalidatedAt;
+
+		store.settings = {
+			cookiesTxtEnc: encryptSecret(UPLOADED),
+			cookiesUpdatedAt: new Date('2026-10-01T12:00:00Z'),
+		};
+		expect(await freshStatus()).toMatchObject({ source: 'settings', expired: false });
+
+		store.settings = {
+			cookiesTxtEnc: encryptSecret(UPLOADED),
+			cookiesUpdatedAt: new Date('2026-10-01T10:00:00Z'),
+		};
+		expect(await freshStatus()).toMatchObject({ source: 'settings', expired: true });
+	});
+
+	it('keeps the stored upload as the live source while the account is dead', async () => {
+		store.settings = {
+			cookiesTxtEnc: encryptSecret(UPLOADED),
+			cookiesUpdatedAt: new Date('2026-10-01T09:00:00Z'),
+		};
 		store.health = { linked: true, usable: false, cookieUpdatedAt: null };
 		store.invalidatedAt = new Date('2026-10-01T11:00:00Z');
 
-		// A dead session with a working file: the file carries the traffic, and the
-		// dead session is still worth surfacing.
+		// A dead session with a working upload: the upload carries the traffic, and
+		// the dead session is still worth surfacing.
 		expect(await freshStatus()).toMatchObject({
 			hasCookies: true,
-			path: file,
+			stored: true,
 			source: 'settings',
 			needsRelink: true,
 			expired: true,

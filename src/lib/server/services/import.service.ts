@@ -106,8 +106,6 @@ class ImportService {
 				if (file.videoId) {
 					url = `https://www.youtube.com/watch?v=${file.videoId}`;
 					try {
-						// The metadata lookup is a YouTube request like any other, so it
-						// runs as the importing user (their session + its paired proxy).
 						const metadata = await withYouTubeCookies(userId, (ctx) =>
 							ytdlpService.fetchMetadata(url, {
 								cookiePath: ctx.cookiePath,

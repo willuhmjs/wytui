@@ -115,9 +115,6 @@ describe('fetchList session requirements', () => {
 		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue(null as any);
 		const { youtubeService } = await import('./youtube.service');
 
-		// The listing is the account's own subscription list: browsing it with the
-		// admin's file or anonymously would answer with someone else's subscriptions,
-		// so the absence of a session is the answer, not a fallback.
 		await expect(youtubeService.fetchHistory('u-nobody')).resolves.toEqual({ needsRelink: true });
 		expect(runYtdlpJsonMock).not.toHaveBeenCalled();
 	});
@@ -137,8 +134,6 @@ describe('fetchList session requirements', () => {
 	});
 
 	it('withholds the account extra flags from a listing fetch', async () => {
-		// Selection flags would silently drop entries from the listing the picker is
-		// built from — the proxy still applies, the filters must not.
 		runYtdlpJsonMock.mockResolvedValue('{"entries":[]}');
 		const { prisma } = await import('../db');
 		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue({

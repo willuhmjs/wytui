@@ -94,6 +94,10 @@ export const SECRET_SETTINGS_FIELDS = new Set([
 	// host, so it is treated as a secret: the App Settings page gets
 	// ytdlpProxyScheme instead (see serializeSettingsResponse).
 	'ytdlpProxyUrl',
+	// The uploaded cookies.txt. Written only by /api/settings/cookies, so it is
+	// not in ALLOWED_SETTINGS_FIELDS — this entry just keeps the ciphertext out
+	// of the settings payload.
+	'cookiesTxtEnc',
 ]);
 
 /**

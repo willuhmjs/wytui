@@ -7,9 +7,6 @@ const subsDb: Record<string, any> = {};
 const jobQueueDb: any[] = [];
 let settingsDb: Record<string, any> | null = null;
 
-// Linked accounts by user. The resolver runs for real in these tests (real temp
-// cookie file, real precedence, flags read off the link row); only the
-// encrypted-session source is stubbed, so getCookiesTxt reads from here.
 const linkStore: Record<
 	string,
 	{ proxyUrl: string | null; cookiesTxt: string | null; extraFlags?: string[] }
@@ -90,9 +87,6 @@ vi.mock('../utils/ytdlp-json', async (importOriginal) => {
 	return { ...actual, runYtdlpJson: vi.fn() };
 });
 
-// The stored session's crypto layer: the resolver itself (temp file, precedence,
-// proxy pairing, flag resolution) stays real and reads the linked accounts off
-// the prisma mock above.
 vi.mock('./youtube-link.service', () => ({
 	youtubeLinkService: {
 		getCookiesTxt: vi.fn(async (userId: string) => linkStore[userId]?.cookiesTxt ?? null),
@@ -627,8 +621,7 @@ describe('per-owner session for automated browses', () => {
 		linkStore['owner-1'] = { proxyUrl: 'http://owner1:8080', cookiesTxt: SESSION };
 		let seen: any;
 		vi.mocked(runYtdlpJson).mockImplementation(async (_url, opts: any) => {
-			// Read the session while the browse is still in scope: the resolver
-			// unlinks its temp file as soon as the callback it wraps resolves.
+			// Read the session in scope: the resolver unlinks its temp file once the callback resolves.
 			const content = opts?.cookiePath ? await readFile(opts.cookiePath, 'utf8') : null;
 			seen = { ...opts, content };
 			return JSON.stringify({ channel_id: 'UCx', playlist_count: 1 });
@@ -637,9 +630,7 @@ describe('per-owner session for automated browses', () => {
 		await (subscriptionService as any).fetchChannelMeta(CHANNEL, 'owner-1');
 
 		expect(seen.proxyUrl).toBe('http://owner1:8080');
-		// A real file with the linked session in it, present while the browse ran...
 		expect(seen.content).toBe(SESSION);
-		// ...gone once it returns, so the session never lingers in tmp.
 		await expect(access(seen.cookiePath)).rejects.toThrow();
 	});
 
@@ -672,16 +663,12 @@ describe('per-owner session for automated browses', () => {
 	});
 
 	it('routes the scheduled channel listing with the owner session as well', async () => {
-		// The account's own flags ride in on the same link read as its session, so
-		// the browse gets both from one resolver call.
 		linkStore['owner-3'] = {
 			proxyUrl: 'http://owner3:8080',
 			cookiesTxt: SESSION,
 			extraFlags: ['--sleep-requests', '1'],
 		};
 		const argsSpy = vi.spyOn(ytdlpService, 'buildDefaultsArgs');
-		// A binary that always exits 1: the argv is assembled before the spawn, and
-		// a scheduled check must never reach the network from a test.
 		vi.spyOn(ytdlpService, 'getPath').mockReturnValue('/bin/false');
 
 		await expect(

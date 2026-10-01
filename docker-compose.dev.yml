@@ -28,11 +28,6 @@ services:
       - /app/.svelte-kit
       - downloads:/downloads
       - library:/media
-      # No `config` volume here (unlike docker-compose.yml): the `.:/app` bind
-      # above already puts /app/data on the host working tree, so cookie uploads
-      # survive a recreate, and Dockerfile.dev runs as root so there is no
-      # ownership problem to work around. A named volume at /app/data would
-      # shadow the bind mount (longer path wins) and reintroduce it.
     ports:
       - '5173:5173'
       - '5555:5555'

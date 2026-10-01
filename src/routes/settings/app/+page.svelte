@@ -380,7 +380,7 @@
 		</div>
 	{/if}
 
-	{#if s.cookieStatus.path}
+	{#if s.cookieStatus.stored}
 		{#if s.cookieStatus.expired && s.cookieStatus.source === 'settings'}
 			<div class="info-box warning-box" style="margin-bottom: var(--spacing-md);">
 				Cookie file is present but was marked expired — a download recently failed authentication

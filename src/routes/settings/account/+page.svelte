@@ -223,8 +223,7 @@
 
 		<div class="form-group">
 			<label for="accountProxyUrl">yt-dlp proxy URL</label>
-			<!-- The stored value is never sent to the browser, so this box is write-only:
-			     empty keeps what is saved, typing replaces it, Remove clears it. -->
+			<!-- Write-only: the stored value is never sent to the browser. -->
 			<input
 				type="text"
 				id="accountProxyUrl"
@@ -272,7 +271,6 @@
 		<h3>Notifications</h3>
 		<div class="form-group">
 			<label for="accountAppriseUrl">Apprise URL</label>
-			<!-- Write-only for the same reason as the proxy URL above. -->
 			<input
 				type="text"
 				id="accountAppriseUrl"

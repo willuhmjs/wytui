@@ -204,8 +204,6 @@ describe('runYtdlpJson', () => {
 });
 
 describe('classifyDownloadFailure', () => {
-	// Verbatim from the production `downloads.error` column. The bot-check row
-	// carries YouTube's U+2019 in "you’re" exactly as stored.
 	const BOT_CHECK =
 		'Metadata fetch failed: RateLimitError: [youtube] DrPARAh50vU: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.';
 	const AGE_GATE =
@@ -261,9 +259,6 @@ describe('classifyDownloadFailure', () => {
 	}
 
 	it('matches the bot-check literal despite YouTube’s U+2019 apostrophe', async () => {
-		// Regression guard: the literal is written with a straight apostrophe, so
-		// without normalizeFailureText() this matched 0 of the 30 bot-check rows
-		// in the production table and cookies.invalidated never fired.
 		const { isCookieFailureError } = await import('./ytdlp-json');
 		expect(BOT_CHECK).toContain('you’re');
 		expect(isCookieFailureError(BOT_CHECK)).toBe(true);
@@ -280,8 +275,6 @@ describe('classifyDownloadFailure', () => {
 
 	it('keeps a bot-check off the retry timer even though yt-dlp raises RateLimitError', async () => {
 		const { isRateLimitedError, classifyDownloadFailure } = await import('./ytdlp-json');
-		// The trap the class ordering exists for: a bot-check reads as a rate
-		// limit, but only new cookies fix it — a timer retry hammers the block.
 		expect(isRateLimitedError(BOT_CHECK)).toBe(true);
 		expect(classifyDownloadFailure(BOT_CHECK)).toBe('cookie');
 		expect(classifyDownloadFailure(AGE_GATE_RAISED_AS_RATELIMIT)).toBe('cookie');
@@ -289,8 +282,6 @@ describe('classifyDownloadFailure', () => {
 });
 
 describe('isSubtitleFetchFailure', () => {
-	// Verbatim from six production rows whose video was fine and only the
-	// caption fetch was refused.
 	const SUBTITLE_429 =
 		"ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests";
 
@@ -309,13 +300,11 @@ describe('isSubtitleFetchFailure', () => {
 				'ERROR: Unable to download automatic subtitles for language en: HTTP Error 503',
 			),
 		).toBe(true);
-		// Case-insensitive, like every other predicate in this module.
 		expect(isSubtitleFetchFailure('unable to download subtitle')).toBe(true);
 	});
 
 	it('does not swallow a failure of the media download itself', async () => {
 		const { isSubtitleFetchFailure } = await import('./ytdlp-json');
-		// Completing on this line would mark a missing video as COMPLETED.
 		expect(
 			isSubtitleFetchFailure(
 				'ERROR: Unable to download video data: HTTP Error 403: Forbidden\n' +

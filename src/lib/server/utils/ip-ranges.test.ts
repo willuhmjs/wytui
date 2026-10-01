@@ -32,8 +32,7 @@ describe('parseAddress', () => {
 		expect(parseAddress('fec0::1')?.ipv6SiteLocal).toBe(true);
 		expect(parseAddress('2001:4860:4860::8888')?.loopback).toBe(false);
 
-		// The two spellings of "this IPv6 address wraps an IPv4 address" — dotted
-		// and hex-folded (Node's URL parser emits the latter).
+		// Both v4-in-v6 spellings: dotted and hex-folded (what Node's URL parser emits).
 		expect(parseAddress('[::ffff:127.0.0.1]')?.loopback).toBe(true);
 		expect(parseAddress('::ffff:7f00:1')?.loopback).toBe(true);
 		expect(parseAddress('::ffff:10.0.0.1')?.privateRange).toBe(true);
@@ -86,8 +85,6 @@ describe('parseNumericHost', () => {
 });
 
 describe('isPrivateOrSpecialAddress', () => {
-	// The trusted-proxy predicate moved here from rate-limit.ts, so the set it
-	// accepts has to be exactly what it accepted before.
 	it('matches the ranges the trusted-proxy check relies on', () => {
 		const trusted = [
 			'127.0.0.1',

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, writeFile, readFile, access, rm } from 'fs/promises';
+import { mkdtemp, readFile, access, stat, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-// vi.mock of a node builtin does not intercept imports under this vitest
-// version, so the "cookie file no longer on disk" cases use real paths.
+process.env.AUTH_SECRET = 'test-secret-for-cookie-resolver';
+
 const store = {
 	settings: null as any,
 	link: null as any | { proxyUrl: string | null },
@@ -32,7 +32,11 @@ vi.mock('../services/youtube-link.service', () => ({
 	},
 }));
 
+import { encryptSecret } from './crypto-box';
+
 const LINK_USER = 'user-1';
+const UPLOADED =
+	'# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tünïcode\tvalue\n';
 
 async function freshResolver() {
 	vi.resetModules();
@@ -47,7 +51,11 @@ describe('withYouTubeCookies', () => {
 		vi.clearAllMocks();
 		dir = await mkdtemp(join(tmpdir(), 'wytui-cookies-test-'));
 		Object.assign(store, {
-			settings: { ytdlpProxyUrl: 'socks5h://global:1080', cookiePath: null },
+			settings: {
+				ytdlpProxyUrl: 'socks5h://global:1080',
+				cookiesTxtEnc: null,
+				ytdlpExtraFlags: [],
+			},
 			link: null,
 			cookiesTxt: null,
 			linkLookups: 0,
@@ -116,52 +124,94 @@ describe('withYouTubeCookies', () => {
 		await expect(access(path!)).rejects.toThrow();
 	});
 
-	it('falls back to the admin cookie file when there is no link', async () => {
+	it('materializes the uploaded file for a user with no linked account', async () => {
 		const { withYouTubeCookies } = await freshResolver();
-		const file = join(dir, 'cookies.txt');
-		await writeFile(file, 'admin cookies');
-		created.push(file);
-		store.settings = { ytdlpProxyUrl: null, cookiePath: file };
+		store.settings.cookiesTxtEnc = encryptSecret(UPLOADED);
+
+		let seen: string | null = null;
+		await withYouTubeCookies(LINK_USER, async (ctx) => {
+			seen = ctx.cookiePath;
+			expect(ctx.source).toBe('settings');
+			expect(ctx.needsRelink).toBe(false);
+			// The upload has no egress of its own, so the server-wide proxy applies.
+			expect(ctx.proxyUrl).toBe('socks5h://global:1080');
+			expect(await readFile(ctx.cookiePath!, 'utf8')).toBe(UPLOADED);
+			return Promise.resolve();
+		});
+
+		expect(seen).toBeTruthy();
+		await expect(access(seen!)).rejects.toThrow();
+	});
+
+	it('writes the stored bytes verbatim to a 0600 file, and never to a path the caller keeps', async () => {
+		const { withYouTubeCookies } = await freshResolver();
+		store.settings.cookiesTxtEnc = encryptSecret(UPLOADED);
+
+		let mode = 0;
+		let path = '';
+		await withYouTubeCookies(null, async (ctx) => {
+			path = ctx.cookiePath!;
+			mode = (await stat(path)).mode & 0o777;
+			expect(await readFile(path, 'utf8')).toBe(UPLOADED);
+		});
+
+		expect(mode).toBe(0o600);
+		expect(path).toContain('wytui-yt-');
+		expect(path).not.toContain('cookies.txt');
+		await expect(access(path)).rejects.toThrow();
+	});
+
+	it('still falls back to the uploaded file when the link row is dead', async () => {
+		const { withYouTubeCookies } = await freshResolver();
+		store.settings.cookiesTxtEnc = encryptSecret(UPLOADED);
+		store.link = { proxyUrl: 'http://account-proxy:8080' };
+		// Link row exists but its blob will not decrypt.
+		store.cookiesTxt = null;
+
+		await withYouTubeCookies(LINK_USER, async (ctx) => {
+			expect(ctx.needsRelink).toBe(true);
+			expect(ctx.source).toBe('settings');
+			// The traffic is still this account's, so it egresses the account's proxy.
+			expect(ctx.proxyUrl).toBe('http://account-proxy:8080');
+			expect(await readFile(ctx.cookiePath!, 'utf8')).toBe(UPLOADED);
+		});
+	});
+
+	it('reports no cookies when nothing is linked and nothing is stored', async () => {
+		const { withYouTubeCookies } = await freshResolver();
 
 		await withYouTubeCookies(LINK_USER, (ctx) => {
-			expect(ctx.source).toBe('settings');
-			expect(ctx.cookiePath).toBe(file);
-			expect(ctx.proxyUrl).toBeNull();
+			expect(ctx.source).toBe('none');
+			expect(ctx.cookiePath).toBeNull();
 			expect(ctx.needsRelink).toBe(false);
 			return Promise.resolve();
 		});
 	});
 
-	it('treats a dangling cookiePath as no cookies at all', async () => {
+	it('degrades to no cookies when the stored blob will not decrypt', async () => {
 		const { withYouTubeCookies } = await freshResolver();
-		// Survives a pod restart in the DB but not on disk — the upload target is
-		// container disk, not a volume.
-		store.settings = {
-			ytdlpProxyUrl: 'socks5h://global:1080',
-			cookiePath: join(dir, 'gone.txt'),
-		};
+		// Rotated AUTH_SECRET: the row still holds a blob, the key no longer fits.
+		const previous = process.env.AUTH_SECRET;
+		store.settings.cookiesTxtEnc = encryptSecret(UPLOADED);
+		process.env.AUTH_SECRET = 'a-different-secret';
+		try {
+			await withYouTubeCookies(LINK_USER, (ctx) => {
+				expect(ctx.source).toBe('none');
+				expect(ctx.cookiePath).toBeNull();
+				return Promise.resolve();
+			});
+		} finally {
+			process.env.AUTH_SECRET = previous;
+		}
+	});
+
+	it('ignores a blob that is not ciphertext at all', async () => {
+		const { withYouTubeCookies } = await freshResolver();
+		store.settings.cookiesTxtEnc = 'not:an:encrypted:blob';
 
 		await withYouTubeCookies(LINK_USER, (ctx) => {
 			expect(ctx.source).toBe('none');
 			expect(ctx.cookiePath).toBeNull();
-			return Promise.resolve();
-		});
-	});
-
-	it('reports a dead session as needsRelink while still using the admin file', async () => {
-		const { withYouTubeCookies } = await freshResolver();
-		const file = join(dir, 'cookies.txt');
-		await writeFile(file, 'admin cookies');
-		created.push(file);
-		store.settings = { ytdlpProxyUrl: null, cookiePath: file };
-		store.link = { proxyUrl: 'http://account-proxy:8080' };
-		// Link row exists but its blob will not decrypt.
-		store.cookiesTxt = null;
-
-		await withYouTubeCookies(LINK_USER, (ctx) => {
-			expect(ctx.needsRelink).toBe(true);
-			expect(ctx.source).toBe('settings');
-			expect(ctx.cookiePath).toBe(file);
 			return Promise.resolve();
 		});
 	});
@@ -172,7 +222,7 @@ describe('withYouTubeCookies', () => {
 		store.cookiesTxt = 'SID\tvalue\n';
 		store.settings = {
 			ytdlpProxyUrl: null,
-			cookiePath: null,
+			cookiesTxtEnc: null,
 			ytdlpExtraFlags: ['--retries', '5'],
 		};
 
@@ -204,7 +254,7 @@ describe('withYouTubeCookies', () => {
 		store.cookiesTxt = null; // row exists, blob will not decrypt
 
 		await withYouTubeCookies(LINK_USER, (ctx) => {
-			// The fallback credential is the admin's file, but the traffic is still
+			// The fallback credential is the uploaded file, but the traffic is still
 			// this account's, so its flag overrides still apply.
 			expect(ctx.needsRelink).toBe(true);
 			expect(ctx.defaultExtraFlags).toEqual(['--limit-rate', '1M']);
@@ -214,10 +264,7 @@ describe('withYouTubeCookies', () => {
 
 	it('never looks up a link without a user', async () => {
 		const { withYouTubeCookies } = await freshResolver();
-		const file = join(dir, 'cookies.txt');
-		await writeFile(file, 'admin cookies');
-		created.push(file);
-		store.settings = { ytdlpProxyUrl: null, cookiePath: file };
+		store.settings.cookiesTxtEnc = encryptSecret(UPLOADED);
 		store.link = { proxyUrl: 'http://account-proxy:8080' };
 		store.cookiesTxt = 'SID\tvalue\n';
 

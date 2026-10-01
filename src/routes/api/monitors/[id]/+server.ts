@@ -39,7 +39,6 @@ export const GET = apiRoute(
 	},
 	async ({ params, locals }) => {
 		try {
-			// Admin-only, matching GET /api/monitors (this returns the same rows).
 			requireAdmin(locals);
 
 			const monitor = await prisma.monitor.findUnique({
@@ -140,10 +139,7 @@ export const PATCH = apiRoute(
 				}
 			}
 
-			// The URL is updatable, and PATCH does no format check on it at all — so
-			// the SSRF guard has to run here as well as on POST, or "create a monitor
-			// on a safe URL, then repoint it at 169.254.169.254" would bypass it.
-			// Protocol is checked here because nothing upstream does it for PATCH.
+			// The URL is updatable, so the SSRF guard must run here too, not only on POST.
 			if (updates.url !== undefined) {
 				const hostCheck = await checkUrlHost(updates.url);
 				if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));

@@ -36,8 +36,6 @@ describe('isCsrfExempt: safe methods and Bearer auth', () => {
 });
 
 describe('isCsrfExempt: extension origins', () => {
-	// The two calls the extension makes with a Bearer key are no longer exempt by
-	// Origin: without the key they must fail, which is the point.
 	it('no longer exempts POST /api/youtube/link', () => {
 		expect(isCsrfExempt(req('POST', '/api/youtube/link', { origin: EXT_ORIGIN }))).toBe(false);
 		expect(isCsrfExempt(req('POST', '/api/youtube/link', { origin: 'moz-extension://x/' }))).toBe(
@@ -69,9 +67,6 @@ describe('isCsrfExempt: extension origins', () => {
 });
 
 describe('CORS grant list is unchanged by the CSRF tightening', () => {
-	// The extension is a cross-origin caller: dropping a path from the CORS list
-	// would break even its key-authenticated calls, so the two lists must not be
-	// collapsed into one.
 	it('still grants the extension its read access', () => {
 		for (const path of [
 			'/api/downloads/quick',

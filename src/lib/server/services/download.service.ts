@@ -47,20 +47,14 @@ class DownloadSkippedError extends Error {
 /** Cookie-invalidation events are throttled to one per hour (see markCookiesInvalidated). */
 const COOKIE_INVALIDATION_THROTTLE_MS = 60 * 60 * 1000;
 
-/**
- * How often one user may be pushed a "your linked session died" event. Every
- * retry of every queued video hits the same dead session, so without this the
- * owner gets a toast per attempt.
- */
+/** Per-user throttle: every retry in a queued batch hits the same dead session. */
 const LINK_EXPIRY_NOTICE_THROTTLE_MS = 10 * 60 * 1000;
 
 /** Auto-heal: first automated attempt is armed this long after a terminal failure. */
 const HEAL_FIRST_DELAY_MS = 30 * 60 * 1000;
 /** Auto-heal: backoff after attempts 1..3, so a persistent failure spreads out. */
 const HEAL_BACKOFF_MS = [2 * 60 * 60 * 1000, 8 * 60 * 60 * 1000, 2 * 24 * 60 * 60 * 1000];
-/** Auto-heal: attempts per row before the row is marked as given up. Exported
- * because the history-pruning pass in jobs/scheduler.ts must be able to tell a
- * row the ladder gave up on from one that never entered it. */
+/** Auto-heal: attempts per row before the row is marked as given up. */
 export const HEAL_MAX_ATTEMPTS = 4;
 /** Auto-heal: rows per pass — the pass runs every 30 min, so this caps the extra yt-dlp load. */
 const HEAL_BATCH_SIZE = 5;
@@ -105,10 +99,7 @@ class DownloadService {
 	// Track download ownership for SSE filtering
 	private downloadOwners = new Map<string, string>();
 
-	// Which credential the last yt-dlp spawn for this download actually used. A
-	// cookie-shaped failure only means "re-link your account" when the linked
-	// session was the one YouTube rejected — with the admin's uploaded file in
-	// play it is an admin problem, not the downloader's.
+	// A cookie-shaped failure only means "re-link" when the linked session was the one rejected.
 	private lastCookieSource = new Map<string, CookieSource>();
 
 	// Last time each user was told their linked session died (see notifyLinkExpired).
@@ -168,16 +159,7 @@ class DownloadService {
 		}
 	}
 
-	/**
-	 * Send a download event to the user who owns the download.
-	 *
-	 * When ownership is unknown (monitor-originated downloads never register an
-	 * owner, and every in-flight row lost to a server restart does too) the event
-	 * still has to reach the connected UIs so they can settle the card they are
-	 * showing — but the payload must not travel with it. These payloads carry raw
-	 * yt-dlp output and server-side file paths belonging to someone else, so the
-	 * ownerless broadcast is id-only.
-	 */
+	/** Ownerless events are broadcast id-only: their payloads carry another user's yt-dlp output and server paths. */
 	private emitToOwner(event: string, data: any, downloadId: string): void {
 		const userId = this.downloadOwners.get(downloadId);
 		if (userId) {
@@ -440,9 +422,6 @@ class DownloadService {
 		try {
 			// Get settings for cookie path
 			const settings = await this.getSettings();
-			// The session, its paired proxy and the effective extra-flag defaults all
-			// come from the shared resolver, so this spawn authenticates the same way
-			// the download spawn below does.
 			const metadata = await withYouTubeCookies(download.userId, (ctx) => {
 				this.noteCookieContext(downloadId, ctx, download.userId);
 				return ytdlpService.fetchMetadata(download.url, {
@@ -807,19 +786,12 @@ class DownloadService {
 			throw new Error('Insufficient disk space to start download');
 		}
 
-		// Resolve the session + proxy per spawn and keep the resolver open until the
-		// spawned yt-dlp exits: it unlinks the temp cookie file when the callback
-		// returns, so the callback must outlive the process that reads the file.
+		// The resolver must outlive the spawn — it unlinks the temp cookie file when the callback settles.
 		return withYouTubeCookies(download.userId, (ctx) =>
 			this.runYtdlpDownload(download, settings, ctx),
 		);
 	}
 
-	/**
-	 * Spawn the actual yt-dlp download for {@link executeDownload} and wait for it.
-	 * `ctx` comes from the caller's withYouTubeCookies() scope, so the cookie file
-	 * it names exists for as long as this promise is pending.
-	 */
 	private async runYtdlpDownload(
 		download: any,
 		settings: Settings,
@@ -828,9 +800,7 @@ class DownloadService {
 		const downloadId = download.id;
 		const outputPath = settings.downloadPath;
 
-		// Per-account extra default flags: the owning user's linked YouTube account
-		// overrides the server-wide ones. The proxy comes from ctx so it always
-		// egresses the network the session in ctx was issued from.
+		// The proxy comes from ctx so the request egresses the network the session in ctx was issued from.
 		this.noteCookieContext(downloadId, ctx, download.userId);
 		const proxyUrl = ctx.proxyUrl;
 		const defaultFlags = ctx.defaultExtraFlags;
@@ -954,14 +924,7 @@ class DownloadService {
 				const detail = this.lastErrorLine.get(downloadId);
 				const failure = detail || `yt-dlp exited with code ${code}`;
 
-				// A subtitle fetch that gave up (YouTube answers the timedtext
-				// endpoint with 429 far more often than the media endpoints) makes
-				// yt-dlp exit non-zero even though the video itself is complete on
-				// disk. Six such rows sat FAILED in production with the video
-				// already downloaded, and the RSS window closed before anything
-				// revisited them. Subtitles are an accessory: if the media file is
-				// there, land COMPLETED and record the loss instead of throwing the
-				// whole download away.
+				// A lost subtitle fetch must not sink a video whose media file is complete on disk.
 				if (isSubtitleFetchFailure(failure) && (await this.completedMediaFile(downloadId))) {
 					await this.completeDespiteSubtitleFailure(downloadId, failure);
 					resolve();
@@ -1163,13 +1126,7 @@ class DownloadService {
 		);
 	}
 
-	/**
-	 * The tracked output file of a download, but only when it is really there and
-	 * non-empty. `filepath` is captured from yt-dlp's first destination event —
-	 * i.e. before the bytes arrive — so its mere presence in the row says nothing;
-	 * yt-dlp writes into `<name>.part` and renames on success, so an existing
-	 * final path is what actually distinguishes "finished" from "aborted early".
-	 */
+	/** `filepath` is captured before the bytes arrive, so only its presence on disk means "finished". */
 	private async completedMediaFile(downloadId: string): Promise<string | null> {
 		const row = await prisma.download
 			.findUnique({ where: { id: downloadId }, select: { filepath: true } })
@@ -1184,23 +1141,7 @@ class DownloadService {
 		}
 	}
 
-	/**
-	 * Land a download whose media is complete but whose subtitles were lost
-	 * (see the process close handler). The row goes COMPLETED through the normal
-	 * path — library promotion, archive, notification, quota — and the subtitle
-	 * loss is recorded on the surfaces that already exist: the `subtitle` task
-	 * row (rendered as a failed step on the download page), the admin event log,
-	 * and the server log.
-	 *
-	 * Re-fetching the captions in place is deliberately NOT attempted: the media
-	 * was written under yt-dlp's `%(title)s.%(ext)s` template with
-	 * `--restrict-filenames`, and the row stores the resulting absolute path but
-	 * not the template, so a second spawn cannot reliably reproduce the stem the
-	 * subtitle indexer matches on (`subtitle.service.ts` requires
-	 * `<videoBase>.<lang>.vtt`). A wrong guess would scatter orphan caption files
-	 * next to the video. Re-running the download (Retry) is the manual re-fetch
-	 * path — it re-derives both from the same flags.
-	 */
+	/** Captions are not re-fetched in place: the row stores the final path but not the filename template, so a second spawn cannot reproduce the stem the subtitle indexer matches. */
 	private async completeDespiteSubtitleFailure(downloadId: string, failure: string): Promise<void> {
 		const row = await prisma.download
 			.findUnique({
@@ -1215,8 +1156,7 @@ class DownloadService {
 				'completing the download without them',
 		);
 
-		// Marked before completeDownload, whose sweep only rewrites pending and
-		// in_progress tasks, so this 'failed' row survives it and stays visible.
+		// Marked before completeDownload: its sweep only rewrites pending/in_progress, so this row survives it.
 		await prisma.downloadTask
 			.updateMany({
 				where: { downloadId, type: 'subtitle' },
@@ -1444,8 +1384,6 @@ class DownloadService {
 			// the cookie file proactively.
 			if (isCookieFailureError(error)) {
 				this.markCookiesInvalidated().catch(() => {});
-				// Only the linked session getting rejected is the downloader's problem;
-				// the same error with the admin's file in play is theirs to fix.
 				if (this.lastCookieSource.get(downloadId) === 'link') {
 					this.notifyLinkExpired(
 						download.userId ?? this.downloadOwners.get(downloadId),
@@ -1514,11 +1452,7 @@ class DownloadService {
 					})
 					.catch(() => {});
 
-				// Arm the auto-heal pass, but only for a first-time transient
-				// failure. The `nextHealAt === null && healAttempts === 0` guard is
-				// load-bearing: a failed automated attempt comes back through this
-				// same branch, and re-arming it here would pin the row at +30 min
-				// forever instead of advancing the heal backoff ladder.
+				// The `nextHealAt === null && healAttempts === 0` guard is load-bearing: re-arming a failed heal attempt here would pin it at +30 min forever.
 				const armHeal =
 					download.nextHealAt === null &&
 					download.healAttempts === 0 &&
@@ -1551,11 +1485,6 @@ class DownloadService {
 		}
 	}
 
-	/**
-	 * Remember which credential a spawn is about to run with, so a later failure
-	 * can be attributed to the right owner, and push the owner the moment the
-	 * resolver itself reports their linked session is unreadable.
-	 */
 	private noteCookieContext(
 		downloadId: string,
 		ctx: YtdlpAccountCtx,
@@ -1570,12 +1499,6 @@ class DownloadService {
 		this.notifyLinkExpired(ownerId ?? this.downloadOwners.get(downloadId), 'needs-relink');
 	}
 
-	/**
-	 * Push the link-health event to the account owner. Until now a dead session was
-	 * only visible as youtube_links.lastError (written by the sync path) or an admin
-	 * event-log row, both of which need a settings reload to notice. Throttled per
-	 * user: a queued batch hits the same dead session over and over.
-	 */
 	private notifyLinkExpired(
 		userId: string | null | undefined,
 		reason: 'needs-relink' | 'auth-failure',
@@ -1603,13 +1526,9 @@ class DownloadService {
 	/**
 	 * Record that the configured cookies failed to authorize a download.
 	 * Throttled to one event per hour so a failing batch records the
-	 * condition once, not once per video. Emitted whichever source was in
-	 * play — the linked account's session is the primary one, so gating on
-	 * the admin upload existing would leave a link-only deployment with no
-	 * signal at all. GET /api/settings/cookies derives its `expired`
+	 * condition once, not once per video. GET /api/settings/cookies derives its `expired`
 	 * flag by comparing this event's latest timestamp against the latest
-	 * cookies.updated one *and* the linked account's cookieUpdatedAt (either
-	 * refresh clears the condition).
+	 * cookies.updated one and the linked account's cookieUpdatedAt.
 	 */
 	private async markCookiesInvalidated(): Promise<void> {
 		const now = Date.now();
@@ -1831,12 +1750,7 @@ class DownloadService {
 		return { deleted, failed, libraryDeleted };
 	}
 
-	/**
-	 * Purge progress goes to whoever asked for it. With no owner (a purge the
-	 * queue ran without a requesting user) the counters describe someone else's
-	 * videos, so the event is broadcast empty — it still lands, it just carries
-	 * nothing. Consumers render these only inside a toast they started themselves.
-	 */
+	/** Ownerless purges broadcast empty: the counters describe someone else's videos. */
 	private emitPurge(event: string, data: any, userId: string | null): void {
 		if (userId) {
 			sseEmitter.broadcastToUser(event, data, userId);
@@ -1863,10 +1777,7 @@ class DownloadService {
 	 * metadata → download pipeline. Event-log attribution comes from the
 	 * request context — see deleteDownload.
 	 *
-	 * `resetHealState` is false only for the automated heal pass, which has just
-	 * written the row's attempt counter and next slot and must not have them
-	 * wiped (that would hand the row an unlimited attempt budget). Every manual
-	 * path keeps the default and starts a fresh auto-heal budget.
+	 * `resetHealState` stays false for the automated heal pass — wiping the counter it just wrote hands the row an unlimited attempt budget.
 	 */
 	async retryDownload(downloadId: string, resetHealState = true): Promise<any> {
 		const download = await prisma.download.findUnique({
@@ -1945,15 +1856,7 @@ class DownloadService {
 		return updated;
 	}
 
-	/**
-	 * Automated self-heal for FAILED rows, run on the scheduler's 30-minute
-	 * pass. Only rows armed by {@link handleDownloadError} (transient failures)
-	 * or by a cookie upload are eligible, and at most HEAL_BATCH_SIZE are taken
-	 * per pass — the operator's egress IP has been bot-flagged before, so the
-	 * pacing is the feature, not an optimization.
-	 *
-	 * Returns the counts the job log reports.
-	 */
+	/** Only rows armed by handleDownloadError or a cookie upload are eligible; HEAL_BATCH_SIZE caps the extra yt-dlp load per pass. */
 	async healFailedDownloads(): Promise<{
 		scanned: number;
 		retried: number;
@@ -1962,10 +1865,6 @@ class DownloadService {
 	}> {
 		const summary = { scanned: 0, retried: 0, exhausted: 0, skipped: 0 };
 
-		// Second line of defence behind the scheduler's job registration: the
-		// Settings toggle unregisters this job the moment it is saved, but a pass
-		// already in flight (or a manual `runJob`) must still respect it — an
-		// operator turning auto-heal off is asking for no automated yt-dlp traffic.
 		// `undefined` means the column predates the toggle, i.e. the default: on.
 		const settings = await this.getSettings();
 		if (settings.autoHealEnabled === false) {
@@ -1973,15 +1872,13 @@ class DownloadService {
 			return summary;
 		}
 
-		// A 429 is IP-wide: retrying during the cooldown is what re-triggers the
-		// block, so the whole pass stands down until it lapses.
+		// A 429 is IP-wide: retrying during the cooldown is what re-triggers the block.
 		if (isRateLimitCooldownActive()) {
 			console.log('[DownloadService] Heal pass skipped: rate-limit cooldown active');
 			return summary;
 		}
 
-		// Pinned (`protected`) rows are included deliberately — protected means
-		// "never bulk-delete", the owner still wants the download.
+		// Pinned rows are included deliberately — `protected` means never bulk-delete, not never retry.
 		const rows = await prisma.download.findMany({
 			where: {
 				status: DownloadStatus.FAILED,
@@ -1999,9 +1896,7 @@ class DownloadService {
 			const next =
 				attempt >= HEAL_MAX_ATTEMPTS ? null : new Date(Date.now() + HEAL_BACKOFF_MS[attempt - 1]);
 
-			// Schedule before re-queueing: if the pass dies between the two, the
-			// row is not due again immediately (that would be a tight retry loop
-			// on every scheduler wake-up).
+			// Schedule before re-queueing: if the pass dies in between, the row must not be due again immediately.
 			await prisma.download.update({
 				where: { id: row.id },
 				data: { healAttempts: attempt, nextHealAt: next },
@@ -2010,13 +1905,10 @@ class DownloadService {
 
 			try {
 				const result = await this.retryDownload(row.id, false);
-				// Already downloaded under the same profile — retryDownload dropped
-				// the stale row rather than re-fetching it. Nothing was re-queued.
 				if (result?.duplicateOf) summary.skipped++;
 				else summary.retried++;
 			} catch (e: any) {
-				// Vanished, already re-queued by someone else, or a duplicate: one
-				// bad row must not strand the rest of the batch.
+				// One bad row must not strand the rest of the batch.
 				summary.skipped++;
 				console.warn(`[DownloadService] Heal pass skipped ${row.id}: ${e?.message || e}`);
 			}
@@ -2025,21 +1917,7 @@ class DownloadService {
 		return summary;
 	}
 
-	/**
-	 * Re-arm cookie-gated failures after new credentials landed, giving each row a
-	 * fresh attempt budget. New credentials are what invalidated the old failures,
-	 * so the exhausted/given-up marker no longer applies.
-	 *
-	 * With a `userId` (an account re-link) only that user's rows are armed: the
-	 * session they replaced never authenticated anyone else's traffic. Rows with no
-	 * owner — monitor-originated, or an ownerless subscription — run on the
-	 * server-wide credential, so only the admin upload path (no `userId`) arms them.
-	 *
-	 * Nothing is fired inline — the paced heal pass drains these 5 per 30 min,
-	 * which is the whole point of having the pass.
-	 *
-	 * Returns how many rows were armed.
-	 */
+	/** A `userId` (account re-link) arms only that user's rows; ownerless rows run on the server-wide credential and are armed only by the admin upload. */
 	async armCookieGatedFailures(userId?: string | null): Promise<number> {
 		const candidates = await prisma.download.findMany({
 			where: { status: DownloadStatus.FAILED, ...(userId ? { userId } : {}) },
@@ -2131,8 +2009,6 @@ class DownloadService {
 		if (!download) throw new Error('Download not found');
 
 		const settings = await this.getSettings();
-		// Same session/proxy/flag resolution as the two download phases, so a manual
-		// refresh authenticates exactly like the download it precedes.
 		const metadata = await withYouTubeCookies(download.userId, (ctx) =>
 			ytdlpService.fetchMetadata(download.url, {
 				cookiePath: ctx.cookiePath,
@@ -2308,12 +2184,7 @@ class DownloadService {
 	}
 
 	/**
-	 * Get active downloads for one user.
-	 *
-	 * No user, no rows: Prisma reads `{ userId: undefined }` as "no filter", which
-	 * would hand an anonymous SSE connection every user's active downloads. The
-	 * SSE initial-state callback passes the connection's user, which is undefined
-	 * for a logged-out client, so this is the guard, not the caller.
+	 * No user, no rows: Prisma reads `{ userId: undefined }` as "no filter" and would leak every user's downloads.
 	 */
 	async getActiveDownloads(userId?: string): Promise<any[]> {
 		if (userId == null) return [];

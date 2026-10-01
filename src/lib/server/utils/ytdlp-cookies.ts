@@ -1,16 +1,17 @@
-import { writeFile, unlink, access } from 'fs/promises';
+import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { prisma } from '../db';
 import { youtubeLinkService } from '../services/youtube-link.service';
+import { decryptSecret } from './crypto-box';
 
 export type CookieSource = 'link' | 'settings' | 'none';
 
 export interface YtdlpAccountCtx {
 	/**
-	 * Path to hand yt-dlp via --cookies. For source 'link' this is a 0600 temp
-	 * file owned by the current withYouTubeCookies() call and unlinked when it
-	 * returns; never retain it past fn().
+	 * Path to hand yt-dlp via --cookies. Always a 0600 temp file owned by the
+	 * current withYouTubeCookies() call and unlinked when it returns; never
+	 * retain it past fn().
 	 */
 	cookiePath: string | null;
 	/** Always resolved from the same record as cookiePath, so a session and the
@@ -33,8 +34,34 @@ export interface YtdlpAccountCtx {
 }
 
 /**
+ * yt-dlp only takes --cookies as a path, so every credential — the linked
+ * account's session and the uploaded cookies.txt alike — is materialized here.
+ * 0600, and unlinked as this call settles: nothing may hold the path past fn().
+ */
+async function withCookieFile<T>(cookies: string, fn: (path: string) => Promise<T>): Promise<T> {
+	const path = join(tmpdir(), `wytui-yt-${Date.now()}-${Math.round(Math.random() * 1e9)}.txt`);
+	await writeFile(path, cookies, { mode: 0o600 });
+	try {
+		return await fn(path);
+	} finally {
+		await unlink(path).catch(() => {});
+	}
+}
+
+/** The uploaded cookies.txt, decrypted. A blob that will not decrypt (a rotated
+ *  AUTH_SECRET) means no credential, not a failed request. */
+function uploadedCookies(cookiesTxtEnc: string | null | undefined): string | null {
+	if (!cookiesTxtEnc) return null;
+	try {
+		return decryptSecret(cookiesTxtEnc);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Resolve the account context every yt-dlp call should use: the linked YouTube
- * account's own session first, the admin-uploaded cookies.txt as fallback.
+ * account's own session first, the uploaded cookies.txt as fallback.
  *
  * The proxy travels with the cookie source on purpose. A Google session used
  * from a different egress than the one it was issued from is a classic
@@ -61,70 +88,38 @@ export async function withYouTubeCookies<T>(
 	const linkProxy = link?.proxyUrl || globalProxy;
 	const cookieTxt = link ? await youtubeLinkService.getCookiesTxt(userId!) : null;
 
-	// Resolved here rather than at each call site: reading the link row a second
-	// time for the flags meant two reads of the same record per yt-dlp spawn.
 	const linkFlags = link?.extraFlags ?? [];
 	const serverFlags = settings?.ytdlpExtraFlags ?? [];
 	const defaultExtraFlags = linkFlags.length > 0 ? linkFlags : serverFlags;
+	const uploaded = uploadedCookies(settings?.cookiesTxtEnc);
+
+	const ctx = (over: Partial<YtdlpAccountCtx>): YtdlpAccountCtx => ({
+		cookiePath: null,
+		proxyUrl: globalProxy,
+		source: 'none',
+		needsRelink: false,
+		extraFlags: linkFlags,
+		defaultExtraFlags,
+		...over,
+	});
 
 	// A link row whose blob will not decrypt is a dead session, not an
 	// unlinked account — callers need those to mean different things.
 	if (link && !cookieTxt) {
-		const settingsPath = await readableCookiePath(settings?.cookiePath);
-		return fn({
-			cookiePath: settingsPath,
-			proxyUrl: linkProxy,
-			source: settingsPath ? 'settings' : 'none',
-			needsRelink: true,
-			extraFlags: linkFlags,
-			defaultExtraFlags,
-		});
+		return uploaded
+			? withCookieFile(uploaded, (path) =>
+					fn(ctx({ cookiePath: path, proxyUrl: linkProxy, source: 'settings', needsRelink: true })),
+				)
+			: fn(ctx({ proxyUrl: linkProxy, needsRelink: true }));
 	}
 
 	if (cookieTxt) {
-		const path = join(tmpdir(), `wytui-yt-${Date.now()}-${Math.round(Math.random() * 1e9)}.txt`);
-		await writeFile(path, cookieTxt, { mode: 0o600 });
-		try {
-			return await fn({
-				cookiePath: path,
-				proxyUrl: linkProxy,
-				source: 'link',
-				needsRelink: false,
-				extraFlags: linkFlags,
-				defaultExtraFlags,
-			});
-		} finally {
-			await unlink(path).catch(() => {});
-		}
+		return withCookieFile(cookieTxt, (path) =>
+			fn(ctx({ cookiePath: path, proxyUrl: linkProxy, source: 'link' })),
+		);
 	}
 
-	const settingsPath = await readableCookiePath(settings?.cookiePath);
-	return fn({
-		cookiePath: settingsPath,
-		proxyUrl: globalProxy,
-		source: settingsPath ? 'settings' : 'none',
-		needsRelink: false,
-		extraFlags: linkFlags,
-		defaultExtraFlags,
-	});
-}
-
-/**
- * settings.cookiePath survives a pod restart; the file it points at usually
- * does not — it is written to <cwd>/data/cookies.txt, which is container disk,
- * not a volume. Handing yt-dlp a missing --cookies path fails with an error
- * that looks like a YouTube problem, so treat a dangling path as no cookies.
- * Exported because the settings UI reports the effective cookie state and must
- * call it "no cookies" under exactly the same condition the spawn does.
- */
-export async function readableCookiePath(
-	cookiePath: string | null | undefined,
-): Promise<string | null> {
-	if (!cookiePath) return null;
-	try {
-		await access(cookiePath);
-		return cookiePath;
-	} catch {
-		return null;
-	}
+	return uploaded
+		? withCookieFile(uploaded, (path) => fn(ctx({ cookiePath: path, source: 'settings' })))
+		: fn(ctx({}));
 }

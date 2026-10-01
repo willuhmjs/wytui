@@ -40,8 +40,6 @@
 		{ label: 'Monitors', href: '/monitors', icon: 'eye', adminOnly: true },
 		{ label: 'Playlists', href: '/playlists', icon: 'playlist' },
 	];
-	// Monitors are admin-only (/api/monitors requires admin), so the entry is
-	// gated the same way the admin section below is.
 	let libraryItems = $derived(LIBRARY_ITEMS.filter((item) => !item.adminOnly || isAdmin));
 
 	// Settings is available to ALL users (Account tab: password + API keys).

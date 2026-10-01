@@ -106,7 +106,6 @@ describe('validateSettingsUpdate: autoDeleteLibraryDays', () => {
 });
 
 describe('ytdlpProxyUrl masking', () => {
-	// serializeSettingsResponse returns the whole settings row, so read it loose.
 	const row = (over: Record<string, any> = {}): Record<string, any> =>
 		serializeSettingsResponse({
 			cacheQuotaBytes: BigInt(1024),
@@ -131,5 +130,27 @@ describe('ytdlpProxyUrl masking', () => {
 	it('keeps the stored proxy when the client echoes the mask back', async () => {
 		const updates = await validateSettingsUpdate({ ytdlpProxyUrl: SECRET_MASK });
 		expect(updates).not.toHaveProperty('ytdlpProxyUrl');
+	});
+});
+
+describe('uploaded cookies', () => {
+	const row = (over: Record<string, any> = {}): Record<string, any> =>
+		serializeSettingsResponse({
+			cacheQuotaBytes: BigInt(1024),
+			totalCacheQuotaBytes: null,
+			...over,
+		});
+
+	it('keeps the stored blob out of the settings payload', () => {
+		const out = row({ cookiesTxtEnc: 'iv:tag:ciphertext', cookiesUpdatedAt: null });
+		expect(out.cookiesTxtEnc).toBe(SECRET_MASK);
+		expect(JSON.stringify(out)).not.toContain('ciphertext');
+		expect(row({ cookiesTxtEnc: null }).cookiesTxtEnc).toBeNull();
+	});
+
+	it('cannot be written through the generic settings PATCH', async () => {
+		await expect(validateSettingsUpdate({ cookiesTxtEnc: 'x' })).rejects.toMatchObject({
+			status: 400,
+		});
 	});
 });

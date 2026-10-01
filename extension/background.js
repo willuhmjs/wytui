@@ -85,8 +85,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		return true;
 	}
 	if (message.action === 'refreshYouTubeCookies') {
-		// Turning the setting on pushes immediately as well, so the user sees
-		// whether it works instead of waiting an hour for the first alarm.
 		(async () => {
 			await syncCookieAlarm();
 			return pushYouTubeCookies();
@@ -95,9 +93,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 });
 
-// ---------------------------------------------------------------------------
 // Opt-in automatic cookie refresh (popup checkbox, off by default)
-// ---------------------------------------------------------------------------
 
 const COOKIE_ALARM = 'wytui-cookie-refresh';
 const COOKIE_REFRESH_MINUTES = 60;
@@ -114,9 +110,7 @@ async function syncCookieAlarm() {
 	}
 }
 
-// MV3 service workers are torn down between events while alarms outlive them,
-// so the alarm is reconciled from stored settings on every wake rather than
-// assumed to still match what the user last clicked.
+// MV3 tears the worker down between events while alarms outlive it, so re-sync on wake.
 chrome.runtime.onStartup.addListener(syncCookieAlarm);
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -177,10 +171,7 @@ async function lookupUrl(url) {
 		const endpoint = `${data.serverUrl.replace(/\/+$/, '')}/api/downloads/quick?url=${encodeURIComponent(url)}`;
 
 		const res = await fetch(endpoint, {
-			// Credentials (Bearer key, and on the cookie POST the full YouTube
-			// jar) ride in these requests; a 301/307/308 would replay them to the
-			// redirect target, which checkSecureTransport never validated. These
-			// routes never legitimately redirect, so any redirect is an error.
+			// A redirect would replay these credentials to an unvalidated target.
 			redirect: 'error',
 			credentials: authCredentials(data.apiKey),
 			headers: authHeaders(data.apiKey),
@@ -203,10 +194,7 @@ async function deleteDownload(id) {
 
 		const endpoint = `${data.serverUrl.replace(/\/+$/, '')}/api/downloads/${encodeURIComponent(id)}`;
 		const res = await fetch(endpoint, {
-			// Credentials (Bearer key, and on the cookie POST the full YouTube
-			// jar) ride in these requests; a 301/307/308 would replay them to the
-			// redirect target, which checkSecureTransport never validated. These
-			// routes never legitimately redirect, so any redirect is an error.
+			// A redirect would replay these credentials to an unvalidated target.
 			redirect: 'error',
 			method: 'DELETE',
 			credentials: authCredentials(data.apiKey),
@@ -232,7 +220,6 @@ async function fetchProfiles() {
 		if (!data.serverUrl) return { success: false, status: 0, profiles: [] };
 
 		const base = data.serverUrl.replace(/\/+$/, '');
-		// redirect: 'error' rationale documented at the other fetch call sites.
 		const opts = {
 			redirect: 'error',
 			credentials: authCredentials(data.apiKey),
@@ -294,10 +281,7 @@ async function sendToWytui(url, profileId, saveToLibrary) {
 		if (saveToLibrary) body.saveToLibrary = true;
 
 		const response = await fetch(endpoint, {
-			// Credentials (Bearer key, and on the cookie POST the full YouTube
-			// jar) ride in these requests; a 301/307/308 would replay them to the
-			// redirect target, which checkSecureTransport never validated. These
-			// routes never legitimately redirect, so any redirect is an error.
+			// A redirect would replay these credentials to an unvalidated target.
 			redirect: 'error',
 			method: 'POST',
 			credentials: authCredentials(data.apiKey),
@@ -327,8 +311,6 @@ async function linkYouTube() {
 	return pushYouTubeCookies();
 }
 
-// Reads this browser's YouTube session and POSTs it to the configured wytui
-// server. Shared by the explicit "Link YouTube" button and the opt-in refresh.
 async function pushYouTubeCookies({ silent = false } = {}) {
 	try {
 		const data = await chrome.storage.local.get(['serverUrl', 'apiKey', 'cookieFingerprint']);
@@ -359,10 +341,7 @@ async function pushYouTubeCookies({ silent = false } = {}) {
 
 		const fingerprint = fingerprintCookies(cookies);
 
-		// The alarm fires whether or not Google rotated anything. wytui treats a
-		// changed cookie set as "re-arm the downloads cookies were blocking", so
-		// an unchanged jar must not be re-sent. Only the scheduled path may skip:
-		// an explicit Re-link has to go through even with identical cookies.
+		// An unchanged jar must not be re-sent: wytui re-arms cookie-blocked downloads on change.
 		if (silent && cookies.length > 0 && fingerprint === data.cookieFingerprint) {
 			return { success: true, skipped: true };
 		}
@@ -370,10 +349,7 @@ async function pushYouTubeCookies({ silent = false } = {}) {
 		const endpoint = data.serverUrl.replace(/\/+$/, '') + '/api/youtube/link';
 
 		const response = await fetch(endpoint, {
-			// Credentials (Bearer key, and on the cookie POST the full YouTube
-			// jar) ride in these requests; a 301/307/308 would replay them to the
-			// redirect target, which checkSecureTransport never validated. These
-			// routes never legitimately redirect, so any redirect is an error.
+			// A redirect would replay these credentials to an unvalidated target.
 			redirect: 'error',
 			method: 'POST',
 			credentials: authCredentials(data.apiKey),
@@ -400,8 +376,7 @@ async function pushYouTubeCookies({ silent = false } = {}) {
 	}
 }
 
-// FNV-1a digest of the cookie jar. Only the digest is stored — the session
-// itself never lands in chrome.storage.
+// Only the digest is stored — the session itself never lands in chrome.storage.
 function fingerprintCookies(cookies) {
 	const payload = cookies
 		.map((c) => `${c.domain}|${c.path}|${c.name}=${c.value}`)

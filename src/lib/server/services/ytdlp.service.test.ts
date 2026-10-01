@@ -179,21 +179,16 @@ describe('findDangerousFlag', () => {
 	});
 
 	it('rejects credential-leak and transport-weakening flags', () => {
-		// A custom --proxy moves the whole request — including the app-managed
-		// --cookies session — to a host the caller controls.
 		expect(ytdlpService.findDangerousFlag(['--proxy', 'http://attacker:8888'])).toBe('--proxy');
 		expect(ytdlpService.findDangerousFlag(['--proxy=socks5://attacker:1080'])).toBe(
 			'--proxy=socks5://attacker:1080',
 		);
-		// Both spellings: --no-check-certificates is yt-dlp's real option, the
-		// youtube-dl singular resolves to it as an unambiguous abbreviation.
 		expect(ytdlpService.findDangerousFlag(['--no-check-certificates'])).toBe(
 			'--no-check-certificates',
 		);
 		expect(ytdlpService.findDangerousFlag(['--no-check-certificate'])).toBe(
 			'--no-check-certificate',
 		);
-		// Command execution for credential lookup, and metadata-driven URL fetch.
 		expect(ytdlpService.findDangerousFlag(['--netrc-cmd', 'gpg --decrypt ~/.auth.gpg'])).toBe(
 			'--netrc-cmd',
 		);
@@ -266,9 +261,6 @@ describe('buildArgs', () => {
 	});
 
 	it('app-managed --cookies/--proxy are pushed after custom flags so they win', () => {
-		// yt-dlp keeps the LAST value for a repeated option. Before this ordering,
-		// a profile's custom --proxy/--cookies (if one ever slipped past the
-		// denylist) overrode the app's — MITM-ing the admin's session.
 		const args = ytdlpService.buildArgs('https://www.youtube.com/watch?v=abc', '/tmp/downloads', [
 			'--sleep-requests',
 			'1',
@@ -288,7 +280,6 @@ describe('buildArgs', () => {
 		expect(withOpts[proxyIndex + 1]).toBe('socks5://corp:1080');
 		expect(cookiesIndex).toBeGreaterThan(customIndex);
 		expect(proxyIndex).toBeGreaterThan(customIndex);
-		// Still ahead of the URL, and the kill switches keep the last word overall.
 		expect(proxyIndex).toBeLessThan(withOpts.indexOf('https://www.youtube.com/watch?v=abc'));
 	});
 
@@ -303,8 +294,7 @@ describe('buildArgs', () => {
 	});
 
 	it('leaves flags that merely share a prefix with the denylist alone', () => {
-		// The prefix rule exists to catch abbreviations of a dangerous flag
-		// (--exe → --exec). It must not swallow unrelated real flags.
+		// Prefix matching exists for abbreviations (--exe → --exec); it must not swallow unrelated real flags.
 		expect(
 			ytdlpService.findDangerousFlag([
 				'--socket-timeout',

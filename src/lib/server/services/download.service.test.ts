@@ -20,11 +20,6 @@ let taskSeq = 0;
 // reach source files under vitest).
 const existingFiles = new Set<string>();
 
-// Stands in for the cookie resolver so a test can say exactly which session and
-// proxy a given user resolves to. The resolver itself (temp-file lifetime,
-// precedence, dangling-path handling) is covered by ytdlp-cookies.test.ts; what
-// is asserted here is which userId each call site asks for and that the answer
-// reaches yt-dlp. `calls` records every resolution.
 const cookieStore = {
 	links: new Map<
 		string,
@@ -32,8 +27,7 @@ const cookieStore = {
 	>(),
 	settingsCookiePath: null as string | null,
 	globalProxy: null as string | null,
-	// settings.ytdlpExtraFlags, mirrored here because the resolver mock applies
-	// the "account flags win when non-empty" rule the real one applies.
+	// Mirrors settings.ytdlpExtraFlags: the mock applies the "account flags win" rule.
 	serverFlags: [] as string[],
 	calls: [] as { userId: string | null | undefined; source: string; cookiePath: string | null }[],
 };
@@ -64,8 +58,7 @@ vi.mock('../db', () => {
 		if (where.subscriptionId !== undefined && d.subscriptionId !== where.subscriptionId) {
 			return false;
 		}
-		// Owner equality, null included: arming a re-link's rows must not pick up
-		// the rows with no owner, which run on the server-wide credential.
+		// Owner match is exact, null included: ownerless rows use the server-wide credential.
 		if (where.userId !== undefined && d.userId !== where.userId) return false;
 		if (where.storagePool !== undefined) {
 			if (where.storagePool?.in) {
@@ -115,8 +108,7 @@ vi.mock('../db', () => {
 				}),
 				findMany: vi.fn(async ({ where, orderBy, take, skip }: any) => {
 					const rows = Object.values(downloads).filter((d: any) => matchesWhere(d, where));
-					// Single-key orderBy only (all callers use one); createdAt is the
-					// default, matching Prisma's insertion-order fallback closely enough.
+					// Single-key orderBy only (all callers use one); createdAt is the default.
 					const order = Array.isArray(orderBy) ? orderBy[0] : orderBy;
 					const key = order ? Object.keys(order)[0] : 'createdAt';
 					const dir = order?.[key] === 'desc' ? -1 : 1;
@@ -157,8 +149,7 @@ vi.mock('../db', () => {
 					jobQueueRows.filter((j) => j.status === 'PENDING' || j.status === 'RUNNING'),
 				),
 			},
-			// Per-step task rows. `create` hands back a fresh id each time so the
-			// service's task map can key on it, and `update` just echoes the row.
+			// `create` hands back a fresh id each time so the service's task map can key on it.
 			downloadTask: {
 				create: vi.fn(async ({ data }: any) => {
 					const row = { id: `task-${++taskSeq}`, ...data };
@@ -175,9 +166,7 @@ vi.mock('../db', () => {
 					for (const t of taskRows) {
 						if (t.downloadId !== where.downloadId) continue;
 						if (where.type !== undefined && t.type !== where.type) continue;
-						// Status filter, scalar or { in: [...] }: completeDownload's
-						// sweeps key on it, and ignoring it here would let the
-						// pending→skipped sweep clobber a row another status wrote.
+						// The status filter must be honoured or a sweep clobbers another status's rows.
 						if (where.status !== undefined) {
 							if (where.status?.in) {
 								if (!where.status.in.includes(t.status)) continue;
@@ -237,8 +226,6 @@ vi.mock('./notification.service', () => ({
 vi.mock('../utils/ytdlp-cookies', () => ({
 	withYouTubeCookies: vi.fn(async (userId: string | null | undefined, fn: any) => {
 		const link = userId ? cookieStore.links.get(userId) : undefined;
-		// A dead session falls back to the admin file exactly as the real resolver
-		// does, so a test can put the download path in that state.
 		const deadSession = link?.needsRelink === true;
 		const cookiePath = link && !deadSession ? link.cookiePath : cookieStore.settingsCookiePath;
 		const source = link && !deadSession ? 'link' : cookiePath ? 'settings' : 'none';
@@ -306,11 +293,9 @@ beforeEach(() => {
 	(downloadService as any).lastErrorLine.clear();
 	(downloadService as any).downloadTaskIds.clear();
 	(downloadService as any).processingSteps.clear();
-	// Per-user link-expiry notices are throttled; a leftover timestamp would
-	// silently swallow the broadcast the next test asserts on.
+	// A leftover throttle timestamp would swallow the next test's link-expiry broadcast.
 	(downloadService as any).lastLinkExpiryNoticeAt.clear();
-	// vi.fn()s from the module factories keep their call history otherwise, so a
-	// test that counts broadcasts would count its neighbours' too.
+	// Module-factory vi.fn()s keep their call history unless cleared here.
 	(sseEmitter.broadcast as any).mockClear();
 	(sseEmitter.broadcastToUser as any).mockClear();
 	vi.restoreAllMocks();
@@ -622,11 +607,6 @@ describe('queue handler error wiring', () => {
 	});
 
 	it('runs a metadata-phase bot check through the same retry gate as a download failure', async () => {
-		// The 30 production bot-check rows all carried retryCount = 3, which is
-		// what an ungated 1s/2s/4s cycle leaves behind. The gate lives in
-		// handleDownloadError, which BOTH queue handlers route into — this test
-		// pins that routing for the metadata phase, i.e. a future handler that
-		// re-enqueues on its own (bypassing handleDownloadError) reddens this.
 		const registered = new Map<string, any>();
 		(queueService.registerHandler as any).mockImplementation((type: string, handler: any) =>
 			registered.set(type, handler),
@@ -641,7 +621,6 @@ describe('queue handler error wiring', () => {
 
 		await registered.get('metadata')({ payload: { downloadId: ID } });
 
-		// Terminal on the first attempt: no quick retry, no second metadata job.
 		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
 		expect(downloads[ID].retryCount).toBe(0);
 		expect(downloads[ID].status).toBe(DownloadStatus.FAILED);
@@ -689,9 +668,6 @@ describe('queue handler error wiring', () => {
 });
 
 describe('subtitle fetch failure is not fatal', () => {
-	// Verbatim from six production rows: the video was fine, only the timedtext
-	// request was refused, and yt-dlp's non-zero exit threw the whole download
-	// away — which the RSS window then forgot about.
 	const SUBTITLE_429 =
 		"ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests";
 	const MEDIA_403 = 'ERROR: Unable to download video data: HTTP Error 403: Forbidden';
@@ -700,15 +676,12 @@ describe('subtitle fetch failure is not fatal', () => {
 	let mediaPath: string;
 
 	beforeEach(() => {
-		// A real temp file, because the service's own `stat` (a builtin import
-		// vitest cannot mock here) is what proves the media really landed.
+		// A real temp file: the service's own stat is a builtin vitest cannot mock here.
 		dir = mkdtempSync(join(tmpdir(), 'wytui-sub-'));
 		mediaPath = join(dir, 'Some Video.mp4');
 		writeFileSync(mediaPath, Buffer.alloc(2048, 1));
 		existingFiles.add(mediaPath);
-		// Completing a download kicks off cache-quota enforcement, which needs a
-		// prisma aggregate this file's mock does not implement. Out of scope here —
-		// stub it so the completion under test is the only thing that runs.
+		// Completion runs cache-quota enforcement, whose prisma aggregate this mock lacks.
 		vi.spyOn(libraryService, 'enforceCacheQuota').mockResolvedValue(undefined as any);
 	});
 
@@ -716,10 +689,7 @@ describe('subtitle fetch failure is not fatal', () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	/**
-	 * Drive the real spawn/close path of runYtdlpDownload with a fake process
-	 * that reports `exitCode`, and whose stderr "ERROR" line is `errorLine`.
-	 */
+	/** Drives the real spawn/close path with a fake process reporting `exitCode` and `errorLine`. */
 	async function runSpawn(opts: { exitCode: number; errorLine: string | null; filepath: string }) {
 		seedDownload({
 			status: DownloadStatus.DOWNLOADING,
@@ -732,8 +702,7 @@ describe('subtitle fetch failure is not fatal', () => {
 		const download = { ...downloads[ID], profile: { customFlags: [] } };
 		const proc = new EventEmitter() as any;
 		vi.spyOn(ytdlpService, 'spawnDownload').mockImplementation((() => {
-			// The service clears the previous attempt's error line immediately
-			// before spawning, so this is where a real stderr line would land.
+			// The service clears the prior error line just before spawning, so this is where it lands.
 			if (opts.errorLine) (downloadService as any).lastErrorLine.set(ID, opts.errorLine);
 			return proc;
 		}) as any);
@@ -753,15 +722,12 @@ describe('subtitle fetch failure is not fatal', () => {
 			defaultExtraFlags: [],
 		} as any;
 
-		// Both mocks are module-level and accumulate for the whole file, so the
-		// assertions in these tests are scoped to what this spawn writes.
+		// These module-level mocks accumulate for the whole file, so scope the assertions.
 		(prisma.download.update as any).mockClear();
 		(prisma.eventLog.create as any).mockClear();
 
 		const done = (downloadService as any).runYtdlpDownload(download, settings, ctx);
-		// runYtdlpDownload attaches the close listener only after its setup
-		// awaits (task rows, flag resolution), so the exit has to arrive on a
-		// later macrotask or the event is emitted into an empty listener list.
+		// The close listener is attached after setup awaits, so the exit needs a later macrotask.
 		setTimeout(() => proc.emit('close', opts.exitCode), 0);
 		return done;
 	}
@@ -772,17 +738,13 @@ describe('subtitle fetch failure is not fatal', () => {
 		expect(downloads[ID].status).toBe(DownloadStatus.COMPLETED);
 		expect(downloads[ID].error).toBeNull();
 		expect(downloads[ID].progress).toBe(100);
-		// No quick-retry cycle was scheduled — nothing failed from the app's view.
 		expect((downloadService as any).retryTimeouts.has(ID)).toBe(false);
 
-		// The loss is visible on the per-step task list, and survives
-		// completeDownload's "mark the rest completed" sweep.
 		const subTask = taskRows.find((t) => t.downloadId === ID && t.type === 'subtitle');
 		expect(subTask).toBeDefined();
 		expect(subTask.status).toBe('failed');
 		expect(subTask.message).toContain('429');
 
-		// …and in the admin event log as a warning, not a failure.
 		const warning = (prisma.eventLog.create as any).mock.calls
 			.map((c: any[]) => c[0]?.data)
 			.find((d: any) => d?.type === 'download.warning');
@@ -803,8 +765,6 @@ describe('subtitle fetch failure is not fatal', () => {
 			runSpawn({ exitCode: 1, errorLine: SUBTITLE_429, filepath: mediaPath }),
 		).rejects.toThrow('Too Many Requests');
 
-		// Row untouched: the queue handler hands it to handleDownloadError, which
-		// owns the retry/FAILED decision. Nothing was marked complete.
 		expect(downloads[ID].status).toBe(DownloadStatus.DOWNLOADING);
 	});
 
@@ -817,9 +777,6 @@ describe('subtitle fetch failure is not fatal', () => {
 	});
 
 	it('arms the auto-heal timer for a subtitle failure that could not be tolerated', async () => {
-		// The video was never fetched, so this one really is a failure — and it is
-		// classified transient, i.e. it comes back on the heal ladder instead of
-		// ageing out of the RSS window as a permanent verdict.
 		seedDownload({ retryCount: 3, videoId: 'vid1', profileId: 'p1' });
 
 		await (downloadService as any).handleDownloadError(ID, SUBTITLE_429);
@@ -1115,8 +1072,6 @@ describe('subscription purge (queued, reports over SSE)', () => {
 
 			await downloadService.purgeDownloadItems([{ id: 'c1', pool: 'cache' }]);
 
-			// The event still arrives (a waiting UI can settle), but how much of
-			// someone else's library just vanished is not for bystanders to see.
 			expect(sseEmitter.broadcast).toHaveBeenCalledWith('subscription:purge:progress', {});
 			expect(sseEmitter.broadcast).toHaveBeenCalledWith('subscription:purge:complete', {});
 			expect(sseEmitter.broadcastToUser).not.toHaveBeenCalled();
@@ -1182,8 +1137,7 @@ describe('getActiveDownloads scoping', () => {
 	});
 
 	it('returns nothing at all when there is no user, without querying', async () => {
-		// Prisma reads `{ userId: undefined }` as "no filter", so the old guard
-		// handed an anonymous SSE connection every user's active downloads.
+		// Prisma reads `{ userId: undefined }` as "no filter".
 		const findMany = prisma.download.findMany as unknown as { mock: { calls: unknown[] } };
 
 		for (const userId of [undefined, null]) {
@@ -1195,8 +1149,6 @@ describe('getActiveDownloads scoping', () => {
 });
 
 describe('SSE ownership filtering (emitToOwner)', () => {
-	// Shaped like a real download:failed payload — raw yt-dlp output plus the
-	// server-side path the file landed in.
 	const payload = {
 		status: DownloadStatus.FAILED,
 		error: 'ERROR: unable to download video data: HTTP Error 403: Forbidden',
@@ -1213,13 +1165,9 @@ describe('SSE ownership filtering (emitToOwner)', () => {
 	});
 
 	it('still announces an ownerless download, but never its payload', () => {
-		// No downloadOwners entry: the state a monitor-originated download — or
-		// every in-flight row after a server restart — is in.
 		(downloadService as any).emitToOwner('download:failed', payload, 'own-2');
 
-		// The event arrives so an open card can settle...
 		expect(sseEmitter.broadcast).toHaveBeenCalledWith('download:failed', { id: 'own-2' });
-		// ...and what arrives carries the row id and nothing else.
 		const [, sent] = (sseEmitter.broadcast as any).mock.calls[0];
 		expect(Object.keys(sent)).toEqual(['id']);
 		expect(sseEmitter.broadcastToUser).not.toHaveBeenCalled();
@@ -1253,8 +1201,7 @@ describe('auto-heal pacing', () => {
 		};
 	}
 
-	// A cookie-class terminal failure arms the shared cooldown as a side effect,
-	// and the pass stands down while it is active — start every test clean.
+	// A cookie-class failure arms the shared cooldown, so start every test clean.
 	beforeEach(() => {
 		resetRateLimitCooldown();
 	});
@@ -1294,9 +1241,6 @@ describe('auto-heal pacing', () => {
 		});
 
 		it('does not re-arm a row that already spent auto-attempts', async () => {
-			// The infinite-loop guard: a failed auto-attempt comes back through the
-			// terminal path, and re-arming it here would pin the row at +30 min
-			// forever instead of advancing the backoff ladder.
 			seedDownload({
 				retryCount: 3,
 				videoId: 'vid1',
@@ -1324,7 +1268,6 @@ describe('auto-heal pacing', () => {
 
 			await (downloadService as any).handleDownloadError(ID, STALL);
 
-			// Only the heal pass moves the slot, so the ladder keeps advancing.
 			expect(new Date(downloads[ID].nextHealAt).getTime()).toBe(slot.getTime());
 			expect(downloads[ID].healAttempts).toBe(1);
 		});
@@ -1332,9 +1275,6 @@ describe('auto-heal pacing', () => {
 
 	describe('the pass', () => {
 		it('refuses to run while the autoHealEnabled toggle is off', async () => {
-			// Belt and braces behind the scheduler's job unregistration: a pass
-			// already in flight, or one triggered by hand from the scheduler page,
-			// must respect the toggle too.
 			seedFailed('due', { nextHealAt: new Date(Date.now() - MIN) });
 			vi.spyOn(prisma.settings, 'findUnique').mockResolvedValue({ autoHealEnabled: false } as any);
 
@@ -1347,8 +1287,7 @@ describe('auto-heal pacing', () => {
 			expect(downloads['due'].healAttempts).toBe(0);
 			expect(enqueueCalls).toHaveLength(0);
 
-			// A settings row predating the migration (column absent) means the
-			// default — on — so the pass must not silently stop healing.
+			// A settings row without the column means the default: on.
 			(prisma.settings.findUnique as any).mockResolvedValue({} as any);
 			expect((await downloadService.healFailedDownloads()).retried).toBe(1);
 		});
@@ -1368,7 +1307,6 @@ describe('auto-heal pacing', () => {
 			const summary = await downloadService.healFailedDownloads();
 
 			expect(summary).toEqual({ scanned: 5, retried: 5, exhausted: 0, skipped: 0 });
-			// The five oldest slots were taken; due-1 waits for the next pass.
 			for (const id of ['due-2', 'due-3', 'due-4', 'due-5', 'due-6']) {
 				expect(downloads[id].healAttempts).toBe(1);
 				const next = new Date(downloads[id].nextHealAt).getTime();
@@ -1379,7 +1317,6 @@ describe('auto-heal pacing', () => {
 			expect(downloads['due-1'].nextHealAt).not.toBeNull();
 			expect(downloads['future'].healAttempts).toBe(0);
 			expect(downloads['unarmed'].healAttempts).toBe(0);
-			// Re-queued through the normal pipeline, 5 metadata jobs.
 			expect(enqueueCalls).toHaveLength(5);
 			expect(enqueueCalls.every((c) => c.type === 'metadata')).toBe(true);
 		});
@@ -1393,8 +1330,7 @@ describe('auto-heal pacing', () => {
 			expect(downloads['last'].healAttempts).toBe(4);
 			expect(downloads['last'].nextHealAt).toBeNull();
 
-			// It failed again, so the row is FAILED with a slot that would be due —
-			// the exhausted attempt counter is the only thing keeping it out.
+			// Only the exhausted attempt counter keeps a given-up row out of selection.
 			downloads['last'].status = DownloadStatus.FAILED;
 			downloads['last'].nextHealAt = new Date(Date.now() - MIN);
 			expect(await downloadService.healFailedDownloads()).toEqual({
@@ -1413,7 +1349,6 @@ describe('auto-heal pacing', () => {
 
 			const summary = await downloadService.healFailedDownloads();
 
-			// A 429 is IP-wide: retrying through the cooldown re-triggers the block.
 			expect(summary).toEqual({ scanned: 0, retried: 0, exhausted: 0, skipped: 0 });
 			expect(prisma.download.findMany).not.toHaveBeenCalled();
 			expect(downloads['due'].healAttempts).toBe(0);
@@ -1437,13 +1372,9 @@ describe('auto-heal pacing', () => {
 			const summary = await downloadService.healFailedDownloads();
 
 			expect(summary).toEqual({ scanned: 2, retried: 1, exhausted: 0, skipped: 1 });
-			// The healthy row went through the normal re-queue path…
 			expect(downloads['fine'].status).toBe(DownloadStatus.PENDING);
-			// …and both rows kept the schedule written before the retry, so the
-			// failed one is not due again immediately.
 			expect(downloads['boom'].healAttempts).toBe(1);
 			expect(downloads['boom'].nextHealAt).not.toBeNull();
-			// The heal pass must not hand out a fresh attempt budget by resetting.
 			expect(spy).toHaveBeenCalledWith('fine', false);
 		});
 
@@ -1516,8 +1447,6 @@ describe('auto-heal pacing', () => {
 			const before = Date.now();
 			const armed = await downloadService.armCookieGatedFailures();
 
-			// New credentials invalidate the old auth failures, so the exhausted
-			// budget restarts — but only for the cookie class.
 			expect(armed).toBe(2);
 			for (const id of ['bot', 'members']) {
 				expect(downloads[id].healAttempts).toBe(0);
@@ -1533,8 +1462,6 @@ describe('auto-heal pacing', () => {
 				'Metadata fetch failed: Error: [youtube] vid2: Join this channel to get access to members-only content.';
 			seedFailed('mine', { error: cookieErr, healAttempts: 4, nextHealAt: null, userId: 'me' });
 			seedFailed('other', { error: cookieErr, healAttempts: 4, nextHealAt: null, userId: 'other' });
-			// Monitor-originated / ownerless-subscription rows: they never ran on any
-			// account's session, so only the server-wide credential can fix them.
 			seedFailed('orphan', { error: cookieErr, healAttempts: 4, nextHealAt: null, userId: null });
 
 			expect(await downloadService.armCookieGatedFailures('me')).toBe(1);
@@ -1542,8 +1469,6 @@ describe('auto-heal pacing', () => {
 			expect(downloads['other'].healAttempts).toBe(4);
 			expect(downloads['orphan'].healAttempts).toBe(4);
 
-			// No userId is the admin upload path: the file is the fallback for every
-			// account and the only credential for the ownerless rows.
 			expect(await downloadService.armCookieGatedFailures()).toBe(3);
 			expect(downloads['other'].healAttempts).toBe(0);
 			expect(downloads['orphan'].healAttempts).toBe(0);
@@ -1593,7 +1518,6 @@ describe('per-owner cookie resolution', () => {
 
 		await (downloadService as any).fetchMetadata(ID);
 
-		// Asked for the row's owner, and what it answered is what yt-dlp is handed.
 		expect(cookieStore.calls).toEqual([
 			{ userId: 'owner-1', source: 'link', cookiePath: '/tmp/wytui-yt-owner1.txt' },
 		]);
@@ -1654,8 +1578,7 @@ describe('per-owner cookie resolution', () => {
 		vi.spyOn(ytdlpService, 'buildArgs').mockImplementation((_url, _out, flags, options: any) => {
 			spawnOptions = options;
 			spawnFlags = flags as string[];
-			// Everything after this point is process handling; the argv is what
-			// this test is about.
+			// The argv is what these tests check; skip the process handling.
 			throw new Error('args-captured');
 		});
 
@@ -1667,11 +1590,7 @@ describe('per-owner cookie resolution', () => {
 			cookiePath: '/tmp/wytui-yt-owner2.txt',
 		});
 		expect(spawnOptions.cookiePath).toBe('/tmp/wytui-yt-owner2.txt');
-		// The link proxy wins over the global one, and it is the same ctx value
-		// that decided the cookie file.
 		expect(spawnOptions.proxyUrl).toBe('http://owner2:8080');
-		// Same for the flags: the account's own override beats the server-wide
-		// default, and it came from the resolver rather than a second link read.
 		expect(spawnFlags).toEqual(['--limit-rate', '1M']);
 	});
 
@@ -1704,8 +1623,6 @@ describe('per-owner cookie resolution', () => {
 			'Metadata fetch failed: Error: [youtube] vid1: Join this channel to get access to members-only content and other perks.',
 		);
 
-		// There is no settings.cookiePath here at all — the linked session is the
-		// only credential in play, and its failure is still an admin-visible signal.
 		await vi.waitFor(() => expect(cookieEventsRecorded()).toBe(true));
 	});
 
@@ -1745,8 +1662,7 @@ describe('per-owner cookie resolution', () => {
 			proxyUrl: null,
 		});
 		vi.spyOn(libraryService, 'ensureFreeDiskSpace').mockResolvedValue({ sufficient: true } as any);
-		// Stop at the argv: the point is that the spawn recorded which credential
-		// it was about to use, and the auth failure that follows is attributed to it.
+		// Stop at the argv: the recorded credential must get the attribution.
 		vi.spyOn(ytdlpService, 'buildArgs').mockImplementation(() => {
 			throw new Error('args-captured');
 		});
@@ -1772,8 +1688,6 @@ describe('per-owner cookie resolution', () => {
 		(downloadService as any).lastCookieInvalidationAt = Date.now();
 		await (downloadService as any).handleDownloadError(ID, MEMBER_ONLY);
 
-		// A members-only failure with the uploaded file in play is the admin's to
-		// fix — pushing "re-link your account" at the downloader is a false alarm.
 		expect(linkExpiredCalls()).toHaveLength(0);
 	});
 
@@ -1822,8 +1736,6 @@ describe('per-owner cookie resolution', () => {
 			liveStatus: null,
 		} as any);
 
-		// A queued batch hits the same dead session on every attempt and every
-		// retry — the owner gets told once, not once per video.
 		await (downloadService as any).fetchMetadata(ID);
 		await (downloadService as any).fetchMetadata(ID);
 

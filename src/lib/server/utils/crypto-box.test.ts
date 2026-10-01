@@ -31,8 +31,6 @@ describe('crypto-box', () => {
 
 		it('will not decrypt for another owner', () => {
 			const asUserA = encryptSecret('jar', 'user-A');
-			// The whole point: a blob that is byte-identical and perfectly intact is
-			// worthless to a caller that cannot name the row it was written for.
 			expect(() => decryptSecret(asUserA, 'user-B')).toThrow();
 		});
 
@@ -44,7 +42,6 @@ describe('crypto-box', () => {
 		it('leaves unbound payloads readable (global secrets must survive the change)', () => {
 			const legacy = encryptSecret('jellyfin-api-key');
 			expect(decryptSecret(legacy)).toBe('jellyfin-api-key');
-			// Same bytes an old build would have produced: no marker, still "iv:tag:ct".
 			expect(legacy.split(':')).toHaveLength(3);
 		});
 

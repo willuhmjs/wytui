@@ -9,14 +9,10 @@
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
 
-	// The API caps `limit` at 100, so "show everything" is a walk rather than one
-	// big request. FAILED rows are pruned after 30 days, so this normally settles
-	// in a single page; the cap is only a safety valve against a pathological
-	// table, and "Load more" stays available if we ever stop at it.
+	// The API caps limit at 100, so this is a paged walk; the row cap is only a safety valve.
 	const FAILED_PAGE_SIZE = 100;
 	const FAILED_ROW_CAP = 1000;
-	// Server-side cursor: counts raw rows fetched, not the ones we filtered out
-	// via removedIds, otherwise the offsets drift and rows get skipped.
+	// Counts raw rows fetched, not the ones dropped via removedIds, or the offsets drift.
 	let serverOffset = 0;
 
 	let failedDownloads = $state<any[]>([]);
@@ -49,9 +45,6 @@
 		failedDownloads = failedDownloads.filter((d) => d.id !== id);
 	}
 
-	// Auto-heal state for the row: how many of the 4 automated attempts it has
-	// spent. No countdown — the heal pass runs every 30 min, so the count is the
-	// only part that stays accurate between refetches.
 	function healHint(download: any): string | null {
 		const attempts = Number(download.healAttempts ?? 0);
 		if (attempts <= 0) return null;
@@ -70,7 +63,6 @@
 		return (await res.json()) as any[];
 	}
 
-	// Walks every page so the header count is the real total instead of "50+".
 	async function loadFailedDownloads() {
 		const seq = ++loadSeq;
 		failedLoading = true;
@@ -502,7 +494,6 @@
 		color: var(--color-status-error);
 	}
 
-	/* Compact auto-heal state under the error text — quieter than the error. */
 	.heal-hint {
 		display: block;
 		overflow: hidden;

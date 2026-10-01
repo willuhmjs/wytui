@@ -97,24 +97,13 @@ class YouTubeService {
 	private statsCache = new Map<string, CacheEntry<PlaylistStats>>();
 	private subscriptionCache = new Map<string, CacheEntry<YtEntry[]>>();
 
-	/**
-	 * Flat listing that runs as the linked account, for the import/sync pickers.
-	 *
-	 * These listings are account-scoped by definition (a subscription list, a
-	 * private playlist), so anything other than the linked session means the
-	 * account is not usable: no link row, or a row whose stored session will not
-	 * decrypt. Both resolve to {@link NeedsRelink} without spawning — resolving
-	 * anonymously here would answer with the wrong account's subscriptions instead
-	 * of failing.
-	 */
+	/** Runs as the linked account; an anonymous fallback would answer with the wrong account's listings. */
 	private async fetchList(
 		userId: string,
 		target: string,
 		opts: { timeoutMs?: number } = {},
 	): Promise<YtEntry[] | NeedsRelink> {
 		return withYouTubeCookies(userId, async (ctx) => {
-			// Covers both dead-session shapes: no link row at all, and a link row
-			// whose stored blob will not decrypt (ctx.needsRelink).
 			if (ctx.source !== 'link') return { needsRelink: true };
 			try {
 				// ctx.extraFlags are deliberately not passed: selection flags
@@ -230,11 +219,6 @@ class YouTubeService {
 	 * settled-guarded yt-dlp runner. Returns the playlist's own title (from the
 	 * single-json `title` field, null when absent) alongside the parsed entries.
 	 * Throws on failure.
-	 *
-	 * `userId` is optional because a public playlist can be enumerated without an
-	 * account; when one is given the browse runs with that user's session (and the
-	 * proxy it was issued from) so member-only and unlisted playlists work like
-	 * they do on the sibling listing paths.
 	 */
 	async fetchPlaylistFlat(
 		url: string,

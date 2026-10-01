@@ -11,8 +11,7 @@ class MonitorService {
 	private activeMonitors = new Map<string, ChildProcess>();
 	private checkInterval: NodeJS.Timeout | null = null;
 	private restartCounts = new Map<string, number>();
-	// A Twitch probe can run for its full timeout, so ticks overlap without this —
-	// two probes for one monitor means two handleStreamLive calls.
+	// A Twitch probe can outlast its tick; without this one monitor gets two live handlers.
 	private twitchChecksInFlight = new Set<string>();
 	private static MAX_RESTARTS = 10;
 	private static MAX_BACKOFF_MS = 300000; // 5 minutes
@@ -62,27 +61,16 @@ class MonitorService {
 	private async startYouTubeMonitor(monitor: any): Promise<void> {
 		ytdlpService.validateUrl(monitor.url);
 
-		// Route monitor traffic through the owner's own session and the proxy that
-		// session was issued from — anonymous polls from the bare server IP are a
-		// classic bot-check trigger. The probe runs until the stream goes live, so
-		// the resolver callback is deliberately not resolved until the process exits:
-		// it unlinks the temp cookie file on return while yt-dlp still holds that
-		// path. Nothing awaits this promise; startMonitor() has to return while the
-		// probe is running.
+		// The resolver unlinks the temp cookie file when it returns, so it must not resolve until the probe exits.
 		void withYouTubeCookies(monitor.userId, (ctx) => this.runYouTubeProbe(monitor, ctx)).catch(
 			(err) => {
 				console.error(`[Monitor ${monitor.name}] Probe could not start:`, err);
-				// No process ever ran, so nothing will emit 'close' — re-enter the
-				// backoff path or a transient DB error would leave the monitor dead.
+				// Nothing emits 'close' here, so re-enter the backoff path or a transient error leaves the monitor dead.
 				this.restartMonitorIfEnabled(monitor.id).catch(() => {});
 			},
 		);
 	}
 
-	/**
-	 * Spawn the --wait-for-video probe and resolve once it exits (which also
-	 * releases the cookie file the resolver opened for it).
-	 */
 	private runYouTubeProbe(monitor: any, ctx: YtdlpAccountCtx): Promise<void> {
 		return new Promise((resolve) => {
 			const args = [
@@ -297,8 +285,6 @@ class MonitorService {
 		this.twitchChecksInFlight.add(monitor.id);
 		try {
 			ytdlpService.validateUrl(monitor.url);
-			// Awaited, so the resolver's cookie file lives exactly as long as the
-			// probe that reads it.
 			await withYouTubeCookies(monitor.userId, (ctx) => this.runTwitchProbe(monitor, ctx));
 		} catch (error) {
 			console.error(`[Monitor ${monitor.name}] Check failed:`, error);

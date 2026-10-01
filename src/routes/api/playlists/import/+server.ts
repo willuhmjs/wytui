@@ -53,9 +53,7 @@ export const POST = apiRoute(
 			// Validate URL
 			ytdlpService.validateUrl(url);
 
-			// Best-effort SSRF guard — see utils/ssrf-guard.ts. This is the entry
-			// point; `fetchPlaylistFlat` below hands the same URL to yt-dlp, which
-			// resolves it again on its own (the TOCTOU gap documented there).
+			// Best-effort SSRF guard — yt-dlp re-resolves the URL itself; see utils/ssrf-guard.ts.
 			const hostCheck = await checkUrlHost(url);
 			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
 
@@ -75,9 +73,6 @@ export const POST = apiRoute(
 			// Send initial SSE event
 			sseEmitter.broadcastToUser('playlist:import:start', { url }, userId);
 
-			// Extract playlist entries via the shared, timeout-guarded yt-dlp runner,
-			// authenticated as the requesting user. This replaces a duplicate local
-			// spawn that had no timeout/settled guard.
 			let title: string | null;
 			let entries;
 			try {

@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Route-level coverage for the /api/monitors gate: monitors are server-side
-// probes that record on a schedule with a profile's credentials, so every method
-// is admin-only and a create may not borrow another user's profile.
 const db = {
 	monitors: [] as any[],
 	profiles: [] as any[],
@@ -40,8 +37,6 @@ vi.mock('$lib/server/services/monitor.service', () => ({
 	},
 }));
 
-// The SSRF guard resolves hostnames; stub it so this file stays off the network,
-// and let one case flip it to "blocked" to prove the route acts on the verdict.
 const guard = vi.hoisted(() => ({ blocked: false }));
 vi.mock('$lib/server/utils/ssrf-guard', () => ({
 	checkUrlHost: vi.fn(async () =>
@@ -133,7 +128,6 @@ describe('POST /api/monitors', () => {
 
 	it("refuses to schedule a monitor on another user's profile", async () => {
 		const res = post({ ...VALID_CREATE, profileId: 'p-theirs' });
-		// An admin may still use their own non-system profile.
 		expect(await statusOf(POST, { locals: localsFor(admin), ...res })).toBe(403);
 		expect(vi.mocked(prisma.monitor.create)).not.toHaveBeenCalled();
 
@@ -166,8 +160,6 @@ describe('POST /api/monitors', () => {
 	});
 
 	it('rejects a URL the SSRF guard blocks, before creating anything', async () => {
-		// A monitor re-probes its URL on a schedule, so a blocked URL must not be
-		// persisted just because the rest of the payload is valid.
 		guard.blocked = true;
 		expect(
 			await statusOf(POST, {

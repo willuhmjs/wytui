@@ -162,12 +162,7 @@ describe('SSE store', () => {
 		const es = FakeEventSource.instances[0];
 		es.emit('connected');
 
-		// The EventSource only forwards types that got an explicit listen() call in
-		// connectSSE(); anything else is parsed and dropped with no error, so the
-		// subscriber's UI just silently never updates. Every event the server
-		// broadcasts must be listed here — including the per-user ones
-		// (youtube:link:expired), which are the easiest to forget because the
-		// broadcast side works and only the client goes quiet.
+		// EventSource drops event types that got no explicit listen() in connectSSE().
 		const seen: Record<string, any> = {};
 		const types = [
 			'subscription:checked',

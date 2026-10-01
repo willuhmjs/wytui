@@ -53,8 +53,7 @@ export class YtdlpService {
 		'--download-archive', // read/append arbitrary archive files
 		'--sponsorblock-api', // arbitrary URL fetched server-side (SSRF)
 		'--add-headers', // inject arbitrary request headers (auth/cookies)
-		// --no-check-certificate (youtube-dl spelling) is an unambiguous
-		// abbreviation of --no-check-certificates, so one entry covers both.
+		// Unambiguous abbreviations resolve, so one entry also covers --no-check-certificate.
 		'--no-check-certificates', // disable TLS validation (MITM of the session cookie)
 		'--proxy', // reroute the request — and the --cookies session — to an attacker host
 		'--netrc-cmd', // execute an arbitrary command to obtain credentials
@@ -434,12 +433,7 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Args carrying the per-request yt-dlp defaults (session cookie file, outbound
-	 * proxy + extra default flags) for invocations that don't go through
-	 * {@link buildArgs}. The cookie path is always produced by
-	 * withYouTubeCookies() and validated by its caller, so unlike extra flags it is
-	 * not user input; extra flags are guarded by the same denylist as per-download
-	 * custom flags.
+	 * Args for invocations that don't go through {@link buildArgs}. The cookie path comes from withYouTubeCookies() (never user input); extra flags go through the same denylist as custom flags.
 	 */
 	buildDefaultsArgs(defaults: {
 		proxyUrl?: string | null;
@@ -548,13 +542,7 @@ export class YtdlpService {
 			args.push(...finalFlags);
 		}
 
-		// App-managed credential/routing flags go LAST (before the kill switches),
-		// AFTER any user custom flags: yt-dlp's option parser keeps the last value
-		// for a repeated option, so pushing --cookies/--proxy earlier let a profile
-		// carrying e.g. `--proxy http://attacker:8888 --no-check-certificates`
-		// silently reroute the admin's cookie file through the attacker. Order is
-		// load-bearing here, not cosmetic — same reason the kill switches below are
-		// appended last.
+		// App-managed credential/routing flags go LAST: yt-dlp keeps the last value of a repeated option, so a custom --proxy ahead of these would reroute the app-managed --cookies file.
 		if (options?.cookiePath) {
 			args.push('--cookies', options.cookiePath);
 		}

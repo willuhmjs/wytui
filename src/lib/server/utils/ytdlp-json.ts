@@ -57,15 +57,7 @@ export class YtdlpTimeoutError extends Error {
 	}
 }
 
-/**
- * Lowercase the failure text and fold typographic apostrophes to ASCII.
- *
- * YouTube emits `Sign in to confirm you’re not a bot` with U+2019 RIGHT SINGLE
- * QUOTATION MARK, while every literal here is written with a straight `'`.
- * Matching through this helper is what makes those literals reachable — with a
- * plain `toLowerCase()` the cookie-failure predicate matched 0 of the 30
- * bot-check rows in the production table, so `cookies.invalidated` never fired.
- */
+/** Folds yt-dlp's U+2019 curly apostrophes to ASCII; every literal below is written straight. */
 export function normalizeFailureText(s: string): string {
 	return s.toLowerCase().replace(/[\u2018\u2019]/g, "'");
 }
@@ -98,18 +90,7 @@ export function isRateLimitedError(stderr: string): boolean {
 	);
 }
 
-/**
- * Returns true when the failure is specifically yt-dlp giving up on a
- * *subtitle* fetch — e.g.
- * `ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests`.
- *
- * Subtitles are an accessory: losing them must never sink a video that yt-dlp
- * otherwise fetched in full, so the download path tests this before treating a
- * non-zero exit as fatal (see downloadService.completeDespiteSubtitleFailure).
- * The pattern is deliberately narrow — it must not also match a failure of the
- * media download itself (`unable to download video data`), which is why
- * "subtitles" is required in the same clause.
- */
+/** Narrow on purpose: `unable to download video data` shares the prefix but is a fatal media failure, not a lost caption. */
 export function isSubtitleFetchFailure(stderr: string): boolean {
 	return /unable to download [^:\n]*subtitles?\b/.test(normalizeFailureText(stderr));
 }
@@ -155,17 +136,8 @@ export function isCookieFailureError(stderr: string): boolean {
 	);
 }
 
-/**
- * How a terminal download failure should be treated by the auto-heal pass.
- *
- * - `transient`: worth another try on a timer (throttle, timeout, network, stall).
- * - `cookie`: needs new credentials, so it is re-armed only when the admin
- *   uploads a cookie file — never by the timer.
- * - `permanent`: another attempt with the same inputs fails identically.
- */
 export type DownloadFailureClass = 'transient' | 'cookie' | 'permanent';
 
-/** Retrying these cannot help: the target, the URL or the tool is the problem. */
 const PERMANENT_FAILURE_MARKERS = [
 	'video unavailable',
 	'private video',
@@ -179,7 +151,6 @@ const PERMANENT_FAILURE_MARKERS = [
 	'result not representable',
 ];
 
-/** Transport-level and wait-for-it failures: the same request may succeed later. */
 const TRANSIENT_FAILURE_MARKERS = [
 	'timed out',
 	'timeout',
@@ -201,24 +172,14 @@ const TRANSIENT_FAILURE_MARKERS = [
 	'this live event will begin',
 ];
 
-/**
- * Classify a stored `Download.error` for the auto-heal pass.
- *
- * Evaluation order is the whole design. yt-dlp raises `RateLimitError` for
- * bot-checks and some age-gates, so the cookie class must be tested before the
- * transient one — otherwise a bot-check lands on the retry timer and keeps
- * hammering an IP YouTube has already flagged. Anything unrecognised is
- * permanent: guessing "retryable" is the dangerous direction for this app,
- * whose egress IP was bot-flagged by a too-aggressive retry loop.
- */
+/** Cookie must be tested before transient: a bot-check arrives as `RateLimitError` and must not land on the retry timer. */
 export function classifyDownloadFailure(error: string | null | undefined): DownloadFailureClass {
 	const s = normalizeFailureText(error ?? '');
 	if (PERMANENT_FAILURE_MARKERS.some((m) => s.includes(m))) return 'permanent';
 	if (isCookieFailureError(s) || isAgeRestrictedError(s)) return 'cookie';
 	if (TRANSIENT_FAILURE_MARKERS.some((m) => s.includes(m))) return 'transient';
 	if (isRateLimitedError(s)) return 'transient';
-	// HTTP 5xx — yt-dlp writes `HTTP Error 502: Bad Gateway`, and sometimes only
-	// the bare status survives stderr truncation.
+	// The bare-status pattern covers stderr truncated before the `HTTP Error` prefix.
 	if (/http error 5\d\d/.test(s) || / 50[0234] /.test(s)) return 'transient';
 	return 'permanent';
 }
