@@ -368,13 +368,6 @@
 			docsAnchor: '#network-options',
 			flags: [
 				{
-					key: 'proxy',
-					flag: '--proxy',
-					label: 'Proxy',
-					type: 'text',
-					placeholder: 'socks5://127.0.0.1:1080',
-				},
-				{
 					key: 'socket_timeout',
 					flag: '--socket-timeout',
 					label: 'Socket timeout',
@@ -475,20 +468,6 @@
 					defaultValue: '1024',
 				},
 				{
-					key: 'downloader',
-					flag: '--downloader',
-					label: 'External downloader',
-					type: 'text',
-					placeholder: 'aria2c',
-				},
-				{
-					key: 'downloader_args',
-					flag: '--downloader-args',
-					label: 'Downloader args',
-					type: 'text',
-					placeholder: 'aria2c:"-x 16 -s 16"',
-				},
-				{
 					key: 'download_sections',
 					flag: '--download-sections',
 					label: 'Download sections',
@@ -578,13 +557,6 @@
 					type: 'bool',
 				},
 				{
-					key: 'download_archive',
-					flag: '--download-archive',
-					label: 'Download archive file',
-					type: 'text',
-					placeholder: '/path/to/archive.txt',
-				},
-				{
 					key: 'break_on_existing',
 					flag: '--break-on-existing',
 					label: 'Break on existing',
@@ -596,13 +568,6 @@
 			category: 'Filesystem',
 			docsAnchor: '#filesystem-options',
 			flags: [
-				{
-					key: 'output_template',
-					flag: '-o',
-					label: 'Output template',
-					type: 'text',
-					placeholder: '%(title)s.%(ext)s',
-				},
 				{
 					key: 'no_overwrites',
 					flag: '--no-overwrites',
@@ -646,13 +611,6 @@
 					type: 'number',
 					placeholder: 'characters',
 				},
-				{
-					key: 'cookies',
-					flag: '--cookies',
-					label: 'Cookies file',
-					type: 'text',
-					placeholder: '/path/to/cookies.txt',
-				},
 			],
 		},
 		{
@@ -685,13 +643,6 @@
 			category: 'Post-Processing',
 			docsAnchor: '#post-processing-options',
 			flags: [
-				{
-					key: 'postprocessor_args',
-					flag: '--postprocessor-args',
-					label: 'Post-processor args',
-					type: 'text',
-					placeholder: 'ffmpeg:-c:a aac -b:a 192k',
-				},
 				{
 					key: 'keep_video',
 					flag: '-k',
@@ -740,12 +691,6 @@
 			docsAnchor: '#workarounds',
 			flags: [
 				{
-					key: 'no_check_certs',
-					flag: '--no-check-certificates',
-					label: 'Skip certificate check',
-					type: 'bool',
-				},
-				{
 					key: 'legacy_server',
 					flag: '--legacy-server-connect',
 					label: 'Legacy server connect',
@@ -778,13 +723,6 @@
 					label: 'Sleep between subtitles',
 					type: 'number',
 					placeholder: 'seconds',
-				},
-				{
-					key: 'add_headers',
-					flag: '--add-headers',
-					label: 'Add headers',
-					type: 'text',
-					placeholder: 'Referer:https://example.com',
 				},
 			],
 		},

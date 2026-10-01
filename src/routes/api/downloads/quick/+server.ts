@@ -3,6 +3,7 @@ import { downloadService } from '$lib/server/services/download.service';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
 import { extractVideoId } from '$lib/utils/youtube';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 // Whitelist of allowed origins for CORS
@@ -169,6 +170,15 @@ export const POST = apiRoute(
 			} catch {
 				return json(
 					{ error: 'Invalid URL format' },
+					{ status: 400, headers: getCorsHeaders(request) },
+				);
+			}
+
+			// Best-effort SSRF guard — see utils/ssrf-guard.ts for its limits.
+			const hostCheck = await checkUrlHost(url);
+			if (!hostCheck.ok) {
+				return json(
+					{ error: describeUrlHostCheck(hostCheck) },
 					{ status: 400, headers: getCorsHeaders(request) },
 				);
 			}

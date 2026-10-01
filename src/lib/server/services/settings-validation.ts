@@ -37,6 +37,7 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 	'cleanupGraceHours',
 	'autoDeleteWatchedDays',
 	'autoDeleteLibraryDays',
+	'autoHealEnabled',
 	'appriseUrl',
 	'notifyOnComplete',
 	'notifyOnFail',
@@ -72,6 +73,14 @@ export const ALLOWED_SETTINGS_FIELDS = new Set([
 ]);
 
 /**
+ * What a stored secret is replaced with in any response body. Exported because
+ * per-account secrets (see youtube-link.service) mask with the same marker, and
+ * every writer must recognise it as "the client echoed back what it was shown"
+ * rather than a new value.
+ */
+export const SECRET_MASK = '***SET***';
+
+/**
  * Fields returned as '***SET***' rather than their value. A client echoing the
  * mask back must not overwrite the stored secret with the literal mask.
  */
@@ -81,7 +90,29 @@ export const SECRET_SETTINGS_FIELDS = new Set([
 	'ldapBindPassword',
 	'appriseUrl',
 	'oidcClientSecret',
+	// A proxy URL carries optional user:pass credentials and names an internal
+	// host, so it is treated as a secret: the App Settings page gets
+	// ytdlpProxyScheme instead (see serializeSettingsResponse).
+	'ytdlpProxyUrl',
 ]);
+
+/**
+ * The scheme of a proxy URL without the trailing colon ('socks5h'), or null when
+ * no proxy is set. Returned alongside the masked value because the only thing
+ * the UI needs from a stored proxy is that knowledge: aria2c rejects SOCKS
+ * proxies and turns every download into a failure. Host, port and credentials
+ * never leave the server.
+ */
+export function proxyUrlSchemeHint(raw: unknown): string | null {
+	if (typeof raw !== 'string' || raw.trim() === '') return null;
+	let protocol = '';
+	try {
+		protocol = new URL(raw.trim()).protocol.toLowerCase();
+	} catch {
+		return null; // unparseable stored value — treat as "no hint"
+	}
+	return protocol.endsWith(':') ? protocol.slice(0, -1) : protocol;
+}
 
 /** Secrets stored encrypted at rest (see crypto-box). */
 export const ENCRYPTED_SETTINGS_FIELDS = ['oidcClientSecret', 'ldapBindPassword'] as const;
@@ -129,7 +160,7 @@ export async function validateSettingsUpdate(
 		if (!ALLOWED_SETTINGS_FIELDS.has(key)) {
 			throw error(400, `Unknown setting: ${key}`);
 		}
-		if (SECRET_SETTINGS_FIELDS.has(key) && body[key] === '***SET***') {
+		if (SECRET_SETTINGS_FIELDS.has(key) && body[key] === SECRET_MASK) {
 			continue; // unchanged masked secret — leave existing value untouched
 		}
 		updates[key] = body[key];
@@ -372,6 +403,12 @@ export async function validateSettingsUpdate(
 		}
 	}
 
+	if (updates.autoHealEnabled !== undefined) {
+		if (typeof updates.autoHealEnabled !== 'boolean') {
+			throw error(400, 'autoHealEnabled must be a boolean');
+		}
+	}
+
 	if (updates.httpChunkSize !== undefined) {
 		// Allow null or empty string → coerce to null
 		if (updates.httpChunkSize === null || updates.httpChunkSize === '') {
@@ -439,6 +476,13 @@ export async function applySettingsSideEffects(updates: Record<string, any>): Pr
 		const { jobScheduler } = await import('$lib/server/jobs/scheduler');
 		await jobScheduler.restartCleanupTask();
 	}
+
+	// The auto-heal job re-registers (or unregisters) itself immediately, so the
+	// toggle takes effect without waiting for a pod restart.
+	if (updates.autoHealEnabled !== undefined) {
+		const { jobScheduler } = await import('$lib/server/jobs/scheduler');
+		await jobScheduler.restartHealTask();
+	}
 }
 
 /**
@@ -452,11 +496,13 @@ export function serializeSettingsResponse(settings: {
 }) {
 	const redacted: Record<string, any> = { ...settings };
 	for (const field of SECRET_SETTINGS_FIELDS) {
-		redacted[field] = redacted[field] ? '***SET***' : null;
+		redacted[field] = redacted[field] ? SECRET_MASK : null;
 	}
 	return {
 		...redacted,
 		cacheQuotaBytes: settings.cacheQuotaBytes.toString(),
 		totalCacheQuotaBytes: settings.totalCacheQuotaBytes?.toString() ?? null,
+		// Non-secret companion to the masked ytdlpProxyUrl (see proxyUrlSchemeHint).
+		ytdlpProxyScheme: proxyUrlSchemeHint(settings.ytdlpProxyUrl),
 	};
 }

@@ -104,3 +104,90 @@ describe('fetchList error classification', () => {
 		);
 	});
 });
+
+describe('fetchList session requirements', () => {
+	beforeEach(() => {
+		runYtdlpJsonMock.mockReset();
+	});
+
+	it('answers needsRelink without spawning when the account has no session at all', async () => {
+		const { prisma } = await import('../db');
+		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue(null as any);
+		const { youtubeService } = await import('./youtube.service');
+
+		// The listing is the account's own subscription list: browsing it with the
+		// admin's file or anonymously would answer with someone else's subscriptions,
+		// so the absence of a session is the answer, not a fallback.
+		await expect(youtubeService.fetchHistory('u-nobody')).resolves.toEqual({ needsRelink: true });
+		expect(runYtdlpJsonMock).not.toHaveBeenCalled();
+	});
+
+	it('answers needsRelink when the stored session will not decrypt', async () => {
+		const { prisma } = await import('../db');
+		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue({
+			proxyUrl: null,
+			extraFlags: [],
+		} as any);
+		const { youtubeLinkService } = await import('./youtube-link.service');
+		vi.mocked(youtubeLinkService.getCookiesTxt).mockResolvedValueOnce(null);
+		const { youtubeService } = await import('./youtube.service');
+
+		await expect(youtubeService.fetchHistory('u-dead')).resolves.toEqual({ needsRelink: true });
+		expect(runYtdlpJsonMock).not.toHaveBeenCalled();
+	});
+
+	it('withholds the account extra flags from a listing fetch', async () => {
+		// Selection flags would silently drop entries from the listing the picker is
+		// built from — the proxy still applies, the filters must not.
+		runYtdlpJsonMock.mockResolvedValue('{"entries":[]}');
+		const { prisma } = await import('../db');
+		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue({
+			proxyUrl: 'http://account-proxy:8080',
+			extraFlags: ['--dateafter', '20260101', '--match-filters', '!short'],
+		} as any);
+		const { youtubeService } = await import('./youtube.service');
+
+		await youtubeService.fetchHistory('u-flagged');
+
+		const opts = runYtdlpJsonMock.mock.calls.at(-1)![1] as any;
+		expect(opts.extraArgs).toBeUndefined();
+		expect(JSON.stringify(opts)).not.toContain('--dateafter');
+		expect(opts.proxyUrl).toBe('http://account-proxy:8080');
+	});
+});
+
+describe('fetchPlaylistFlat session', () => {
+	beforeEach(() => {
+		runYtdlpJsonMock.mockReset();
+	});
+
+	it('enumerates the playlist with the requesting user’s session and proxy', async () => {
+		runYtdlpJsonMock.mockResolvedValue('{"title":"My List","entries":[]}');
+		const { youtubeService } = await import('./youtube.service');
+		const { prisma } = await import('../db');
+		vi.spyOn(prisma.youTubeLink, 'findUnique').mockResolvedValue({
+			proxyUrl: 'http://account-proxy:8080',
+			extraFlags: [],
+		} as any);
+
+		const out = await youtubeService.fetchPlaylistFlat(
+			'https://www.youtube.com/playlist?list=PL1',
+			'u1',
+		);
+
+		expect(out.title).toBe('My List');
+		const opts = runYtdlpJsonMock.mock.calls.at(-1)![1] as any;
+		expect(opts.proxyUrl).toBe('http://account-proxy:8080');
+		expect(opts.cookiePath).toContain('wytui-yt-');
+	});
+
+	it('stays anonymous when called without a user', async () => {
+		runYtdlpJsonMock.mockResolvedValue('{"entries":[]}');
+		const { youtubeService } = await import('./youtube.service');
+
+		await youtubeService.fetchPlaylistFlat('https://www.youtube.com/playlist?list=PL1');
+
+		const opts = runYtdlpJsonMock.mock.calls.at(-1)![1] as any;
+		expect(opts.cookiePath).toBeNull();
+	});
+});

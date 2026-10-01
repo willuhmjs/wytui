@@ -3,6 +3,8 @@ import { prisma } from '$lib/server/db';
 import { monitorService } from '$lib/server/services/monitor.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { apiRoute } from '$lib/server/openapi';
+import { requireAdmin } from '$lib/server/guards';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 export const GET = apiRoute(
@@ -11,7 +13,7 @@ export const GET = apiRoute(
 	{
 		summary: 'Get monitor by ID',
 		tags: ['Monitors'],
-		auth: true,
+		auth: 'admin',
 		params: { id: { type: 'string', description: 'Monitor ID' } },
 		responses: {
 			200: {
@@ -37,9 +39,8 @@ export const GET = apiRoute(
 	},
 	async ({ params, locals }) => {
 		try {
-			if (!locals.session?.user?.id) {
-				throw error(401, 'Authentication required');
-			}
+			// Admin-only, matching GET /api/monitors (this returns the same rows).
+			requireAdmin(locals);
 
 			const monitor = await prisma.monitor.findUnique({
 				where: { id: params.id },
@@ -137,6 +138,15 @@ export const PATCH = apiRoute(
 				if (!validTypes.includes(updates.type)) {
 					throw error(400, 'Invalid monitor type');
 				}
+			}
+
+			// The URL is updatable, and PATCH does no format check on it at all — so
+			// the SSRF guard has to run here as well as on POST, or "create a monitor
+			// on a safe URL, then repoint it at 169.254.169.254" would bypass it.
+			// Protocol is checked here because nothing upstream does it for PATCH.
+			if (updates.url !== undefined) {
+				const hostCheck = await checkUrlHost(updates.url);
+				if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
 			}
 
 			if (updates.profileId !== undefined) {

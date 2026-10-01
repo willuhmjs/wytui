@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { downloadService } from '$lib/server/services/download.service';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 export const POST = apiRoute(
@@ -61,6 +62,19 @@ export const POST = apiRoute(
 					}
 				} catch {
 					throw error(400, `Invalid URL format: ${url}`);
+				}
+			}
+
+			// Best-effort SSRF guard — see utils/ssrf-guard.ts. Checked concurrently:
+			// a batch is up to 100 URLs and each hostname costs a resolution, so
+			// awaiting them inside the loop above would add seconds to a legitimate
+			// request. The rejected URL is named (the caller supplied it); the address
+			// it resolved to never is.
+			const hostChecks = await Promise.all(urls.map((u: string) => checkUrlHost(u)));
+			for (let i = 0; i < urls.length; i++) {
+				const hostCheck = hostChecks[i];
+				if (!hostCheck.ok) {
+					throw error(400, `${describeUrlHostCheck(hostCheck)}: ${urls[i]}`);
 				}
 			}
 

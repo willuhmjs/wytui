@@ -156,7 +156,7 @@ describe('SSE store', () => {
 		expect(sse.getSSEState().connected).toBe(true);
 	});
 
-	it('forwards every subscription event to its onSSEEvent subscribers', async () => {
+	it('forwards every pushed event to its onSSEEvent subscribers', async () => {
 		const sse = await freshStore();
 		sse.connectSSE();
 		const es = FakeEventSource.instances[0];
@@ -164,7 +164,10 @@ describe('SSE store', () => {
 
 		// The EventSource only forwards types that got an explicit listen() call in
 		// connectSSE(); anything else is parsed and dropped with no error, so the
-		// subscriber's UI just silently never updates. This list is the guard.
+		// subscriber's UI just silently never updates. Every event the server
+		// broadcasts must be listed here — including the per-user ones
+		// (youtube:link:expired), which are the easiest to forget because the
+		// broadcast side works and only the client goes quiet.
 		const seen: Record<string, any> = {};
 		const types = [
 			'subscription:checked',
@@ -172,6 +175,7 @@ describe('SSE store', () => {
 			'subscription:backfill',
 			'subscription:purge:progress',
 			'subscription:purge:complete',
+			'youtube:link:expired',
 		];
 		for (const type of types) {
 			sse.onSSEEvent(type, (data: any) => {
@@ -184,6 +188,7 @@ describe('SSE store', () => {
 		es.emit('subscription:backfill', { id: 's1', name: 'Chan', totalVideos: 40, newVideos: 3 });
 		es.emit('subscription:purge:progress', { done: 1, total: 2, id: 'd1' });
 		es.emit('subscription:purge:complete', { total: 2, deleted: 2, failed: 0 });
+		es.emit('youtube:link:expired', { reason: 'auth-failure', message: 're-link the account' });
 
 		expect(seen).toEqual({
 			'subscription:checked': { id: 's1', name: 'Chan', newVideos: 2 },
@@ -191,6 +196,7 @@ describe('SSE store', () => {
 			'subscription:backfill': { id: 's1', name: 'Chan', totalVideos: 40, newVideos: 3 },
 			'subscription:purge:progress': { done: 1, total: 2, id: 'd1' },
 			'subscription:purge:complete': { total: 2, deleted: 2, failed: 0 },
+			'youtube:link:expired': { reason: 'auth-failure', message: 're-link the account' },
 		});
 	});
 });

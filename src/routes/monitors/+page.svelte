@@ -10,6 +10,12 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
 	import XIcon from '$lib/components/icons/XIcon.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+	// /api/monitors is admin-only, so non-admins get an explanation instead of an
+	// empty list they cannot act on.
+	let isAdmin = $derived(data.session?.user?.isAdmin ?? false);
 
 	// Monitors state
 	let monitors = $state<any[]>([]);
@@ -89,6 +95,10 @@
 	}
 
 	onMount(() => {
+		// Nothing to load for a non-admin: the API would answer both requests with
+		// 403 and the page only renders the access notice.
+		if (!isAdmin) return () => {};
+
 		loadProfiles();
 		loadMonitors();
 
@@ -265,12 +275,14 @@
 				<h2>Livestream Monitors</h2>
 				<p class="text-muted">Monitor livestreams and auto-download when they go live</p>
 			</div>
-			<button class="btn btn-primary" onclick={() => (showMonitorsForm = !showMonitorsForm)}>
-				{showMonitorsForm ? 'Cancel' : 'Add Monitor'}
-			</button>
+			{#if isAdmin}
+				<button class="btn btn-primary" onclick={() => (showMonitorsForm = !showMonitorsForm)}>
+					{showMonitorsForm ? 'Cancel' : 'Add Monitor'}
+				</button>
+			{/if}
 		</div>
 
-		{#if showMonitorsForm}
+		{#if showMonitorsForm && isAdmin}
 			<form class="form-card" onsubmit={handleMonitorsSubmit}>
 				<div class="form-row">
 					<div class="form-group">
@@ -378,7 +390,12 @@
 			</div>
 		{/if}
 
-		{#if monitorsLoading && monitors.length === 0}
+		{#if !isAdmin}
+			<EmptyState
+				title="Administrator access required"
+				description="Livestream monitors are managed by administrators. Ask an admin to add a monitor if you want a stream tracked."
+			/>
+		{:else if monitorsLoading && monitors.length === 0}
 			<Skeleton count={3} variant="card" />
 		{:else if monitors.length === 0}
 			<EmptyState title="No monitors yet" description="Add a livestream URL to start monitoring" />

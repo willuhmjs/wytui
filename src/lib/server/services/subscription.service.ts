@@ -2,7 +2,6 @@ import { prisma } from '../db';
 import { downloadService } from './download.service';
 import { ytdlpService } from './ytdlp.service';
 import { youtubeService } from './youtube.service';
-import { youtubeLinkService } from './youtube-link.service';
 import { sseEmitter } from '../sse/emitter';
 import { queueService } from './queue.service';
 import { CronExpressionParser } from 'cron-parser';
@@ -17,6 +16,7 @@ import {
 	runYtdlpJson,
 } from '../utils/ytdlp-json';
 import { armRateLimitCooldown, isRateLimitCooldownActive } from '../utils/rate-limit-cooldown';
+import { withYouTubeCookies, type YtdlpAccountCtx } from '../utils/ytdlp-cookies';
 import { eventLogService, EventTypes } from './event-log.service';
 
 class SubscriptionService {
@@ -390,28 +390,6 @@ class SubscriptionService {
 	}
 
 	/**
-	 * Resolve the yt-dlp defaults (proxy + extra flags) for a user's traffic:
-	 * per-linked-account overrides when set, otherwise the global settings.
-	 * Shared with monitor/service paths so all yt-dlp traffic egresses the same
-	 * way (per-account proxy keeps a stable IP per YouTube identity).
-	 */
-	async getYtdlpDefaults(
-		subscription?: { userId?: string | null } | null,
-	): Promise<{ proxyUrl: string | null; extraFlags: string[] }> {
-		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
-		let proxyUrl = settings?.ytdlpProxyUrl ?? null;
-		let extraFlags = settings?.ytdlpExtraFlags ?? [];
-		const account = subscription?.userId
-			? await youtubeLinkService.getAccountYtdlp(subscription.userId)
-			: null;
-		if (account) {
-			if (account.proxyUrl) proxyUrl = account.proxyUrl;
-			if (account.extraFlags.length > 0) extraFlags = account.extraFlags;
-		}
-		return { proxyUrl, extraFlags };
-	}
-
-	/**
 	 * Find an existing subscription that already covers the given channel.
 	 *
 	 * URL equality alone is not enough: the same channel can be referenced as
@@ -451,17 +429,19 @@ class SubscriptionService {
 		name: string | null;
 		avatarUrl: string | null;
 	} | null> {
-		const defaults = await this.getYtdlpDefaults({ userId });
 		try {
-			const json = await runYtdlpJson(url, {
-				proxyUrl: defaults.proxyUrl,
-				extraArgs: [
-					'--playlist-items',
-					'0',
-					...ytdlpService.buildDefaultsArgs({ extraFlags: defaults.extraFlags }),
-				],
-				timeoutMs: 30000,
-			});
+			const json = await withYouTubeCookies(userId, (ctx) =>
+				runYtdlpJson(url, {
+					cookiePath: ctx.cookiePath,
+					proxyUrl: ctx.proxyUrl,
+					extraArgs: [
+						'--playlist-items',
+						'0',
+						...ytdlpService.buildDefaultsArgs({ extraFlags: ctx.defaultExtraFlags }),
+					],
+					timeoutMs: 30000,
+				}),
+			);
 			const data = JSON.parse(json);
 			const channelId = typeof data?.channel_id === 'string' ? data.channel_id : null;
 			const count = data?.playlist_count;
@@ -605,8 +585,11 @@ class SubscriptionService {
 	/**
 	 * Get latest videos from a channel/playlist via a flat listing (fixed depth)
 	 */
-	private async getLatestVideosByUrl(url: string): Promise<any[]> {
-		return this.fetchPlaylistEntries(url, { limit: SubscriptionService.CHECK_DEPTH });
+	private async getLatestVideosByUrl(url: string, userId?: string | null): Promise<any[]> {
+		return this.fetchPlaylistEntries(url, {
+			limit: SubscriptionService.CHECK_DEPTH,
+			userId,
+		});
 	}
 
 	/**
@@ -621,8 +604,17 @@ class SubscriptionService {
 	): Promise<any[]> {
 		ytdlpService.validateUrl(url);
 
+		// The resolver stays open until the browse finishes (its promise is what
+		// this returns), so the temp cookie file outlives the yt-dlp read of it.
+		return withYouTubeCookies(opts.userId, (ctx) => this.browsePlaylist(url, opts, ctx));
+	}
+
+	private browsePlaylist(
+		url: string,
+		opts: { limit?: number; dateAfter?: string },
+		ctx: YtdlpAccountCtx,
+	): Promise<any[]> {
 		const useFullExtraction = !!opts.dateAfter;
-		const defaults = await this.getYtdlpDefaults({ userId: opts.userId });
 
 		return new Promise((resolve, reject) => {
 			const args = ['-J', '--no-warnings'];
@@ -639,7 +631,14 @@ class SubscriptionService {
 				args.push('--playlist-end', opts.limit.toString());
 			}
 
-			args.push(...ytdlpService.buildDefaultsArgs(defaults), url);
+			args.push(
+				...ytdlpService.buildDefaultsArgs({
+					cookiePath: ctx.cookiePath,
+					proxyUrl: ctx.proxyUrl,
+					extraFlags: ctx.defaultExtraFlags,
+				}),
+				url,
+			);
 
 			const proc = spawn(ytdlpService.getPath(), args);
 			let output = '';
@@ -748,7 +747,7 @@ class SubscriptionService {
 
 		if (!subscription) return 0;
 
-		const videos = await this.getLatestVideosByUrl(subscription.url);
+		const videos = await this.getLatestVideosByUrl(subscription.url, subscription.userId);
 		let seeded = 0;
 
 		for (const video of videos) {

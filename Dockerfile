@@ -41,8 +41,20 @@ RUN apk add --no-cache \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
   deno
 
-RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+# -G nodejs is required, not cosmetic: busybox `adduser -S` without -G does NOT
+# pick the same-named group, it lands the user in nogroup (gid 65533), so the
+# `chown nodejs:nodejs` below owned files by a group the process was not a member
+# of and only the owner bits ever applied. Verified on node:24-alpine3.23: the
+# old line gives `gid=65533(nogroup)`, this one gives `gid=1001(nodejs)`, and
+# everything else (uid, home dir /home/nodejs nodejs-owned, nologin shell) is
+# byte-for-byte the same, so the chowns below and the yt-dlp self-update
+# staging in /usr/local/bin are unaffected.
+RUN addgroup -g 1001 -S nodejs && adduser -S -D -u 1001 -G nodejs nodejs
 RUN mkdir -p /downloads && chown nodejs:nodejs /downloads
+# Cookie uploads write to /app/data. On Kubernetes a volume covers this path,
+# but Docker named volumes only copy up ownership for paths that exist in the
+# image, and /app is root-owned — without this line uploads 500 on compose.
+RUN mkdir -p /app/data && chown nodejs:nodejs /app/data
 
 # yt-dlp self-updates in place (yt-dlp -U) from the app's scheduler, which runs
 # as nodejs. It stages a temp file next to the binary and renames it over the

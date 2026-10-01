@@ -9,7 +9,15 @@
 	import RefreshIcon from '$lib/components/icons/RefreshIcon.svelte';
 	import TrashIcon from '$lib/components/icons/TrashIcon.svelte';
 
-	const FAILED_PAGE_SIZE = 50;
+	// The API caps `limit` at 100, so "show everything" is a walk rather than one
+	// big request. FAILED rows are pruned after 30 days, so this normally settles
+	// in a single page; the cap is only a safety valve against a pathological
+	// table, and "Load more" stays available if we ever stop at it.
+	const FAILED_PAGE_SIZE = 100;
+	const FAILED_ROW_CAP = 1000;
+	// Server-side cursor: counts raw rows fetched, not the ones we filtered out
+	// via removedIds, otherwise the offsets drift and rows get skipped.
+	let serverOffset = 0;
 
 	let failedDownloads = $state<any[]>([]);
 	let failedLoading = $state(false);
@@ -41,23 +49,49 @@
 		failedDownloads = failedDownloads.filter((d) => d.id !== id);
 	}
 
-	async function loadFailedDownloads(offset = 0) {
+	// Auto-heal state for the row: how many of the 4 automated attempts it has
+	// spent. No countdown — the heal pass runs every 30 min, so the count is the
+	// only part that stays accurate between refetches.
+	function healHint(download: any): string | null {
+		const attempts = Number(download.healAttempts ?? 0);
+		if (attempts <= 0) return null;
+		if (attempts >= 4 && !download.nextHealAt) return 'auto-retry gave up (4/4)';
+		return `auto-retry ${attempts}/4`;
+	}
+
+	async function fetchFailedPage(offset: number): Promise<any[] | null> {
+		const params = new URLSearchParams({
+			status: 'FAILED',
+			limit: String(FAILED_PAGE_SIZE),
+			offset: String(offset),
+		});
+		const res = await fetch(`/api/downloads?${params}`);
+		if (!res.ok) return null;
+		return (await res.json()) as any[];
+	}
+
+	// Walks every page so the header count is the real total instead of "50+".
+	async function loadFailedDownloads() {
 		const seq = ++loadSeq;
-		if (offset === 0) failedLoading = true;
+		failedLoading = true;
 		try {
-			const params = new URLSearchParams({
-				status: 'FAILED',
-				limit: String(FAILED_PAGE_SIZE),
-				offset: String(offset),
-			});
-			const res = await fetch(`/api/downloads?${params}`);
-			if (seq !== loadSeq) return; // superseded by a newer load
-			if (res.ok) {
-				const page = (await res.json()) as any[];
-				hasMoreFailed = page.length === FAILED_PAGE_SIZE;
-				const visible = page.filter((d) => !removedIds.has(d.id));
-				failedDownloads = offset === 0 ? visible : [...failedDownloads, ...visible];
+			const collected: any[] = [];
+			let exhausted = false;
+			serverOffset = 0;
+			while (true) {
+				const page = await fetchFailedPage(serverOffset);
+				if (seq !== loadSeq) return; // superseded by a newer load
+				if (page === null) break;
+				serverOffset += page.length;
+				collected.push(...page.filter((d) => !removedIds.has(d.id)));
+				if (page.length < FAILED_PAGE_SIZE) {
+					exhausted = true;
+					break;
+				}
+				if (serverOffset >= FAILED_ROW_CAP) break; // capped: more remain
 			}
+			failedDownloads = collected;
+			hasMoreFailed = !exhausted;
 		} catch (e) {
 			console.error('Failed to load failed downloads:', e);
 		} finally {
@@ -69,7 +103,16 @@
 		if (failedLoading || loadingMore || !hasMoreFailed) return;
 		loadingMore = true;
 		try {
-			await loadFailedDownloads(failedDownloads.length);
+			const page = await fetchFailedPage(serverOffset);
+			if (page) {
+				serverOffset += page.length;
+				failedDownloads = [...failedDownloads, ...page.filter((d) => !removedIds.has(d.id))];
+				hasMoreFailed = page.length === FAILED_PAGE_SIZE;
+			} else {
+				hasMoreFailed = false;
+			}
+		} catch (e) {
+			console.error('Failed to load failed downloads:', e);
 		} finally {
 			loadingMore = false;
 		}
@@ -259,6 +302,7 @@
 						</thead>
 						<tbody>
 							{#each failedDownloads as download (download.id)}
+								{@const hint = healHint(download)}
 								<tr>
 									<td class="col-title">
 										<span class="cell-text" title={download.title || download.url}>
@@ -269,6 +313,9 @@
 										<span class="cell-text error-text" title={download.error || ''}>
 											{download.error || '—'}
 										</span>
+										{#if hint}
+											<span class="heal-hint">{hint}</span>
+										{/if}
 									</td>
 									<td class="col-date">
 										<span class="date-text">{formatShortDate(download.updatedAt)}</span>
@@ -453,6 +500,16 @@
 
 	.error-text {
 		color: var(--color-status-error);
+	}
+
+	/* Compact auto-heal state under the error text — quieter than the error. */
+	.heal-hint {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--font-size-2xs);
+		color: var(--color-text-tertiary);
 	}
 
 	.date-text {

@@ -105,7 +105,9 @@ function resetState() {
 	(youtubeService.fetchHistory as any).mockReset().mockImplementation(async () => history);
 	(youtubeService.fetchWatchLater as any).mockReset().mockImplementation(async () => watchLater);
 	(youtubeService.markWatchedOnYouTube as any).mockReset().mockImplementation(async () => true);
-	(youtubeLinkService.getCookiesTxt as any).mockReset().mockImplementation(async () => 'cookie-text');
+	(youtubeLinkService.getCookiesTxt as any)
+		.mockReset()
+		.mockImplementation(async () => 'cookie-text');
 }
 
 describe('pushWatchedToYouTube', () => {
@@ -256,7 +258,7 @@ describe('reconcileHistory + Jellyfin playstate', () => {
 
 		const res = await youtubeSyncService.reconcileHistory('u1');
 		expect(res).toMatchObject({ marked: 1 });
-		expect((youtubeService.fetchHistory as any)).toHaveBeenCalledTimes(2);
+		expect(youtubeService.fetchHistory as any).toHaveBeenCalledTimes(2);
 	});
 
 	it('does not retry rate limits', async () => {
@@ -270,7 +272,7 @@ describe('reconcileHistory + Jellyfin playstate', () => {
 		const res: any = await youtubeSyncService.reconcileHistory('u1');
 		expect(res.marked).toBe(0);
 		expect(res.error).toContain('History sync failed');
-		expect((youtubeService.fetchHistory as any)).toHaveBeenCalledTimes(1);
+		expect(youtubeService.fetchHistory as any).toHaveBeenCalledTimes(1);
 		// Watermark not advanced on failure.
 		expect(links['u1'].lastHistorySync).toEqual(new Date(0));
 	});

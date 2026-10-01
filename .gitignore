@@ -52,8 +52,14 @@ Thumbs.db
 coverage/
 .nyc_output/
 /wytui/
+# Cookie uploads land here when the server runs from the repo root
+# (settings.cookiePath = <cwd>/data/cookies.txt) — never committable.
+/data/
 .claude/worktrees/
 /scripts/
+# nano recovery files (nano.NNNNNN.save) — one was committed by accident, and the
+# pattern also covers the editor's other *.save backups.
+*.save
 
 # Browser extension build output
 extension-artifacts/

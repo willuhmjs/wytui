@@ -28,16 +28,21 @@
 		label: string;
 		href: string;
 		icon: string;
+		/** Hidden for non-admins — the backing API answers them with 403. */
+		adminOnly?: boolean;
 	};
 
-	const libraryItems: NavItem[] = [
+	const LIBRARY_ITEMS: NavItem[] = [
 		{ label: 'Downloads', href: '/downloads', icon: 'download' },
 		{ label: 'Search', href: '/search', icon: 'search' },
 		{ label: 'Channels', href: '/channels', icon: 'channel' },
 		{ label: 'Subscriptions', href: '/subscriptions', icon: 'broadcast' },
-		{ label: 'Monitors', href: '/monitors', icon: 'eye' },
+		{ label: 'Monitors', href: '/monitors', icon: 'eye', adminOnly: true },
 		{ label: 'Playlists', href: '/playlists', icon: 'playlist' },
 	];
+	// Monitors are admin-only (/api/monitors requires admin), so the entry is
+	// gated the same way the admin section below is.
+	let libraryItems = $derived(LIBRARY_ITEMS.filter((item) => !item.adminOnly || isAdmin));
 
 	// Settings is available to ALL users (Account tab: password + API keys).
 	// Analytics/Scheduler/Logs are admin-only.

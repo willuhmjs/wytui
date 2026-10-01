@@ -81,7 +81,7 @@
 	});
 
 	onDestroy(() => {
-		unsubs.forEach(unsub => unsub());
+		unsubs.forEach((unsub) => unsub());
 	});
 
 	async function checkYoutubeLink() {

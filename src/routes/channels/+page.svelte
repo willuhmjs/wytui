@@ -37,7 +37,7 @@
 
 	onMount(() => {
 		loadChannels();
-		
+
 		const refresh = () => loadChannels(search);
 		unsubs.push(onSSEEvent('download:created', refresh));
 		unsubs.push(onSSEEvent('download:complete', refresh));
@@ -46,7 +46,7 @@
 	});
 
 	onDestroy(() => {
-		unsubs.forEach(unsub => unsub());
+		unsubs.forEach((unsub) => unsub());
 	});
 
 	async function loadChannels(q = search) {

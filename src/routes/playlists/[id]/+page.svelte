@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { onMount, onDestroy } from "svelte";
-	import { onSSEEvent } from "$lib/stores/sse.svelte";
+	import { onMount, onDestroy } from 'svelte';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -34,14 +34,12 @@
 	let pendingCount = $derived(playlist?.items?.filter((i: any) => !i.download).length ?? 0);
 	let hasDownloaded = $derived(playlist?.items?.some((i: any) => i.downloadId) ?? false);
 
-
-
 	let unsubs: Array<() => void> = [];
 
 	onMount(() => {
 		loadPlaylist();
 		loadProfiles();
-		
+
 		const refresh = () => loadPlaylist();
 		unsubs.push(onSSEEvent('playlist:sync:progress', refresh));
 		unsubs.push(onSSEEvent('playlist:sync:complete', refresh));
@@ -50,7 +48,7 @@
 	});
 
 	onDestroy(() => {
-		unsubs.forEach(unsub => unsub());
+		unsubs.forEach((unsub) => unsub());
 	});
 
 	async function loadPlaylist() {

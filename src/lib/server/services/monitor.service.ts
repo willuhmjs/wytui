@@ -1,16 +1,19 @@
 import { prisma } from '../db';
 import { downloadService } from './download.service';
 import { ytdlpService } from './ytdlp.service';
-import { subscriptionService } from './subscription.service';
 import { sseEmitter } from '../sse/emitter';
 import { spawn, type ChildProcess } from 'child_process';
 import { isRateLimitedError, isAuthError } from '../utils/ytdlp-json';
+import { withYouTubeCookies, type YtdlpAccountCtx } from '../utils/ytdlp-cookies';
 import type { Monitor } from '@prisma/client';
 
 class MonitorService {
 	private activeMonitors = new Map<string, ChildProcess>();
 	private checkInterval: NodeJS.Timeout | null = null;
 	private restartCounts = new Map<string, number>();
+	// A Twitch probe can run for its full timeout, so ticks overlap without this —
+	// two probes for one monitor means two handleStreamLive calls.
+	private twitchChecksInFlight = new Set<string>();
 	private static MAX_RESTARTS = 10;
 	private static MAX_BACKOFF_MS = 300000; // 5 minutes
 
@@ -59,64 +62,87 @@ class MonitorService {
 	private async startYouTubeMonitor(monitor: any): Promise<void> {
 		ytdlpService.validateUrl(monitor.url);
 
-		// Route monitor traffic through the same per-account proxy/flags as
-		// subscriptions and downloads — unproxied monitor polls from the bare
-		// server IP are a classic bot-check trigger.
-		const defaults = await subscriptionService
-			.getYtdlpDefaults({ userId: monitor.userId })
-			.catch(() => ({ proxyUrl: null, extraFlags: [] }));
+		// Route monitor traffic through the owner's own session and the proxy that
+		// session was issued from — anonymous polls from the bare server IP are a
+		// classic bot-check trigger. The probe runs until the stream goes live, so
+		// the resolver callback is deliberately not resolved until the process exits:
+		// it unlinks the temp cookie file on return while yt-dlp still holds that
+		// path. Nothing awaits this promise; startMonitor() has to return while the
+		// probe is running.
+		void withYouTubeCookies(monitor.userId, (ctx) => this.runYouTubeProbe(monitor, ctx)).catch(
+			(err) => {
+				console.error(`[Monitor ${monitor.name}] Probe could not start:`, err);
+				// No process ever ran, so nothing will emit 'close' — re-enter the
+				// backoff path or a transient DB error would leave the monitor dead.
+				this.restartMonitorIfEnabled(monitor.id).catch(() => {});
+			},
+		);
+	}
 
-		const args = [
-			'--wait-for-video',
-			'30',
-			'--simulate',
-			'--no-warnings',
-			...ytdlpService.buildDefaultsArgs(defaults),
-			monitor.url,
-		];
+	/**
+	 * Spawn the --wait-for-video probe and resolve once it exits (which also
+	 * releases the cookie file the resolver opened for it).
+	 */
+	private runYouTubeProbe(monitor: any, ctx: YtdlpAccountCtx): Promise<void> {
+		return new Promise((resolve) => {
+			const args = [
+				'--wait-for-video',
+				'30',
+				'--simulate',
+				'--no-warnings',
+				...ytdlpService.buildDefaultsArgs({
+					cookiePath: ctx.cookiePath,
+					proxyUrl: ctx.proxyUrl,
+					extraFlags: ctx.defaultExtraFlags,
+				}),
+				monitor.url,
+			];
 
-		const proc = spawn(ytdlpService.getPath(), args, {
-			detached: true,
-			stdio: ['ignore', 'pipe', 'pipe'],
-		});
-
-		this.activeMonitors.set(monitor.id, proc);
-
-		proc.stdout.on('data', (data) => {
-			const output = data.toString();
-			console.log(`[Monitor ${monitor.name}] ${output}`);
-
-			// Async work in an event callback becomes an unhandled rejection
-			// if it throws — route it through .catch explicitly.
-			void this.handleMonitorOutput(monitor, output).catch((err) => {
-				console.error(`[Monitor ${monitor.name}] Output handling failed:`, err);
+			const proc = spawn(ytdlpService.getPath(), args, {
+				detached: true,
+				stdio: ['ignore', 'pipe', 'pipe'],
 			});
-		});
 
-		proc.stderr.on('data', (data) => {
-			const text = data.toString();
-			console.error(`[Monitor ${monitor.name}] Error: ${text}`);
-			if (isRateLimitedError(text) || isAuthError(text)) {
-				console.error(
-					`[Monitor ${monitor.name}] yt-dlp reported ${isRateLimitedError(text) ? 'a rate limit' : 'an auth failure'} — monitor polling is degraded`,
-				);
-			}
-		});
+			this.activeMonitors.set(monitor.id, proc);
 
-		proc.on('close', (code) => {
-			this.activeMonitors.delete(monitor.id);
-			console.log(`[Monitor ${monitor.name}] Process exited with code ${code}`);
+			proc.stdout.on('data', (data) => {
+				const output = data.toString();
+				console.log(`[Monitor ${monitor.name}] ${output}`);
 
-			// Restart if still enabled
-			this.restartMonitorIfEnabled(monitor.id);
-		});
+				// Async work in an event callback becomes an unhandled rejection
+				// if it throws — route it through .catch explicitly.
+				void this.handleMonitorOutput(monitor, output).catch((err) => {
+					console.error(`[Monitor ${monitor.name}] Output handling failed:`, err);
+				});
+			});
 
-		proc.on('error', (err) => {
-			this.activeMonitors.delete(monitor.id);
-			console.error(`[Monitor ${monitor.name}] Process error:`, err);
+			proc.stderr.on('data', (data) => {
+				const text = data.toString();
+				console.error(`[Monitor ${monitor.name}] Error: ${text}`);
+				if (isRateLimitedError(text) || isAuthError(text)) {
+					console.error(
+						`[Monitor ${monitor.name}] yt-dlp reported ${isRateLimitedError(text) ? 'a rate limit' : 'an auth failure'} — monitor polling is degraded`,
+					);
+				}
+			});
 
-			// Restart if still enabled (same cleanup path as 'close')
-			this.restartMonitorIfEnabled(monitor.id);
+			proc.on('close', (code) => {
+				this.activeMonitors.delete(monitor.id);
+				console.log(`[Monitor ${monitor.name}] Process exited with code ${code}`);
+
+				// Restart if still enabled
+				this.restartMonitorIfEnabled(monitor.id);
+				resolve();
+			});
+
+			proc.on('error', (err) => {
+				this.activeMonitors.delete(monitor.id);
+				console.error(`[Monitor ${monitor.name}] Process error:`, err);
+
+				// Restart if still enabled (same cleanup path as 'close')
+				this.restartMonitorIfEnabled(monitor.id);
+				resolve();
+			});
 		});
 	}
 
@@ -185,10 +211,12 @@ class MonitorService {
 
 		// Auto-download if enabled
 		if (monitor.autoDownload) {
+			// The row has to carry the monitor's owner or no later yt-dlp call can
+			// resolve which linked session to download with.
 			await downloadService.createDownload(
 				monitor.url,
 				monitor.profileId,
-				undefined,
+				monitor.userId ?? undefined,
 				undefined,
 				false,
 				monitor.customFlags?.length ? monitor.customFlags : undefined,
@@ -265,16 +293,31 @@ class MonitorService {
 	 * Check Twitch stream status via simple URL check
 	 */
 	private async checkTwitchStream(monitor: any): Promise<void> {
+		if (this.twitchChecksInFlight.has(monitor.id)) return;
+		this.twitchChecksInFlight.add(monitor.id);
 		try {
 			ytdlpService.validateUrl(monitor.url);
-			const defaults = await subscriptionService
-				.getYtdlpDefaults({ userId: monitor.userId })
-				.catch(() => ({ proxyUrl: null, extraFlags: [] }));
+			// Awaited, so the resolver's cookie file lives exactly as long as the
+			// probe that reads it.
+			await withYouTubeCookies(monitor.userId, (ctx) => this.runTwitchProbe(monitor, ctx));
+		} catch (error) {
+			console.error(`[Monitor ${monitor.name}] Check failed:`, error);
+		} finally {
+			this.twitchChecksInFlight.delete(monitor.id);
+		}
+	}
+
+	private runTwitchProbe(monitor: any, ctx: YtdlpAccountCtx): Promise<void> {
+		return new Promise((resolve) => {
 			const args = [
 				'--simulate',
 				'--get-title',
 				'--no-warnings',
-				...ytdlpService.buildDefaultsArgs(defaults),
+				...ytdlpService.buildDefaultsArgs({
+					cookiePath: ctx.cookiePath,
+					proxyUrl: ctx.proxyUrl,
+					extraFlags: ctx.defaultExtraFlags,
+				}),
 				monitor.url,
 			];
 			const proc = spawn(ytdlpService.getPath(), args);
@@ -312,20 +355,21 @@ class MonitorService {
 							});
 						}
 					}
+					resolve();
 					return;
 				}
 				if (!monitor.isLive) {
 					// Stream is live and wasn't before
 					await this.handleStreamLive(monitor);
 				}
+				resolve();
 			});
 
 			proc.on('error', (err) => {
 				console.error(`[Monitor ${monitor.name}] Check process error:`, err);
+				resolve();
 			});
-		} catch (error) {
-			console.error(`[Monitor ${monitor.name}] Check failed:`, error);
-		}
+		});
 	}
 
 	/**

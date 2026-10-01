@@ -204,6 +204,11 @@ export function connectSSE() {
 		dispatchCallbacks('monitor:update', data);
 	});
 
+	listen('youtube:link:expired', (e) => {
+		const data = JSON.parse(e.data);
+		dispatchCallbacks('youtube:link:expired', data);
+	});
+
 	listen('ping', () => {
 		// Heartbeat, do nothing
 	});

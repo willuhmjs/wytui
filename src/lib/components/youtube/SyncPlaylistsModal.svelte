@@ -62,7 +62,10 @@
 		if (data.rateLimited) {
 			addToast('info', `Rate limited on "${data.title}" — backing off, will continue`);
 		} else if (data.error) {
-			addToast('error', `Failed to fetch "${data.title}"${data.message ? `: ${data.message}` : ''}`);
+			addToast(
+				'error',
+				`Failed to fetch "${data.title}"${data.message ? `: ${data.message}` : ''}`,
+			);
 		}
 	});
 	const unsubComplete = onSSEEvent('playlist:sync:complete', (data) => {
@@ -79,7 +82,10 @@
 				`Synced ${data.totalAdded ?? 0} video(s), but ${failed} of ${data.total} playlist(s) failed — check server logs`,
 			);
 		} else {
-			addToast('success', `Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`);
+			addToast(
+				'success',
+				`Synced ${data.totalAdded ?? 0} video(s) across ${data.total} playlist(s)`,
+			);
 		}
 		onSynced?.();
 	});

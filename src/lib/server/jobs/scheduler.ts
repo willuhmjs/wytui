@@ -9,7 +9,7 @@ import { autoDeleteService } from '../services/auto-delete.service';
 import { backupService } from '../services/backup.service';
 import { youtubeSyncService } from '../services/youtube-sync.service';
 import { queueService } from '../services/queue.service';
-import { downloadService } from '../services/download.service';
+import { downloadService, HEAL_MAX_ATTEMPTS } from '../services/download.service';
 
 export interface JobInfo {
 	name: string;
@@ -17,6 +17,18 @@ export interface JobInfo {
 	enabled: boolean;
 	description: string;
 }
+
+/**
+ * A `scheduled_job_runs` row still marked `running` this long after it started
+ * was abandoned by a restart, not by a long job. Rows are only ever closed by
+ * the process that opened them, so a pod that dies mid-run leaves its row
+ * `running` forever — production had watched-cleanup and youtube-sync rows
+ * stuck that way since 2026-09-15. The grace period keeps a legitimately long
+ * run (a multi-gigabyte backup) out of the sweep, and the cost of getting it
+ * wrong is cosmetic: the row is run history only, and the run that is still
+ * going updates it by id to `completed` when it finishes.
+ */
+const ABANDONED_RUN_GRACE_MS = 10 * 60 * 1000;
 
 class JobScheduler {
 	private jobRegistry = new Map<string, JobInfo>();
@@ -26,6 +38,11 @@ class JobScheduler {
 
 	/**
 	 * Log a job run to the database
+	 *
+	 * The overlap guard is deliberately the in-process `runningJobs` set and not
+	 * a `status = 'running'` query: after a restart the previous process's rows
+	 * are still `running` in the table, and treating those as live would wedge
+	 * every job forever. {@link recoverAbandonedJobRuns} closes them at startup.
 	 */
 	private async logJobRun(jobName: string, fn: () => Promise<void>): Promise<void> {
 		if (this.runningJobs.has(jobName)) {
@@ -64,6 +81,10 @@ class JobScheduler {
 	 */
 	async start(): Promise<void> {
 		console.log('[Scheduler] Starting background jobs...');
+
+		// Close out run rows the previous process abandoned mid-run when it was
+		// killed. queueService does the equivalent for RUNNING job_queue rows.
+		await this.recoverAbandonedJobRuns();
 
 		// Register standard task handlers
 		downloadService.registerJobHandlers();
@@ -118,6 +139,8 @@ class JobScheduler {
 			enabled: true,
 			description: 'Monitor livestreams',
 		});
+		// `heal-failed-downloads` is registered by restartHealTask() below, once
+		// the stored Settings row has been read — its enablement is a setting.
 
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
@@ -161,6 +184,10 @@ class JobScheduler {
 		await this.scheduleNextRun('auto-delete');
 		await this.scheduleNextRun('cache-cleanup');
 		await this.scheduleNextRun('youtube-sync');
+
+		// Registers heal-failed-downloads from the stored toggle, then either
+		// schedules it or removes the queued next run.
+		await this.restartHealTask();
 
 		if (this.jobRegistry.get('backup')?.enabled) {
 			await this.scheduleNextRun('backup');
@@ -276,6 +303,17 @@ class JobScheduler {
 					await cleanupService.runCleanup();
 					break;
 
+				case 'heal-failed-downloads': {
+					const heal = await downloadService.healFailedDownloads();
+					if (heal.scanned > 0) {
+						console.log(
+							`[Scheduler] Heal: re-queued ${heal.retried}, gave up ${heal.exhausted}, ` +
+								`skipped ${heal.skipped} of ${heal.scanned} due download(s)`,
+						);
+					}
+					break;
+				}
+
 				default:
 					throw new Error(`Unknown job: ${jobName}`);
 			}
@@ -290,6 +328,7 @@ class JobScheduler {
 	private async pruneJobHistory(): Promise<void> {
 		const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 		const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+		const quarterAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
 		// Terminal job rows past retention, plus PENDING rows that have been due
 		// for a month without being claimed (dead jobs from removed handlers).
@@ -306,14 +345,37 @@ class JobScheduler {
 		});
 		// Old failed downloads keep their failure record in the archive, so the
 		// retry affordance can age out of the list without losing the history.
-		const failedDownloads = await prisma.download.deleteMany({
-			where: { status: 'FAILED', createdAt: { lt: monthAgo } },
+		//
+		// Two retention bands, because the rows are not equally informative. A row
+		// the auto-heal ladder gave up on (`healAttempts >= HEAL_MAX_ATTEMPTS` and
+		// no further slot scheduled) is a *verdict* — the app tried four times on
+		// a spread-out schedule and the video is not fetchable — and it is the row
+		// an operator looks at weeks later to answer "why is this channel missing
+		// videos?". A row that merely aged out (never armed, or still armed) says
+		// nothing that the archive doesn't already record, so it goes at 30 days.
+		// The `healAttempts` lower bound is what keeps never-armed rows (attempts
+		// 0, nextHealAt null — permanent and cookie-class failures) on the 30-day
+		// rule instead of quietly extending their life by two months.
+		const givenUp = await prisma.download.deleteMany({
+			where: {
+				status: 'FAILED',
+				healAttempts: { gte: HEAL_MAX_ATTEMPTS },
+				nextHealAt: null,
+				createdAt: { lt: quarterAgo },
+			},
+		});
+		const otherFailed = await prisma.download.deleteMany({
+			where: {
+				status: 'FAILED',
+				createdAt: { lt: monthAgo },
+				OR: [{ healAttempts: { lt: HEAL_MAX_ATTEMPTS } }, { nextHealAt: { not: null } }],
+			},
 		});
 
-		if (jobs.count > 0 || runs.count > 0 || failedDownloads.count > 0) {
+		if (jobs.count > 0 || runs.count > 0 || givenUp.count > 0 || otherFailed.count > 0) {
 			console.log(
 				`[Scheduler] Pruned ${jobs.count} job rows, ${runs.count} run rows, ` +
-					`${failedDownloads.count} stale failed download(s)`,
+					`${givenUp.count} given-up and ${otherFailed.count} other stale failed download(s)`,
 			);
 		}
 	}
@@ -346,6 +408,66 @@ class JobScheduler {
 		} else {
 			console.log('[Scheduler] yt-dlp is up to date');
 		}
+	}
+
+	/**
+	 * Mark `running` job-run rows that this process did not start as failed.
+	 * Nothing else ever closes those rows — the writer only updates its own row
+	 * when its work finishes — so a pod killed mid-run (rollout, OOM, eviction)
+	 * leaves them open indefinitely and the history page shows jobs "running"
+	 * for weeks. Rows younger than the grace period are left alone (they may
+	 * belong to a long run on this or another replica).
+	 *
+	 * Returns the number of rows closed.
+	 */
+	async recoverAbandonedJobRuns(now: Date = new Date()): Promise<number> {
+		const cutoff = new Date(now.getTime() - ABANDONED_RUN_GRACE_MS);
+		const { count } = await prisma.scheduledJobRun.updateMany({
+			where: { status: 'running', startedAt: { lt: cutoff } },
+			data: { status: 'failed', endedAt: now, error: 'abandoned by restart' },
+		});
+		if (count > 0) {
+			console.log(`[Scheduler] Closed ${count} job run(s) abandoned by a restart`);
+		}
+		return count;
+	}
+
+	/**
+	 * Re-register the auto-heal job from the stored `autoHealEnabled` toggle.
+	 * Called at startup and from the settings-update path, so the change takes
+	 * effect without a redeploy — same shape as {@link restartCleanupTask}.
+	 *
+	 * Disabling removes the queued next run as well as unregistering the job;
+	 * `downloadService.healFailedDownloads()` independently refuses to do work
+	 * while the toggle is off, so a run already in flight cannot slip through.
+	 */
+	async restartHealTask(): Promise<void> {
+		const settings = await prisma.settings.findUnique({
+			where: { id: 'singleton' },
+		});
+		// Absent means the column predates the toggle, i.e. its default: enabled.
+		const enabled = settings?.autoHealEnabled !== false;
+
+		this.jobRegistry.set('heal-failed-downloads', {
+			name: 'heal-failed-downloads',
+			cron: '*/30 * * * *',
+			enabled,
+			description:
+				'Re-queue transiently failed downloads (max 5 per pass, gives up after 4 auto-attempts)',
+		});
+
+		if (enabled) {
+			await this.scheduleNextRun('heal-failed-downloads');
+			return;
+		}
+
+		await prisma.jobQueue.deleteMany({
+			where: {
+				type: 'system',
+				status: 'PENDING',
+				payload: { path: ['name'], equals: 'heal-failed-downloads' },
+			},
+		});
 	}
 
 	async restartCleanupTask(): Promise<void> {

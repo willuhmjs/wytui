@@ -22,6 +22,7 @@ import { internalFetch } from '../utils/fetch';
 import { resolveBestThumbnailUrl } from './thumbnail';
 import { writeJellyfinArtwork, writePosterFromBuffer } from './artwork';
 import { nfoService } from './nfo.service';
+import { withYouTubeCookies } from '../utils/ytdlp-cookies';
 import { eventLogService, EventTypes } from './event-log.service';
 
 function sanitizeFilename(name: string): string {
@@ -185,7 +186,12 @@ class LibraryService {
 			}
 		}
 
-		await this.ensureChannelArt(resolve(targetLibrary, artistDir), download.channelUrl);
+		await this.ensureChannelArt(
+			resolve(targetLibrary, artistDir),
+			download.channelUrl,
+			false,
+			download.userId,
+		);
 	}
 
 	/**
@@ -294,6 +300,7 @@ class LibraryService {
 			uploaderPath,
 			download.channelUrl,
 			settings?.generateJellyfinPosters ?? true,
+			download.userId,
 		);
 
 		// Refresh the channel's NFO metadata (a movie NFO per video plus the
@@ -308,35 +315,44 @@ class LibraryService {
 		dirPath: string,
 		channelUrl?: string | null,
 		generatePoster = false,
+		userId?: string | null,
 	): Promise<void> {
 		if (!channelUrl) return;
-		const folderJpg = join(dirPath, 'folder.jpg');
-		let avatar: Buffer | null = null;
-		try {
-			await access(folderJpg);
-		} catch {
+		// Channel art is a YouTube browse call, so run it as the download's owner:
+		// an anonymous request for a members-only channel returns nothing to browse.
+		// Both thumbnail calls below share one resolver scope, which keeps the temp
+		// cookie file alive across the pair.
+		await withYouTubeCookies(userId, async (ctx) => {
+			const defaults = { cookiePath: ctx.cookiePath, proxyUrl: ctx.proxyUrl };
+			const folderJpg = join(dirPath, 'folder.jpg');
+			let avatar: Buffer | null = null;
 			try {
-				avatar = await ytdlpService.fetchChannelThumbnail(channelUrl);
-				if (avatar) {
-					await writeFile(folderJpg, avatar);
+				await access(folderJpg);
+			} catch {
+				try {
+					avatar = await ytdlpService.fetchChannelThumbnail(channelUrl, defaults);
+					if (avatar) {
+						await writeFile(folderJpg, avatar);
+					}
+				} catch (err) {
+					console.error('[LibraryService] Failed to fetch channel art:', err);
+					return;
 				}
-			} catch (err) {
-				console.error('[LibraryService] Failed to fetch channel art:', err);
-				return;
 			}
-		}
-		if (!generatePoster) return;
-		// Channel-level 2:3 poster (folder.jpg stays the BoxSet primary image).
-		const posterJpg = join(dirPath, 'poster.jpg');
-		try {
-			await access(posterJpg);
-		} catch {
-			const buffer =
-				avatar ?? (await ytdlpService.fetchChannelThumbnail(channelUrl).catch(() => null));
-			if (buffer) {
-				await writePosterFromBuffer(buffer, posterJpg);
+			if (!generatePoster) return;
+			// Channel-level 2:3 poster (folder.jpg stays the BoxSet primary image).
+			const posterJpg = join(dirPath, 'poster.jpg');
+			try {
+				await access(posterJpg);
+			} catch {
+				const buffer =
+					avatar ??
+					(await ytdlpService.fetchChannelThumbnail(channelUrl, defaults).catch(() => null));
+				if (buffer) {
+					await writePosterFromBuffer(buffer, posterJpg);
+				}
 			}
-		}
+		});
 	}
 
 	/**
@@ -356,6 +372,10 @@ class LibraryService {
 			if (!entry.isDirectory()) continue;
 			const channelDir = join(root, entry.name);
 			const result = await nfoService.syncChannel(channelDir);
+			// A library folder has no single owner, so this sweep has no user to
+			// authenticate as — the resolver falls back to the admin cookies and the
+			// global proxy. Per-download promotions (which do know the owner) are the
+			// path that uses a linked session.
 			await this.ensureChannelArt(channelDir, result.channelUrl, settings.generateJellyfinPosters);
 			if (result.movies > 0) {
 				channels++;

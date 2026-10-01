@@ -1,0 +1,16 @@
+{{- if and .Values.config.persistent.enabled (not .Values.config.persistent.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wytui-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: wytui-config
+spec:
+  storageClassName: {{ .Values.config.persistent.storageClass }}
+  accessModes:
+    {{- toYaml .Values.config.persistent.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.config.persistent.size }}
+{{- end }}

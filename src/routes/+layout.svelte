@@ -33,14 +33,30 @@
 		if (isAdmin) {
 			fetch('/api/settings/cookies')
 				.then((res) => (res.ok ? res.json() : null))
-				.then((cookieStatus: { hasCookies: boolean; expired: boolean } | null) => {
-					if (!cookieStatus?.hasCookies || !cookieStatus.expired) return;
-					addToast(
-						'error',
-						'YouTube cookies were marked expired — a download failed authentication. Re-upload them in Settings → Cookies.',
-						8000,
-					);
-				})
+				.then(
+					(
+						cookieStatus: {
+							expired: boolean;
+							needsRelink: boolean;
+							source: string;
+						} | null,
+					) => {
+						if (!cookieStatus || (!cookieStatus.expired && !cookieStatus.needsRelink)) {
+							return;
+						}
+						// Both halves follow the effective state: a session that will not
+						// decrypt was never "marked expired" by a failed download, and a
+						// link-only deployment has no cookie file to re-upload.
+						const problem = cookieStatus.needsRelink
+							? 'The linked YouTube session could not be read.'
+							: 'YouTube cookies were marked expired — a download failed authentication.';
+						const fix =
+							cookieStatus.needsRelink || cookieStatus.source === 'link'
+								? 'Re-link the account with the browser extension.'
+								: 'Re-upload them in Settings → Cookies.';
+						addToast('error', `${problem} ${fix}`, 8000);
+					},
+				)
 				.catch(() => {
 					// Ignore network/API failures — this is a courtesy check.
 				});

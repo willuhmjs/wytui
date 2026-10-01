@@ -367,6 +367,7 @@ saveBtn.addEventListener('click', () => {
 
 	chrome.storage.local.set({ serverUrl: url, apiKey: key }, async () => {
 		serverUrl = url;
+		renderApiKeyWarning(autoCookiesEl.checked, key);
 		saveBtn.textContent = 'Saved!';
 		setTimeout(() => {
 			saveBtn.textContent = 'Save';
@@ -462,11 +463,107 @@ async function refreshYouTubeLinkState() {
 		nameEl.textContent = res.channelName ? `Linked as ${res.channelName}` : 'Linked';
 		wrap.style.display = 'flex';
 		linkBtn.textContent = 'Re-link YouTube';
+		// Auto-refresh needs a linked account to be worth running at all.
+		autoCookiesEl.disabled = false;
+		autoCookiesWrap.classList.remove('disabled');
 	} else {
 		wrap.style.display = 'none';
 		linkBtn.textContent = 'Link YouTube to wytui';
+		autoCookiesEl.disabled = true;
+		autoCookiesWrap.classList.add('disabled');
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Opt-in cookie refresh (checkbox, off by default). The alarm lives in the
+// background worker; this only reads and writes the flag and reports results.
+// ---------------------------------------------------------------------------
+
+const autoCookiesEl = document.getElementById('auto-update-cookies');
+const autoCookiesWrap = document.getElementById('yt-auto-wrap');
+const autoCookiesStatus = document.getElementById('yt-auto-status');
+const autoCookiesWarning = document.getElementById('yt-auto-warning');
+
+function relativeFromNow(ts) {
+	const mins = Math.round((Date.now() - ts) / 60000);
+	if (mins < 1) return 'just now';
+	if (mins < 60) return mins + ' min ago';
+	const hrs = Math.round(mins / 60);
+	if (hrs < 24) return hrs + ' h ago';
+	return Math.round(hrs / 24) + ' d ago';
+}
+
+function renderAutoCookiesStatus(data) {
+	if (!data.autoUpdateCookies) {
+		autoCookiesStatus.style.display = 'none';
+		return;
+	}
+	autoCookiesStatus.style.display = 'block';
+	if (data.cookieAutoUpdateError) {
+		autoCookiesStatus.className = 'message error';
+		autoCookiesStatus.textContent = 'Last refresh failed: ' + data.cookieAutoUpdateError;
+	} else if (data.cookieAutoUpdateAt) {
+		autoCookiesStatus.className = 'message success';
+		autoCookiesStatus.textContent = 'Last refreshed ' + relativeFromNow(data.cookieAutoUpdateAt);
+	} else {
+		autoCookiesStatus.className = 'message';
+		autoCookiesStatus.textContent = 'Scheduled — first refresh within the hour.';
+	}
+}
+
+// The hourly refresh runs in the background worker, which has no session of its
+// own. With a stored API key it authenticates with the bearer token; with none
+// it falls back to credentials: 'include' (see authCredentials in background.js)
+// and rides the browser's wytui session cookie. That cookie expires and nothing
+// in the background re-authenticates it, so the refreshes stop silently. Warn
+// before the user starts trusting the checkbox.
+function renderApiKeyWarning(enabled, apiKey) {
+	if (!enabled || apiKey?.trim()) {
+		autoCookiesWarning.style.display = 'none';
+		return;
+	}
+	// display is set explicitly on both paths: the hide path leaves an inline
+	// "none" behind, and an inline style outranks the class rule when re-shown.
+	autoCookiesWarning.style.display = 'block';
+	autoCookiesWarning.className = 'message warn';
+	autoCookiesWarning.textContent =
+		'No API key saved: refreshes ride the browser session and stop when that cookie ' +
+		'expires. Add an API key above to keep them running.';
+}
+
+chrome.storage.local.get(
+	['autoUpdateCookies', 'cookieAutoUpdateAt', 'cookieAutoUpdateError', 'apiKey'],
+	(data) => {
+		autoCookiesEl.checked = !!data.autoUpdateCookies;
+		renderAutoCookiesStatus(data);
+		renderApiKeyWarning(!!data.autoUpdateCookies, data.apiKey);
+	},
+);
+
+autoCookiesEl.addEventListener('change', async () => {
+	await chrome.storage.local.set({ autoUpdateCookies: autoCookiesEl.checked });
+	// The stored key is what the worker authenticates with, not the input box.
+	const { apiKey } = await chrome.storage.local.get(['apiKey']);
+	renderApiKeyWarning(autoCookiesEl.checked, apiKey);
+
+	if (!autoCookiesEl.checked) {
+		await chrome.storage.local.remove(['cookieAutoUpdateAt', 'cookieAutoUpdateError']);
+		renderAutoCookiesStatus({ autoUpdateCookies: false });
+		return;
+	}
+
+	autoCookiesStatus.className = 'message';
+	autoCookiesStatus.style.display = 'block';
+	autoCookiesStatus.textContent = 'Refreshing…';
+	const res = await chrome.runtime.sendMessage({ action: 'refreshYouTubeCookies' });
+	if (res?.success) {
+		autoCookiesStatus.className = 'message success';
+		autoCookiesStatus.textContent = 'Cookies sent.';
+	} else {
+		autoCookiesStatus.className = 'message error';
+		autoCookiesStatus.textContent = res?.error || 'Could not send cookies.';
+	}
+});
 
 // Link YouTube
 document.getElementById('link-youtube').addEventListener('click', async () => {

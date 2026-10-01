@@ -174,6 +174,11 @@ export const PATCH = apiRoute(
 				nullable: true,
 				minimum: 0,
 			},
+			autoHealEnabled: {
+				type: 'boolean',
+				description:
+					'Automatically re-queue transiently failed downloads (max 5 per 30 min, gives up after 4 attempts)',
+			},
 			appriseUrl: {
 				type: 'string',
 				description: 'Apprise notification server URL',

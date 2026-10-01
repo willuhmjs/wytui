@@ -291,11 +291,18 @@
 
 	<div class="form-group">
 		<label for="ytdlpProxyUrl">Proxy URL</label>
+		<!-- The stored proxy is a masked secret and never sent to the browser, so
+		     this box is write-only (same as the per-account ones on the Account tab):
+		     empty keeps what is saved, typing replaces it, Remove clears it. -->
 		<input
 			type="text"
 			id="ytdlpProxyUrl"
-			bind:value={s.settings.ytdlpProxyUrl}
-			placeholder="socks5://user:pass@host:port"
+			bind:value={s.ytdlpProxyUrlDraft}
+			oninput={(e) => s.onYtdlpProxyUrlInput(e.currentTarget.value)}
+			autocomplete="off"
+			placeholder={s.ytdlpProxyUrlSet
+				? 'Saved — hidden. Type a new URL to replace it'
+				: 'socks5://user:pass@host:port (empty = no proxy)'}
 			class:invalid={!!s.ytdlpProxyUrlError}
 			aria-invalid={s.ytdlpProxyUrlError ? 'true' : undefined}
 		/>
@@ -305,11 +312,21 @@
 			</p>
 		{:else}
 			<p class="help-text">
-				Server-wide default proxy for yt-dlp traffic (downloads, metadata fetches, subscription
-				checks). Linked YouTube accounts can override it with their own proxy. Use <code
-					>socks5h</code
-				> to resolve DNS through the proxy too.
+				{#if s.ytdlpProxyUrlSet}
+					A <code>{s.settings.ytdlpProxyScheme}</code> proxy is saved for this server. For its own protection
+					the value is never shown here — leave the box empty to keep it.
+				{:else}
+					Server-wide default proxy for yt-dlp traffic (downloads, metadata fetches, subscription
+					checks). Linked YouTube accounts can override it with their own proxy. Use <code
+						>socks5h</code
+					> to resolve DNS through the proxy too.
+				{/if}
 			</p>
+		{/if}
+		{#if s.ytdlpProxyUrlSet && !s.ytdlpProxyUrlDraft.trim()}
+			<button class="btn btn-secondary" onclick={() => s.clearYtdlpProxyUrl()}>
+				Remove saved proxy
+			</button>
 		{/if}
 	</div>
 
@@ -341,14 +358,39 @@
 		Upload a Netscape-format cookies.txt file to access member-only and age-restricted content.
 	</p>
 
-	{#if s.cookieStatus.hasCookies}
-		{#if s.cookieStatus.expired}
+	{#if s.cookieStatus.linked}
+		<!-- The linked session is the primary credential, so it gets its own status
+		     even when there is no cookie file to show. -->
+		<div
+			class="info-box"
+			class:warning-box={s.cookieStatus.needsRelink || s.cookieStatus.expired}
+			style="margin-bottom: var(--spacing-md);"
+		>
+			{#if s.cookieStatus.needsRelink}
+				The linked account's stored session could not be read — re-link the account with the browser
+				extension from the Account page.
+			{:else if s.cookieStatus.expired}
+				The linked account's session may be expired — a download recently failed authentication
+				(sign-in, members-only, or bot check). Re-link the account with the browser extension from
+				the Account page.
+			{:else}
+				Linked account session is active: YouTube requests run as that account. An uploaded cookie
+				file is only the fallback for accounts that are not linked.
+			{/if}
+		</div>
+	{/if}
+
+	{#if s.cookieStatus.path}
+		{#if s.cookieStatus.expired && s.cookieStatus.source === 'settings'}
 			<div class="info-box warning-box" style="margin-bottom: var(--spacing-md);">
 				Cookie file is present but was marked expired — a download recently failed authentication
 				(sign-in, members-only, or bot check). Re-upload a fresh export.
 			</div>
 		{:else}
-			<div class="info-box" style="margin-bottom: var(--spacing-md);">Cookie file is active.</div>
+			<div class="info-box" style="margin-bottom: var(--spacing-md);">
+				Cookie file is active{#if s.cookieStatus.linked}
+					, but the linked account's session takes precedence for its own traffic.{/if}
+			</div>
 		{/if}
 		<button class="btn btn-danger btn-sm btn-with-icon" onclick={s.deleteCookieFile}>
 			<TrashIcon width={14} height={14} />
@@ -626,6 +668,22 @@
 			Applies the same retention to library items, watched in wytui or in Jellyfin. Leave empty to
 			keep library items forever. Items pinned with "Protect" and channels marked protected in their
 			override are never deleted.
+		</p>
+	</div>
+</div>
+
+<div class="settings-section" id="auto-heal" class:active={activeSection() === 'auto-heal'}>
+	<h2>Auto-Retry Failed</h2>
+	<div class="form-group">
+		<label>
+			<input type="checkbox" bind:checked={s.settings.autoHealEnabled} />
+			Automatically retry failed downloads
+		</label>
+		<p class="help-text">
+			Re-queue downloads that failed for a transient reason (throttled, stalled, timed out) — at
+			most 5 every 30 minutes, giving up on a video after 4 automated attempts. Cookie- and
+			permission-gated failures are never retried by the timer; they wait for new credentials.
+			Turning this off does not remove the manual Retry button.
 		</p>
 	</div>
 </div>

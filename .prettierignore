@@ -9,6 +9,8 @@ build/
 dist/
 node_modules/
 extension-artifacts/
+# Browser extension sources (hand-formatted; reformatting buries functional changes in churn)
+extension/
 
 # Prisma generated client
 prisma/generated/

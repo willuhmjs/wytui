@@ -176,6 +176,15 @@ model Download {
   error       String?
   retryCount  Int       @default(0)
 
+  // Auto-heal pacing (see downloadService.healFailedDownloads). Distinct from
+  // retryCount, which is the in-process 1s/2s/4s quick-retry counter.
+  //   nextHealAt non-null            → armed for an auto-attempt at that time
+  //   nextHealAt null && attempts >= 1 → gave up (still listed, still manual-retryable)
+  //   nextHealAt null && attempts == 0 → never armed (permanent class, or a
+  //                                       cookie-gated failure awaiting new cookies)
+  healAttempts Int      @default(0)
+  nextHealAt   DateTime?
+
   // Relations
   profileId   String
   profile     DownloadProfile @relation(fields: [profileId], references: [id])
@@ -426,6 +435,12 @@ model Settings {
   // enabling library auto-deletion must be an explicit choice, never a
   // side effect of the existing cache retention value. null/0 = disabled.
   autoDeleteLibraryDays Int?
+
+  // Automated retry of transiently FAILED downloads (the heal-failed-downloads
+  // job, see downloadService.healFailedDownloads). Turning it off unregisters
+  // the job on the next settings save AND makes the pass refuse to run; the
+  // manual Retry button is never affected.
+  autoHealEnabled   Boolean @default(true)
 
   // Notifications (Apprise)
   appriseUrl       String?

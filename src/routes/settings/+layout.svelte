@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './settings.css';
 	import { onMount } from 'svelte';
+	import { onSSEEvent } from '$lib/stores/sse.svelte';
 	import { showConfirm } from '$lib/stores/modal.svelte';
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { csrfFetch } from '$lib/utils/fetch';
@@ -96,6 +97,7 @@
 			label: 'Automation',
 			sections: [
 				{ id: 'auto-delete', label: 'Auto-Delete' },
+				{ id: 'auto-heal', label: 'Auto-Retry Failed' },
 				{ id: 'rescan', label: 'Rescan Library' },
 				{ id: 'backup', label: 'Backup' },
 				{ id: 'notifications', label: 'Notifications' },
@@ -195,6 +197,12 @@
 	let accountProxyUrl = $state('');
 	let accountExtraFlagsText = $state('');
 	let accountAppriseUrl = $state('');
+	// The API returns those two URLs masked, never as their value, so the inputs are
+	// write-only: an empty box means "keep what is stored" and *Set means one is on
+	// file. Clearing takes an explicit clearAccountSecret() so that merely loading
+	// the form and hitting Save can never blank a stored proxy/Apprise URL.
+	let accountProxyUrlSet = $state(false);
+	let accountAppriseUrlSet = $state(false);
 	let accountNotifyOnComplete = $state(false);
 	let accountNotifyOnFail = $state(false);
 	let savingAccountSettings = $state(false);
@@ -339,6 +347,22 @@
 				loadLibraryRequests(),
 			]);
 		}
+
+		// The download path pushes this the moment the linked session stops
+		// authorizing. Surface it the way the rest of the link state is surfaced: a
+		// toast, plus whatever the open pages already render from — the Account
+		// page's session-problem box reads youtubeLink.lastError, and the Cookies
+		// section reads cookieStatus.
+		const unsubLinkExpired = onSSEEvent('youtube:link:expired', (event: any) => {
+			const message = event?.message || 'YouTube session expired — re-link the account.';
+			addToast('error', message, 8000);
+			if (youtubeLink?.linked) youtubeLink = { ...youtubeLink, lastError: message };
+			if (isAdmin) void loadCookieStatus();
+		});
+
+		return () => {
+			unsubLinkExpired();
+		};
 	});
 
 	async function loadSettings() {
@@ -447,6 +471,7 @@
 		'cleanupGraceHours',
 		'autoDeleteWatchedDays',
 		'autoDeleteLibraryDays',
+		'autoHealEnabled',
 		'appriseUrl',
 		'notifyOnComplete',
 		'notifyOnFail',
@@ -617,10 +642,16 @@
 		}
 	}
 
-	// Cookie management
-	let cookieStatus = $state<{ hasCookies: boolean; path: string | null; expired: boolean }>({
+	// Cookie management. Mirrors GET /api/settings/cookies, which reports the
+	// effective state — the linked account's session counts as a credential too,
+	// so `hasCookies` alone does not mean "the uploaded file is what runs".
+	let cookieStatus = $state({
 		hasCookies: false,
 		path: null,
+		source: 'none',
+		linked: false,
+		needsRelink: false,
+		linkUpdatedAt: null,
 		expired: false,
 	});
 	let uploadingCookies = $state(false);
@@ -675,7 +706,9 @@
 				method: 'DELETE',
 			});
 			if (res.ok) {
-				cookieStatus = { hasCookies: false, path: null, expired: false };
+				// Re-read instead of blanking the state: the linked session is untouched
+				// by removing the file, and it may well be the live source now.
+				await loadCookieStatus();
 				addToast('success', 'Cookie file removed');
 			} else {
 				addToast('error', 'Failed to remove cookie file');
@@ -986,31 +1019,96 @@
 	// Mirrors the scheme allow-list in settings-validation.ts so the debounced
 	// auto-save never PATCHes a half-typed proxy URL (empty clears the setting).
 	const YT_DLP_PROXY_SCHEMES = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
+
+	/** Allowed scheme without the colon ('socks5h'), or null if not a complete URL. */
+	function allowedProxyScheme(value: string): string | null {
+		try {
+			const protocol = new URL(value).protocol;
+			return YT_DLP_PROXY_SCHEMES.includes(protocol) ? protocol.slice(0, -1) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	// The stored proxy is masked ('***SET***') and never shown, so this input is
+	// write-only like the per-account ones: the draft is the only value the box
+	// ever holds, and an empty draft means "keep what is stored", never "clear".
+	let ytdlpProxyUrlDraft = $state('');
+	let ytdlpProxyUrlSet = $derived(!!settings?.ytdlpProxyScheme);
 	let ytdlpProxyUrlError = $derived.by(() => {
 		if (!settings) return null;
-		const value = (settings.ytdlpProxyUrl ?? '').trim();
+		const value = ytdlpProxyUrlDraft.trim();
 		if (value === '') return null;
-		try {
-			if (YT_DLP_PROXY_SCHEMES.includes(new URL(value).protocol)) return null;
-		} catch {
-			// fall through to the error
+		return allowedProxyScheme(value)
+			? null
+			: 'Needs a complete proxy URL, e.g. socks5://host:port (schemes: http, https, socks4, socks4a, socks5, socks5h)';
+	});
+
+	// Scheme actually in force: a complete URL just typed here, otherwise the
+	// server-side hint for the stored (hidden) value.
+	let effectiveProxyScheme = $derived.by(() => {
+		const draft = ytdlpProxyUrlDraft.trim();
+		if (draft) {
+			const typed = allowedProxyScheme(draft);
+			if (typed) return typed;
 		}
-		return 'Needs a complete proxy URL, e.g. socks5://host:port (schemes: http, https, socks4, socks4a, socks5, socks5h)';
+		return settings?.ytdlpProxyScheme ?? null;
 	});
 
 	// aria2c only understands HTTP proxies; with a SOCKS proxy yt-dlp hands it
 	// `--all-proxy socks5://...`, which aria2c rejects — every download fails.
+	// Keyed off the scheme hint so the warning still fires with the URL masked.
 	let aria2cSocksConflict = $derived.by(() => {
 		if (!settings) return false;
 		if (!settings.useAria2c) return false;
-		const proxy = (settings.ytdlpProxyUrl ?? '').trim().toLowerCase();
-		return proxy.startsWith('socks');
+		return (effectiveProxyScheme ?? '').toLowerCase().startsWith('socks');
 	});
+
+	/**
+	 * Explicitly remove the stored proxy — the write-only box can no longer
+	 * express "clear", because it never shows the stored value.
+	 */
+	async function clearYtdlpProxyUrl() {
+		ytdlpProxyUrlDraft = '';
+		clearTimeout(saveTimeout);
+		try {
+			const res = await csrfFetch('/api/settings', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ytdlpProxyUrl: null }),
+			});
+			if (!res.ok) {
+				addToast('error', 'Failed to remove proxy');
+				return;
+			}
+			const data = await res.json().catch(() => null);
+			if (settings) {
+				settings.ytdlpProxyUrl = null;
+				settings.ytdlpProxyScheme = data?.ytdlpProxyScheme ?? null;
+				// The mask/hint changed without the admin editing anything: keep the
+				// auto-save effect from firing a second PATCH over it.
+				settingsSnapshot = JSON.stringify(settings);
+			}
+			addToast('success', 'Proxy removed — downloads connect directly');
+		} catch {
+			addToast('error', 'Failed to remove proxy');
+		}
+	}
+
+	// Typing a complete proxy URL schedules the same debounced auto-save the rest
+	// of the App Settings fields use; an empty or half-typed box saves nothing.
+	function onYtdlpProxyUrlInput(value: string) {
+		ytdlpProxyUrlDraft = value;
+		const draft = value.trim();
+		if (!draft || !allowedProxyScheme(draft)) return;
+		debouncedSave();
+	}
 
 	async function saveSettings() {
 		saving = true;
 		try {
 			const payload: Record<string, any> = {};
+			const proxyDraft = ytdlpProxyUrlDraft.trim();
 			for (const key of SAVEABLE_FIELDS) {
 				if (key in settings) {
 					let value = settings[key];
@@ -1018,12 +1116,9 @@
 					if (key === 'httpChunkSize' && value === '') {
 						value = null;
 					}
-					if (key === 'ytdlpProxyUrl' && value === '') {
-						value = null;
-					}
-					// A half-typed proxy URL stays out of the payload; the
-					// auto-save effect re-saves it once it passes validation.
-					if (key === 'ytdlpProxyUrl' && ytdlpProxyUrlError) {
+					// The proxy box holds a draft, not the (masked) stored value; it is
+					// added below only when it actually carries a new URL.
+					if (key === 'ytdlpProxyUrl') {
 						continue;
 					}
 					// aria2c + a SOCKS proxy breaks every download; keep that
@@ -1034,6 +1129,11 @@
 					payload[key] = value;
 				}
 			}
+			// A half-typed proxy URL stays out of the payload; the input handler
+			// re-saves it once it passes validation.
+			if (proxyDraft && !ytdlpProxyUrlError) {
+				payload.ytdlpProxyUrl = proxyDraft;
+			}
 			const res = await csrfFetch('/api/settings', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -1041,6 +1141,14 @@
 			});
 			if (!res.ok) {
 				addToast('error', 'Failed to save settings');
+			} else if (proxyDraft) {
+				// Refresh the non-secret scheme hint for the value just stored; the URL
+				// itself never comes back, so the box keeps showing what was typed.
+				const data = await res.json().catch(() => null);
+				if (settings && data && 'ytdlpProxyScheme' in data) {
+					settings.ytdlpProxyScheme = data.ytdlpProxyScheme;
+					settingsSnapshot = JSON.stringify(settings);
+				}
 			}
 		} catch (e) {
 			console.error('Failed to save settings:', e);
@@ -1319,9 +1427,13 @@
 	}
 
 	function applyAccountState(link: any) {
-		accountProxyUrl = link?.ytdlp?.proxyUrl ?? '';
+		// proxyUrl/appriseUrl come back masked, so they are never put in the inputs —
+		// only whether something is stored.
+		accountProxyUrlSet = !!link?.ytdlp?.proxyUrl;
+		accountProxyUrl = '';
 		accountExtraFlagsText = (link?.ytdlp?.extraFlags ?? []).join('\n');
-		accountAppriseUrl = link?.notifications?.appriseUrl ?? '';
+		accountAppriseUrlSet = !!link?.notifications?.appriseUrl;
+		accountAppriseUrl = '';
 		accountNotifyOnComplete = link?.notifications?.notifyOnComplete ?? false;
 		accountNotifyOnFail = link?.notifications?.notifyOnFail ?? false;
 	}
@@ -1331,16 +1443,21 @@
 		savingAccountSettings = true;
 		accountSettingsResult = null;
 		try {
+			const proxyDraft = accountProxyUrl.trim();
+			const appriseDraft = accountAppriseUrl.trim();
 			const res = await csrfFetch('/api/youtube/link', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					proxyUrl: accountProxyUrl.trim() || null,
+					// An empty box is not "clear it" — the stored value was never shown, so
+					// the key is omitted and the server keeps it. Clearing goes through
+					// clearAccountSecret().
+					...(proxyDraft || !accountProxyUrlSet ? { proxyUrl: proxyDraft || null } : {}),
 					extraFlags: accountExtraFlagsText
 						.split('\n')
 						.map((line: string) => line.trim())
 						.filter(Boolean),
-					appriseUrl: accountAppriseUrl.trim() || null,
+					...(appriseDraft || !accountAppriseUrlSet ? { appriseUrl: appriseDraft || null } : {}),
 					notifyOnComplete: accountNotifyOnComplete,
 					notifyOnFail: accountNotifyOnFail,
 				}),
@@ -1360,6 +1477,37 @@
 			accountSettingsResult = { success: false, message: 'Request failed' };
 		} finally {
 			savingAccountSettings = false;
+		}
+	}
+
+	/**
+	 * Explicitly remove a stored per-account secret (the input can no longer
+	 * express "clear", because it never shows the stored value).
+	 */
+	async function clearAccountSecret(field: 'proxyUrl' | 'appriseUrl') {
+		accountSettingsResult = null;
+		try {
+			const res = await csrfFetch('/api/youtube/link', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ [field]: null }),
+			});
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				accountSettingsResult = {
+					success: false,
+					message: data?.message ?? `Request failed (${res.status})`,
+				};
+				return;
+			}
+			youtubeLink = data;
+			applyAccountState(data);
+			accountSettingsResult = {
+				success: true,
+				message: 'Removed — this account uses the server default',
+			};
+		} catch {
+			accountSettingsResult = { success: false, message: 'Request failed' };
 		}
 	}
 
@@ -1989,11 +2137,17 @@
 			return accountProxyUrl;
 		},
 		set accountProxyUrl(v) {
-			/* 
+			/*
 			@ts-ignore */
 			try {
 				accountProxyUrl = v;
 			} catch (e) {}
+		},
+		get accountProxyUrlSet() {
+			return accountProxyUrlSet;
+		},
+		get accountAppriseUrlSet() {
+			return accountAppriseUrlSet;
 		},
 		get accountExtraFlagsText() {
 			return accountExtraFlagsText;
@@ -2624,11 +2778,30 @@
 			return ytdlpProxyUrlError;
 		},
 		set ytdlpProxyUrlError(v) {
-			/* 
+			/*
 			@ts-ignore */
 			try {
 				ytdlpProxyUrlError = v;
 			} catch (e) {}
+		},
+		get ytdlpProxyUrlDraft() {
+			return ytdlpProxyUrlDraft;
+		},
+		set ytdlpProxyUrlDraft(v) {
+			/*
+			@ts-ignore */
+			try {
+				ytdlpProxyUrlDraft = v;
+			} catch (e) {}
+		},
+		get ytdlpProxyUrlSet() {
+			return ytdlpProxyUrlSet;
+		},
+		get onYtdlpProxyUrlInput() {
+			return onYtdlpProxyUrlInput;
+		},
+		get clearYtdlpProxyUrl() {
+			return clearYtdlpProxyUrl;
 		},
 		get aria2cSocksConflict() {
 			return aria2cSocksConflict;
@@ -2697,6 +2870,9 @@
 		},
 		get saveAccountSettings() {
 			return saveAccountSettings;
+		},
+		get clearAccountSecret() {
+			return clearAccountSecret;
 		},
 		get testAccountNotifications() {
 			return testAccountNotifications;

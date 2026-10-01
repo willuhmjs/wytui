@@ -71,9 +71,32 @@ downloads:
 
 library:
   persistent:
+    # If you point this at a volume other workloads also write (e.g. an existing
+    # shared library PVC), read the fsGroup caveat first: the pod-level fsGroup
+    # used in templates/deployment/wytui.yaml applies to EVERY volume in this
+    # pod, so mounting a shared volume makes kubelet re-apply group ownership and
+    # permissions across that whole volume at mount time — including files the
+    # other apps created. Prefer a dedicated volume, or agree on one shared gid
+    # plus 2775 dir / 0664 file conventions with those apps instead of relying on
+    # fsGroup — the app itself never sets an umask or a group-friendly mode (it
+    # mkdirs with the 0755 default and writes cookie files 0600), so group-writable
+    # layout has to be established outside the app.
     existingClaim: ''
     subPath: ''
     size: 10Gi
+    storageClass: ''
+    accessModes:
+      - ReadWriteOnce
+
+# Uploaded settings files (cookies.txt) live in the container's data directory
+# and the database stores that path, so without a volume every restart leaves
+# settings.cookiePath pointing at a file that no longer exists.
+config:
+  persistent:
+    enabled: true
+    existingClaim: ''
+    subPath: ''
+    size: 1Gi
     storageClass: ''
     accessModes:
       - ReadWriteOnce

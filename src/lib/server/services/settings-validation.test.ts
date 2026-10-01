@@ -7,7 +7,11 @@ vi.mock('$lib/server/db', () => ({
 	},
 }));
 
-import { validateSettingsUpdate } from './settings-validation';
+import {
+	validateSettingsUpdate,
+	serializeSettingsResponse,
+	SECRET_MASK,
+} from './settings-validation';
 
 describe('validateSettingsUpdate: ytdlpProxyUrl', () => {
 	it('accepts a socks5 proxy URL and trims whitespace', async () => {
@@ -98,5 +102,34 @@ describe('validateSettingsUpdate: autoDeleteLibraryDays', () => {
 		await expect(validateSettingsUpdate({ autoDeleteLibraryDays: 1.5 })).rejects.toMatchObject({
 			status: 400,
 		});
+	});
+});
+
+describe('ytdlpProxyUrl masking', () => {
+	// serializeSettingsResponse returns the whole settings row, so read it loose.
+	const row = (over: Record<string, any> = {}): Record<string, any> =>
+		serializeSettingsResponse({
+			cacheQuotaBytes: BigInt(1024),
+			totalCacheQuotaBytes: null,
+			...over,
+		});
+
+	it('never returns the stored proxy URL, only its scheme', () => {
+		const out = row({ ytdlpProxyUrl: 'socks5h://user:pass@proxy.internal:1080' });
+		expect(out.ytdlpProxyUrl).toBe(SECRET_MASK);
+		expect(JSON.stringify(out)).not.toContain('proxy.internal');
+		expect(out.ytdlpProxyScheme).toBe('socks5h');
+	});
+
+	it('reports no proxy when the setting is unset, blank or unparseable', () => {
+		expect(row({ ytdlpProxyUrl: null }).ytdlpProxyUrl).toBeNull();
+		expect(row({ ytdlpProxyUrl: null }).ytdlpProxyScheme).toBeNull();
+		expect(row({ ytdlpProxyUrl: '   ' }).ytdlpProxyScheme).toBeNull();
+		expect(row({ ytdlpProxyUrl: 'not a proxy' }).ytdlpProxyScheme).toBeNull();
+	});
+
+	it('keeps the stored proxy when the client echoes the mask back', async () => {
+		const updates = await validateSettingsUpdate({ ytdlpProxyUrl: SECRET_MASK });
+		expect(updates).not.toHaveProperty('ytdlpProxyUrl');
 	});
 });

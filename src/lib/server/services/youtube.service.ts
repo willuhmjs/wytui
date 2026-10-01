@@ -1,11 +1,7 @@
-import { writeFile, unlink } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
 import { createHash } from 'crypto';
-import { youtubeLinkService } from './youtube-link.service';
 import { runYtdlpJson, RateLimitError, YtdlpAuthError } from '../utils/ytdlp-json';
+import { withYouTubeCookies } from '../utils/ytdlp-cookies';
 import { armRateLimitCooldown } from '../utils/rate-limit-cooldown';
-import { prisma } from '../db';
 
 export interface YtEntry {
 	id: string;
@@ -101,36 +97,32 @@ class YouTubeService {
 	private statsCache = new Map<string, CacheEntry<PlaylistStats>>();
 	private subscriptionCache = new Map<string, CacheEntry<YtEntry[]>>();
 
-	/** Write decrypted cookies to a 0600 temp file, run fn(path), always clean up. */
-	async withCookieFile<T>(
+	/**
+	 * Flat listing that runs as the linked account, for the import/sync pickers.
+	 *
+	 * These listings are account-scoped by definition (a subscription list, a
+	 * private playlist), so anything other than the linked session means the
+	 * account is not usable: no link row, or a row whose stored session will not
+	 * decrypt. Both resolve to {@link NeedsRelink} without spawning — resolving
+	 * anonymously here would answer with the wrong account's subscriptions instead
+	 * of failing.
+	 */
+	private async fetchList(
 		userId: string,
-		fn: (cookiePath: string) => Promise<T>,
-	): Promise<T | NeedsRelink> {
-		const txt = await youtubeLinkService.getCookiesTxt(userId);
-		if (!txt) return { needsRelink: true };
-		const path = join(tmpdir(), `wytui-yt-${Date.now()}-${Math.round(Math.random() * 1e9)}.txt`);
-		await writeFile(path, txt, { mode: 0o600 });
-		try {
-			return await fn(path);
-		} finally {
-			await unlink(path).catch(() => {});
-		}
-	}
-
-	private fetchList(userId: string, target: string, opts: { timeoutMs?: number } = {}) {
-		return this.withCookieFile(userId, async (cookiePath) => {
+		target: string,
+		opts: { timeoutMs?: number } = {},
+	): Promise<YtEntry[] | NeedsRelink> {
+		return withYouTubeCookies(userId, async (ctx) => {
+			// Covers both dead-session shapes: no link row at all, and a link row
+			// whose stored blob will not decrypt (ctx.needsRelink).
+			if (ctx.source !== 'link') return { needsRelink: true };
 			try {
-				// Proxy comes from the linked account first, then the server-wide
-				// default. extraFlags are deliberately excluded: selection flags
+				// ctx.extraFlags are deliberately not passed: selection flags
 				// (--dateafter, --match-filters, …) would silently corrupt the
 				// imported channel/playlist listings.
-				const [settings, link] = await Promise.all([
-					prisma.settings.findUnique({ where: { id: 'singleton' } }),
-					prisma.youTubeLink.findUnique({ where: { userId } }),
-				]);
 				const json = await runYtdlpJson(target, {
-					cookiePath,
-					proxyUrl: link?.proxyUrl ?? settings?.ytdlpProxyUrl ?? null,
+					cookiePath: ctx.cookiePath,
+					proxyUrl: ctx.proxyUrl,
 					timeoutMs: opts.timeoutMs,
 				});
 				return parseFlatEntries(json);
@@ -139,7 +131,7 @@ class YouTubeService {
 				// propagate so callers can back off or retry; only a genuine
 				// dead-session error means the account must be re-linked.
 				if (err instanceof RateLimitError) throw err;
-				if (err instanceof YtdlpAuthError) return { needsRelink: true } as NeedsRelink;
+				if (err instanceof YtdlpAuthError) return { needsRelink: true };
 				throw err;
 			}
 		});
@@ -234,15 +226,25 @@ class YouTubeService {
 	}
 
 	/**
-	 * Cookie-less flat playlist fetch for public playlists (no user auth).
-	 * Reuses the timeout/settled-guarded yt-dlp runner. Returns the playlist's
-	 * own title (from the single-json `title` field, null when absent) alongside
-	 * the parsed entries. Throws on failure.
+	 * Flat playlist fetch for the playlist import picker. Reuses the timeout/
+	 * settled-guarded yt-dlp runner. Returns the playlist's own title (from the
+	 * single-json `title` field, null when absent) alongside the parsed entries.
+	 * Throws on failure.
+	 *
+	 * `userId` is optional because a public playlist can be enumerated without an
+	 * account; when one is given the browse runs with that user's session (and the
+	 * proxy it was issued from) so member-only and unlisted playlists work like
+	 * they do on the sibling listing paths.
 	 */
-	async fetchPlaylistFlat(url: string): Promise<{ title: string | null; entries: YtEntry[] }> {
-		const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
-		const json = await runYtdlpJson(url, { proxyUrl: settings?.ytdlpProxyUrl ?? null }).catch(
-			(err) => {
+	async fetchPlaylistFlat(
+		url: string,
+		userId?: string | null,
+	): Promise<{ title: string | null; entries: YtEntry[] }> {
+		const json = await withYouTubeCookies(userId, (ctx) =>
+			runYtdlpJson(url, {
+				cookiePath: ctx.cookiePath,
+				proxyUrl: ctx.proxyUrl,
+			}).catch((err) => {
 				// A playlist fetch hitting the rate limit means the IP is blocked
 				// for everything — arm the shared cooldown so subscription
 				// checks back off too.
@@ -250,7 +252,7 @@ class YouTubeService {
 					armRateLimitCooldown();
 				}
 				throw err;
-			},
+			}),
 		);
 		let title: string | null = null;
 		try {

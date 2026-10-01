@@ -70,6 +70,23 @@ describe('buildDefaultsArgs', () => {
 			[],
 		);
 	});
+
+	it('carries the resolved session file next to the proxy it belongs to', () => {
+		expect(
+			ytdlpService.buildDefaultsArgs({
+				cookiePath: '/tmp/wytui-yt-123.txt',
+				proxyUrl: 'http://account-proxy:8080',
+				extraFlags: ['--sleep-requests', '1'],
+			}),
+		).toEqual([
+			'--cookies',
+			'/tmp/wytui-yt-123.txt',
+			'--proxy',
+			'http://account-proxy:8080',
+			'--sleep-requests',
+			'1',
+		]);
+	});
 });
 
 describe('findDangerousFlag', () => {
@@ -161,6 +178,33 @@ describe('findDangerousFlag', () => {
 		);
 	});
 
+	it('rejects credential-leak and transport-weakening flags', () => {
+		// A custom --proxy moves the whole request — including the app-managed
+		// --cookies session — to a host the caller controls.
+		expect(ytdlpService.findDangerousFlag(['--proxy', 'http://attacker:8888'])).toBe('--proxy');
+		expect(ytdlpService.findDangerousFlag(['--proxy=socks5://attacker:1080'])).toBe(
+			'--proxy=socks5://attacker:1080',
+		);
+		// Both spellings: --no-check-certificates is yt-dlp's real option, the
+		// youtube-dl singular resolves to it as an unambiguous abbreviation.
+		expect(ytdlpService.findDangerousFlag(['--no-check-certificates'])).toBe(
+			'--no-check-certificates',
+		);
+		expect(ytdlpService.findDangerousFlag(['--no-check-certificate'])).toBe(
+			'--no-check-certificate',
+		);
+		// Command execution for credential lookup, and metadata-driven URL fetch.
+		expect(ytdlpService.findDangerousFlag(['--netrc-cmd', 'gpg --decrypt ~/.auth.gpg'])).toBe(
+			'--netrc-cmd',
+		);
+		expect(
+			ytdlpService.findDangerousFlag([
+				'--parse-metadata',
+				'description:(?P<additional_urls>https://evil.example/x)',
+			]),
+		).toBe('--parse-metadata');
+	});
+
 	it('still allows the safe exact flags that prefix a dangerous one', () => {
 		// argparse resolves exact matches before abbreviations
 		expect(ytdlpService.findDangerousFlag(['--print', 'id'])).toBeNull();
@@ -219,6 +263,59 @@ describe('buildArgs', () => {
 				'/tmp/evil/%(title)s',
 			]),
 		).toThrow('Forbidden flag: -o');
+	});
+
+	it('app-managed --cookies/--proxy are pushed after custom flags so they win', () => {
+		// yt-dlp keeps the LAST value for a repeated option. Before this ordering,
+		// a profile's custom --proxy/--cookies (if one ever slipped past the
+		// denylist) overrode the app's — MITM-ing the admin's session.
+		const args = ytdlpService.buildArgs('https://www.youtube.com/watch?v=abc', '/tmp/downloads', [
+			'--sleep-requests',
+			'1',
+		]);
+		const withOpts = ytdlpService.buildArgs(
+			'https://www.youtube.com/watch?v=abc',
+			'/tmp/downloads',
+			['--sleep-requests', '1'],
+			{ cookiePath: '/app/cookies/admin.txt', proxyUrl: 'socks5://corp:1080' },
+		);
+		expect(args).not.toContain('--cookies');
+
+		const customIndex = withOpts.indexOf('--sleep-requests');
+		const cookiesIndex = withOpts.lastIndexOf('--cookies');
+		const proxyIndex = withOpts.lastIndexOf('--proxy');
+		expect(withOpts[cookiesIndex + 1]).toBe('/app/cookies/admin.txt');
+		expect(withOpts[proxyIndex + 1]).toBe('socks5://corp:1080');
+		expect(cookiesIndex).toBeGreaterThan(customIndex);
+		expect(proxyIndex).toBeGreaterThan(customIndex);
+		// Still ahead of the URL, and the kill switches keep the last word overall.
+		expect(proxyIndex).toBeLessThan(withOpts.indexOf('https://www.youtube.com/watch?v=abc'));
+	});
+
+	it('refuses a custom flag that tries to override the app proxy', () => {
+		expect(() =>
+			ytdlpService.buildArgs('https://www.youtube.com/watch?v=abc', '/tmp/downloads', [
+				'--proxy',
+				'http://attacker:8888',
+				'--no-check-certificates',
+			]),
+		).toThrow('Forbidden flag: --proxy');
+	});
+
+	it('leaves flags that merely share a prefix with the denylist alone', () => {
+		// The prefix rule exists to catch abbreviations of a dangerous flag
+		// (--exe → --exec). It must not swallow unrelated real flags.
+		expect(
+			ytdlpService.findDangerousFlag([
+				'--socket-timeout',
+				'30',
+				'--source-address',
+				'10.0.0.5',
+				'--force-ipv4',
+				'--no-check-thumbnails',
+				'--parse-playlist',
+			]),
+		).toBeNull();
 	});
 
 	it('buildDefaultsArgs rejects stale saved extra flags', () => {

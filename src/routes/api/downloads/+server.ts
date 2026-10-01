@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { downloadService } from '$lib/server/services/download.service';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 export const POST = apiRoute(
@@ -75,6 +76,11 @@ export const POST = apiRoute(
 			} catch {
 				throw error(400, 'Invalid URL format');
 			}
+
+			// Best-effort SSRF guard — see utils/ssrf-guard.ts for what it does and
+			// cannot do (yt-dlp resolves the name again itself).
+			const hostCheck = await checkUrlHost(url);
+			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
 
 			const flags: string[] = Array.isArray(customFlags) ? customFlags : [];
 

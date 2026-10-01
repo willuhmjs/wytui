@@ -12,7 +12,7 @@
 
 	onMount(() => {
 		loadAnalytics();
-		
+
 		const refresh = () => loadAnalytics();
 		unsubs.push(onSSEEvent('download:created', refresh));
 		unsubs.push(onSSEEvent('download:complete', refresh));
@@ -21,7 +21,7 @@
 	});
 
 	onDestroy(() => {
-		unsubs.forEach(unsub => unsub());
+		unsubs.forEach((unsub) => unsub());
 	});
 
 	async function loadAnalytics() {

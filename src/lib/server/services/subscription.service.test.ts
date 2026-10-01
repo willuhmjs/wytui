@@ -7,6 +7,14 @@ const subsDb: Record<string, any> = {};
 const jobQueueDb: any[] = [];
 let settingsDb: Record<string, any> | null = null;
 
+// Linked accounts by user. The resolver runs for real in these tests (real temp
+// cookie file, real precedence, flags read off the link row); only the
+// encrypted-session source is stubbed, so getCookiesTxt reads from here.
+const linkStore: Record<
+	string,
+	{ proxyUrl: string | null; cookiesTxt: string | null; extraFlags?: string[] }
+> = {};
+
 vi.mock('../db', () => ({
 	prisma: {
 		subscription: {
@@ -48,7 +56,14 @@ vi.mock('../db', () => ({
 			}),
 		},
 		youTubeLink: {
-			findUnique: vi.fn(async () => null),
+			findUnique: vi.fn(async ({ where }: any) =>
+				linkStore[where.userId]
+					? {
+							proxyUrl: linkStore[where.userId].proxyUrl,
+							extraFlags: linkStore[where.userId].extraFlags ?? [],
+						}
+					: null,
+			),
 		},
 		eventLog: {
 			create: vi.fn(async () => ({})),
@@ -75,10 +90,21 @@ vi.mock('../utils/ytdlp-json', async (importOriginal) => {
 	return { ...actual, runYtdlpJson: vi.fn() };
 });
 
+// The stored session's crypto layer: the resolver itself (temp file, precedence,
+// proxy pairing, flag resolution) stays real and reads the linked accounts off
+// the prisma mock above.
+vi.mock('./youtube-link.service', () => ({
+	youtubeLinkService: {
+		getCookiesTxt: vi.fn(async (userId: string) => linkStore[userId]?.cookiesTxt ?? null),
+	},
+}));
+
 import { subscriptionService } from './subscription.service';
 import { queueService } from './queue.service';
+import { ytdlpService } from './ytdlp.service';
 import { RateLimitError, runYtdlpJson } from '../utils/ytdlp-json';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
+import { access, readFile } from 'fs/promises';
 
 const SUB_ID = 'sub-check-1';
 
@@ -578,5 +604,94 @@ describe('refreshChannelMeta', () => {
 
 		expect(subsDb[SUB_ID].name).toBe(RAW_URL);
 		expect(subsDb[SUB_ID].thumbnail).toBeNull();
+	});
+});
+
+describe('per-owner session for automated browses', () => {
+	const CHANNEL = 'https://www.youtube.com/@testchannel/videos';
+	const SESSION = '# Netscape HTTP Cookie File\nSID\tvalue\n';
+
+	beforeEach(() => {
+		for (const k of Object.keys(linkStore)) delete linkStore[k];
+		for (const k of Object.keys(subsDb)) delete subsDb[k];
+		vi.mocked(runYtdlpJson).mockReset();
+		settingsDb = { ytdlpProxyUrl: 'socks5h://global:1080', ytdlpExtraFlags: [] };
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		settingsDb = null;
+	});
+
+	it('gives the channel-identity browse the owner session file and its paired proxy', async () => {
+		linkStore['owner-1'] = { proxyUrl: 'http://owner1:8080', cookiesTxt: SESSION };
+		let seen: any;
+		vi.mocked(runYtdlpJson).mockImplementation(async (_url, opts: any) => {
+			// Read the session while the browse is still in scope: the resolver
+			// unlinks its temp file as soon as the callback it wraps resolves.
+			const content = opts?.cookiePath ? await readFile(opts.cookiePath, 'utf8') : null;
+			seen = { ...opts, content };
+			return JSON.stringify({ channel_id: 'UCx', playlist_count: 1 });
+		});
+
+		await (subscriptionService as any).fetchChannelMeta(CHANNEL, 'owner-1');
+
+		expect(seen.proxyUrl).toBe('http://owner1:8080');
+		// A real file with the linked session in it, present while the browse ran...
+		expect(seen.content).toBe(SESSION);
+		// ...gone once it returns, so the session never lingers in tmp.
+		await expect(access(seen.cookiePath)).rejects.toThrow();
+	});
+
+	it('pairs a linked session with the server-wide proxy when the account has none', async () => {
+		linkStore['owner-2'] = { proxyUrl: null, cookiesTxt: SESSION };
+		let seen: any;
+		vi.mocked(runYtdlpJson).mockImplementation(async (_url, opts: any) => {
+			seen = opts;
+			return JSON.stringify({ channel_id: 'UCx' });
+		});
+
+		await (subscriptionService as any).fetchChannelMeta(CHANNEL, 'owner-2');
+
+		expect(seen.cookiePath).toBeTruthy();
+		expect(seen.proxyUrl).toBe('socks5h://global:1080');
+	});
+
+	it('browses without a proxy at all when there is neither a link nor a global one', async () => {
+		settingsDb = { ytdlpProxyUrl: null, ytdlpExtraFlags: [] };
+		let seen: any;
+		vi.mocked(runYtdlpJson).mockImplementation(async (_url, opts: any) => {
+			seen = opts;
+			return JSON.stringify({ channel_id: 'UCx' });
+		});
+
+		await (subscriptionService as any).fetchChannelMeta(CHANNEL, 'owner-none');
+
+		expect(seen.cookiePath).toBeNull();
+		expect(seen.proxyUrl).toBeNull();
+	});
+
+	it('routes the scheduled channel listing with the owner session as well', async () => {
+		// The account's own flags ride in on the same link read as its session, so
+		// the browse gets both from one resolver call.
+		linkStore['owner-3'] = {
+			proxyUrl: 'http://owner3:8080',
+			cookiesTxt: SESSION,
+			extraFlags: ['--sleep-requests', '1'],
+		};
+		const argsSpy = vi.spyOn(ytdlpService, 'buildDefaultsArgs');
+		// A binary that always exits 1: the argv is assembled before the spawn, and
+		// a scheduled check must never reach the network from a test.
+		vi.spyOn(ytdlpService, 'getPath').mockReturnValue('/bin/false');
+
+		await expect(
+			(subscriptionService as any).fetchPlaylistEntries(CHANNEL, { userId: 'owner-3', limit: 3 }),
+		).rejects.toThrow();
+
+		const defaults = argsSpy.mock.calls.at(-1)![0] as any;
+		expect(defaults.proxyUrl).toBe('http://owner3:8080');
+		expect(defaults.extraFlags).toEqual(['--sleep-requests', '1']);
+		expect(typeof defaults.cookiePath).toBe('string');
+		await expect(access(defaults.cookiePath)).rejects.toThrow();
 	});
 });

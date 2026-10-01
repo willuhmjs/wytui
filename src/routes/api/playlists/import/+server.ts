@@ -5,6 +5,7 @@ import { youtubeService } from '$lib/server/services/youtube.service';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
 import { sseEmitter } from '$lib/server/sse/emitter';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 export const POST = apiRoute(
@@ -52,6 +53,12 @@ export const POST = apiRoute(
 			// Validate URL
 			ytdlpService.validateUrl(url);
 
+			// Best-effort SSRF guard — see utils/ssrf-guard.ts. This is the entry
+			// point; `fetchPlaylistFlat` below hands the same URL to yt-dlp, which
+			// resolves it again on its own (the TOCTOU gap documented there).
+			const hostCheck = await checkUrlHost(url);
+			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
+
 			// Verify profile exists and user has access
 			const profile = await prisma.downloadProfile.findUnique({
 				where: { id: profileId },
@@ -68,13 +75,13 @@ export const POST = apiRoute(
 			// Send initial SSE event
 			sseEmitter.broadcastToUser('playlist:import:start', { url }, userId);
 
-			// Extract playlist entries via the shared, timeout-guarded yt-dlp runner
-			// (cookie-less flat fetch). This replaces a duplicate local spawn that
-			// had no timeout/settled guard.
+			// Extract playlist entries via the shared, timeout-guarded yt-dlp runner,
+			// authenticated as the requesting user. This replaces a duplicate local
+			// spawn that had no timeout/settled guard.
 			let title: string | null;
 			let entries;
 			try {
-				({ title, entries } = await youtubeService.fetchPlaylistFlat(url));
+				({ title, entries } = await youtubeService.fetchPlaylistFlat(url, userId));
 			} catch (e: any) {
 				throw error(400, e.message || 'Failed to extract playlist information');
 			}

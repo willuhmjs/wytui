@@ -6,18 +6,56 @@ import {
 	type BrowserCookie,
 } from '../utils/netscape-cookies';
 import { validateProxyUrlInput } from '../utils/proxy-url';
+import { SECRET_MASK } from './settings-validation';
 import { ytdlpService } from './ytdlp.service';
+
+/**
+ * Compare an incoming session against the stored one. Browser cookie order is
+ * not stable, so compare the set of cookie lines rather than the serialized
+ * file byte-for-byte.
+ */
+function sameStoredCookies(userId: string, storedEnc: string, nextNetscape: string): boolean {
+	let stored: string;
+	try {
+		stored = decryptSecret(storedEnc, userId);
+	} catch {
+		// Corrupt blob, rotated key, or a payload bound to a different account:
+		// the stored value is unreadable, so the incoming write counts as a change
+		// by definition.
+		return false;
+	}
+	const normalize = (s: string) =>
+		s
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0 && !line.startsWith('#'))
+			.sort()
+			.join('\n');
+	return normalize(stored) === normalize(nextNetscape);
+}
 
 class YouTubeLinkService {
 	async storeCookies(
 		userId: string,
 		cookies: BrowserCookie[],
 		identity?: { channelName?: string; channelHandle?: string; channelId?: string },
-	): Promise<void> {
+	): Promise<{ changed: boolean }> {
 		if (!looksLikeYouTubeAuth(cookies)) {
 			throw new Error('Not logged in to YouTube. Sign in at youtube.com, then try linking again.');
 		}
-		const cookiesEnc = encryptSecret(cookiesToNetscape(cookies));
+		const netscape = cookiesToNetscape(cookies);
+		const existing = await prisma.youTubeLink.findUnique({
+			where: { userId },
+			select: { cookiesEnc: true },
+		});
+		// Callers use `changed` to decide whether cookie-blocked downloads deserve
+		// a fresh attempt. The extension's hourly refresh pushes whatever the
+		// browser holds whether or not Google rotated anything, so an unchanged
+		// session must not read as new credentials and restart a dead retry cycle.
+		const changed = !existing || !sameStoredCookies(userId, existing.cookiesEnc, netscape);
+		// Bound to the owner: a blob copied onto another row (SQL injection, a bad
+		// migration, a restored backup) stops being a usable session there.
+		const cookiesEnc = encryptSecret(netscape, userId);
 		const now = new Date();
 		await prisma.youTubeLink.upsert({
 			where: { userId },
@@ -38,13 +76,14 @@ class YouTubeLinkService {
 				...(identity?.channelId ? { channelId: identity.channelId } : {}),
 			},
 		});
+		return { changed };
 	}
 
 	async getCookiesTxt(userId: string): Promise<string | null> {
 		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
 		if (!link) return null;
 		try {
-			return decryptSecret(link.cookiesEnc);
+			return decryptSecret(link.cookiesEnc, userId);
 		} catch {
 			return null;
 		}
@@ -67,11 +106,16 @@ class YouTubeLinkService {
 			},
 			jellyfinUserId: link.jellyfinUserId ?? null,
 			ytdlp: {
-				proxyUrl: link.proxyUrl ?? null,
+				// Both are credentials-bearing URLs (a proxy URL carries its own
+				// user:pass, an Apprise URL its endpoint), so they are masked the way
+				// the global secrets are: whether one is set stays visible, the value
+				// does not. Echoing the mask back on save is a no-op — see
+				// updateAccountSettings.
+				proxyUrl: link.proxyUrl ? SECRET_MASK : null,
 				extraFlags: link.extraFlags ?? [],
 			},
 			notifications: {
-				appriseUrl: link.appriseUrl ?? null,
+				appriseUrl: link.appriseUrl ? SECRET_MASK : null,
 				notifyOnComplete: link.notifyOnComplete,
 				notifyOnFail: link.notifyOnFail,
 			},
@@ -137,7 +181,10 @@ class YouTubeLinkService {
 				throw new Error('jellyfinUserId must be a string or null');
 			}
 		}
-		if (updates.proxyUrl !== undefined) {
+		// A value that is exactly the mask means the form echoed back what the
+		// masked status payload showed it — "unchanged", not "this is the new
+		// proxy". Same rule the settings PATCH applies to SECRET_SETTINGS_FIELDS.
+		if (updates.proxyUrl !== undefined && updates.proxyUrl !== SECRET_MASK) {
 			const check = validateProxyUrlInput(updates.proxyUrl);
 			if (!check.ok) throw new Error(`Proxy URL ${check.error}`);
 			data.proxyUrl = check.value;
@@ -154,7 +201,7 @@ class YouTubeLinkService {
 
 			data.extraFlags = flags.map((f) => f.trim()).filter(Boolean);
 		}
-		if (updates.appriseUrl !== undefined) {
+		if (updates.appriseUrl !== undefined && updates.appriseUrl !== SECRET_MASK) {
 			if (updates.appriseUrl === null || updates.appriseUrl === '') {
 				data.appriseUrl = null;
 			} else if (typeof updates.appriseUrl === 'string') {
@@ -175,16 +222,29 @@ class YouTubeLinkService {
 	}
 
 	/**
-	 * Raw per-account yt-dlp settings, or null when the user has no linked
-	 * account. Callers fall back to the server-wide defaults themselves.
+	 * Is there a linked account, does it still hold a session that can be handed to
+	 * yt-dlp, and when was that session last written? One read — the settings UI
+	 * shows all three at once, and "row exists but will not decrypt" has to be
+	 * distinguishable from "never linked" (a dead session needs re-linking, an
+	 * absent row needs linking).
 	 */
-	async getAccountYtdlp(
-		userId: string | null | undefined,
-	): Promise<{ proxyUrl: string | null; extraFlags: string[] } | null> {
-		if (!userId) return null;
-		const link = await prisma.youTubeLink.findUnique({ where: { userId } });
-		if (!link) return null;
-		return { proxyUrl: link.proxyUrl ?? null, extraFlags: link.extraFlags ?? [] };
+	async getSessionHealth(userId: string): Promise<{
+		linked: boolean;
+		usable: boolean;
+		cookieUpdatedAt: Date | null;
+	}> {
+		const link = await prisma.youTubeLink.findUnique({
+			where: { userId },
+			select: { cookiesEnc: true, cookieUpdatedAt: true },
+		});
+		if (!link) return { linked: false, usable: false, cookieUpdatedAt: null };
+		let usable = true;
+		try {
+			decryptSecret(link.cookiesEnc, userId);
+		} catch {
+			usable = false;
+		}
+		return { linked: true, usable, cookieUpdatedAt: link.cookieUpdatedAt };
 	}
 
 	async unlink(userId: string): Promise<void> {

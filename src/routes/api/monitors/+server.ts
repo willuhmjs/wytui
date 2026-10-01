@@ -3,6 +3,8 @@ import { prisma } from '$lib/server/db';
 import { monitorService } from '$lib/server/services/monitor.service';
 import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import { apiRoute } from '$lib/server/openapi';
+import { requireAdmin } from '$lib/server/guards';
+import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
 
 export const GET = apiRoute(
@@ -11,7 +13,7 @@ export const GET = apiRoute(
 	{
 		summary: 'List monitors',
 		tags: ['Monitors'],
-		auth: true,
+		auth: 'admin',
 		responses: {
 			200: {
 				description: 'Array of monitor objects with profile info',
@@ -38,9 +40,10 @@ export const GET = apiRoute(
 	},
 	async ({ locals }) => {
 		try {
-			if (!locals.session?.user?.id) {
-				throw error(401, 'Authentication required');
-			}
+			// Monitors run server-side probes on a schedule and record livestreams
+			// with whoever's profile they point at, so listing/creating them is
+			// admin-only — same gate PATCH and DELETE already use.
+			requireAdmin(locals);
 
 			const monitors = await prisma.monitor.findMany({
 				where: {},
@@ -63,7 +66,7 @@ export const POST = apiRoute(
 	{
 		summary: 'Create a monitor',
 		tags: ['Monitors'],
-		auth: true,
+		auth: 'admin',
 		body: {
 			url: { type: 'string', required: true, description: 'Stream URL' },
 			name: { type: 'string', required: true, description: 'Monitor name' },
@@ -100,9 +103,7 @@ export const POST = apiRoute(
 	},
 	async ({ request, locals }) => {
 		try {
-			if (!locals.session?.user?.id) {
-				throw error(401, 'Authentication required');
-			}
+			requireAdmin(locals);
 
 			const userId = locals.session.user.id;
 			const data = await request.json();
@@ -121,9 +122,28 @@ export const POST = apiRoute(
 				throw error(400, 'Invalid URL format');
 			}
 
+			// A monitor re-probes this URL on a schedule from the server, so this is
+			// a standing SSRF surface, not a one-off fetch. Best-effort only — see
+			// utils/ssrf-guard.ts (the probe resolves the name again at run time).
+			const hostCheck = await checkUrlHost(data.url);
+			if (!hostCheck.ok) throw error(400, describeUrlHostCheck(hostCheck));
+
 			const validTypes = ['YOUTUBE_LIVE', 'TWITCH'];
 			if (!validTypes.includes(data.type)) {
 				throw error(400, 'Invalid monitor type');
+			}
+
+			// Same profile rule as PATCH /api/monitors/[id]: a monitor runs its
+			// profile's settings (cookies, proxy, custom flags) unattended, so it may
+			// only point at a system profile or the creator's own.
+			const profile = await prisma.downloadProfile.findUnique({
+				where: { id: data.profileId },
+			});
+			if (!profile) {
+				throw error(400, 'Invalid profile ID');
+			}
+			if (!profile.isSystem && profile.userId !== userId) {
+				throw error(403, "Cannot use another user's profile");
 			}
 
 			const existing = await prisma.monitor.findFirst({

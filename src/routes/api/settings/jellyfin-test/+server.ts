@@ -36,7 +36,9 @@ export const POST = apiRoute(
 		let { url, apiKey } = await request.json();
 
 		if (apiKey === '***SET***') {
-			const settings = await import('$lib/server/db').then((m) => m.prisma.settings.findUnique({ where: { id: 'singleton' } }));
+			const settings = await import('$lib/server/db').then((m) =>
+				m.prisma.settings.findUnique({ where: { id: 'singleton' } }),
+			);
 			apiKey = settings?.jellyfinApiKey;
 		}
 

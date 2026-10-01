@@ -346,6 +346,12 @@
 				color: #ef4444;
 				border: 1px solid rgba(239, 68, 68, 0.25);
 			}
+			.message.warn {
+				display: block;
+				background: rgba(245, 158, 11, 0.1);
+				color: #f59e0b;
+				border: 1px solid rgba(245, 158, 11, 0.25);
+			}
 
 			/* Linked YouTube account state */
 			.yt-linked {
@@ -365,6 +371,30 @@
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
+			}
+
+			/* Opt-in automatic cookie refresh */
+			.yt-auto {
+				display: flex;
+				align-items: flex-start;
+				gap: 8px;
+				margin-top: 10px;
+				font-size: 12px;
+				line-height: 1.4;
+				cursor: pointer;
+			}
+			.yt-auto input {
+				margin: 2px 0 0;
+				flex-shrink: 0;
+			}
+			.yt-auto.disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			.yt-auto-hint {
+				display: block;
+				font-size: 11px;
+				opacity: 0.7;
 			}
 
 			/* Download link after success */
@@ -762,6 +792,17 @@
 					<span id="yt-linked-name"></span>
 				</div>
 				<button class="btn btn-secondary" id="link-youtube">Link YouTube to wytui</button>
+				<label class="yt-auto disabled" id="yt-auto-wrap">
+					<input type="checkbox" id="auto-update-cookies" disabled />
+					<span>
+						Keep cookies up to date
+						<span class="yt-auto-hint">
+							Re-sends this browser's YouTube cookies to wytui every hour. Off by default.
+						</span>
+					</span>
+				</label>
+				<div class="message" id="yt-auto-status"></div>
+				<div class="message" id="yt-auto-warning"></div>
 				<div class="message" id="yt-status"></div>
 			</div>
 		</div>

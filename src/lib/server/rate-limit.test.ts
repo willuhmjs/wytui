@@ -1,4 +1,64 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { RequestEvent } from '@sveltejs/kit';
+import { getClientIdentifier, isTrustedProxyAddress } from './rate-limit';
+
+/** Minimal stand-in for the two RequestEvent members getClientIdentifier reads. */
+function eventFor(peer: string, xff?: string): RequestEvent {
+	const headers = new Headers();
+	if (xff !== undefined) headers.set('x-forwarded-for', xff);
+	return {
+		request: new Request('http://wytui.local/api/auth/login', { headers }),
+		getClientAddress: () => peer,
+	} as unknown as RequestEvent;
+}
+
+describe('getClientIdentifier', () => {
+	it('ignores X-Forwarded-For unless the socket peer is a trusted proxy', () => {
+		// A caller on a public IP can put anything in XFF; taking it would let one
+		// host mint unlimited auth buckets by rotating the header.
+		expect(getClientIdentifier(eventFor('203.0.113.9', '198.51.100.7'))).toBe('203.0.113.9');
+		expect(getClientIdentifier(eventFor('203.0.113.9', '1.1.1.1, 8.8.8.8'))).toBe('203.0.113.9');
+		expect(getClientIdentifier(eventFor('203.0.113.9'))).toBe('203.0.113.9');
+	});
+
+	it('takes the hop the trusted proxy appended, not the client-supplied head', () => {
+		// Traefik appends the peer it accepted, so the LAST entry is the client.
+		expect(getClientIdentifier(eventFor('10.42.0.15', '203.0.113.9'))).toBe('203.0.113.9');
+		// Classic forged prefix: "attacker-controlled, real client" must key on the
+		// address the proxy actually saw, never the forged first entry.
+		expect(getClientIdentifier(eventFor('127.0.0.1', '1.2.3.4, 198.51.100.7'))).toBe(
+			'198.51.100.7',
+		);
+		// A client arriving from CGNAT (what the trusted range list is there for):
+		// stopping at the first untrusted hop scanning right-to-left would skip the
+		// real client and fall back to the forged head, so the appended hop wins.
+		expect(getClientIdentifier(eventFor('10.42.0.15', '1.2.3.4, 100.64.1.1'))).toBe('100.64.1.1');
+	});
+
+	it('falls back to the socket peer when the header names nobody', () => {
+		expect(getClientIdentifier(eventFor('10.42.0.15'))).toBe('10.42.0.15');
+		expect(getClientIdentifier(eventFor('10.42.0.15', ' , '))).toBe('10.42.0.15');
+	});
+
+	it('recognises the trusted address ranges', () => {
+		const trusted = [
+			'127.0.0.1',
+			'::1',
+			'::ffff:127.0.0.1',
+			'10.1.2.3',
+			'172.16.0.1',
+			'172.31.255.255',
+			'192.168.4.5',
+			'100.64.0.2',
+			'100.127.255.255',
+			'fd12:3456::1',
+			'fe80::1',
+		];
+		const untrusted = ['203.0.113.9', '8.8.8.8', '172.15.0.1', '100.63.0.1', '100.128.0.1'];
+		for (const ip of trusted) expect(isTrustedProxyAddress(ip), ip).toBe(true);
+		for (const ip of untrusted) expect(isTrustedProxyAddress(ip), ip).toBe(false);
+	});
+});
 
 // Create a local class for testing since RateLimiter isn't exported
 class RateLimiter {

@@ -2,6 +2,7 @@ import { prisma } from '$lib/server/db';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { ytdlpService } from './ytdlp.service';
+import { withYouTubeCookies } from '../utils/ytdlp-cookies';
 import { DownloadStatus } from '@prisma/client';
 
 const VIDEO_AUDIO_EXTENSIONS = new Set([
@@ -105,7 +106,14 @@ class ImportService {
 				if (file.videoId) {
 					url = `https://www.youtube.com/watch?v=${file.videoId}`;
 					try {
-						const metadata = await ytdlpService.fetchMetadata(url);
+						// The metadata lookup is a YouTube request like any other, so it
+						// runs as the importing user (their session + its paired proxy).
+						const metadata = await withYouTubeCookies(userId, (ctx) =>
+							ytdlpService.fetchMetadata(url, {
+								cookiePath: ctx.cookiePath,
+								proxyUrl: ctx.proxyUrl,
+							}),
+						);
 						title = metadata.title || title;
 						uploader = metadata.uploader;
 						duration = metadata.duration;

@@ -16,6 +16,10 @@ export const EventTypes = {
 	DOWNLOAD_DELETED: 'download.deleted',
 	DOWNLOAD_CANCELLED: 'download.cancelled',
 	DOWNLOAD_PROMOTED: 'download.promoted',
+	// A download that succeeded but lost something optional (captions that
+	// YouTube refused to hand over) — the video is there, the operator still
+	// deserves to know the rest didn't arrive.
+	DOWNLOAD_WARNING: 'download.warning',
 	// Subscriptions
 	SUBSCRIPTION_CREATED: 'subscription.created',
 	SUBSCRIPTION_CHECKED: 'subscription.checked',
