@@ -318,3 +318,45 @@ describe('buildArgs', () => {
 		]);
 	});
 });
+
+describe('getSponsorBlockRemovedCategories', () => {
+	it('is empty for mark-only and plain downloads', () => {
+		expect(ytdlpService.getSponsorBlockRemovedCategories([])).toEqual([]);
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories(['--sponsorblock-mark', 'sponsor,selfpromo']),
+		).toEqual([]);
+	});
+
+	it('reports the categories a legacy file had cut out', () => {
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories(['--sponsorblock-remove', 'sponsor,selfpromo']),
+		).toEqual(['sponsor', 'selfpromo']);
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories(['--sponsorblock-remove=sponsor']),
+		).toEqual(['sponsor']);
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories([
+				'--sponsorblock-remove',
+				'sponsor',
+				'--sponsorblock-remove',
+				'intro',
+			]),
+		).toEqual(['sponsor', 'intro']);
+	});
+
+	it('reports nothing once SponsorBlock is disabled outright', () => {
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories([
+				'--sponsorblock-remove',
+				'sponsor',
+				'--no-sponsorblock',
+			]),
+		).toEqual([]);
+	});
+
+	it('ignores a value slot occupied by the next flag', () => {
+		expect(
+			ytdlpService.getSponsorBlockRemovedCategories(['--sponsorblock-remove', '--embed-subs']),
+		).toEqual([]);
+	});
+});

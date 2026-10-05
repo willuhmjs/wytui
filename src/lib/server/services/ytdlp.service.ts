@@ -433,6 +433,35 @@ export class YtdlpService {
 	}
 
 	/**
+	 * Categories a finished file had physically cut by `--sponsorblock-remove`.
+	 * Downloads made with that flag have a media file shorter than the YouTube
+	 * original, so anything still keyed to YouTube's timeline (the player's
+	 * segment skips, for one) needs this list to stay on the file's timeline.
+	 * Mark-only downloads return an empty list.
+	 */
+	getSponsorBlockRemovedCategories(flags: string[]): string[] {
+		const removed = new Set<string>();
+		for (let i = 0; i < flags.length; i++) {
+			const flag = flags[i];
+			if (flag === '--no-sponsorblock') return [];
+			let value = '';
+			if (flag.startsWith('--sponsorblock-remove=')) {
+				value = flag.slice('--sponsorblock-remove='.length);
+			} else if (flag === '--sponsorblock-remove') {
+				const next = flags[i + 1];
+				if (next !== undefined && !next.startsWith('--')) {
+					value = next;
+					i++;
+				}
+			}
+			for (const category of value.split(',')) {
+				if (category.trim()) removed.add(category.trim());
+			}
+		}
+		return [...removed];
+	}
+
+	/**
 	 * Args for invocations that don't go through {@link buildArgs}. The cookie path comes from withYouTubeCookies() (never user input); extra flags go through the same denylist as custom flags.
 	 */
 	buildDefaultsArgs(defaults: {

@@ -1,6 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { prisma } from '$lib/server/db';
 import { libraryAccessStatus } from '$lib/server/permissions';
+import { channelOverrideService } from '$lib/server/services/channel-override.service';
+import { ytdlpService } from '$lib/server/services/ytdlp.service';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -57,6 +59,20 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		select: { status: true },
 	});
 	const libraryRequestStatus = existingRequest?.status ?? null;
+
+	// A file cut by --sponsorblock-remove is shorter than the YouTube original, so the
+	// player must skip on the file's clock rather than YouTube's — otherwise it skips
+	// the already-removed seconds a second time. Mark-only downloads yield [].
+	let sbFlags = [...(download.profile?.customFlags ?? []), ...download.customFlags];
+	let sponsorblockEnabled = true;
+	if (download.channelUrl) {
+		const effective = await channelOverrideService.getEffectiveFlags(download.channelUrl, sbFlags);
+		sbFlags = effective.flags;
+		sponsorblockEnabled = effective.sponsorblock;
+	}
+	const sbRemovedCategories = sponsorblockEnabled
+		? ytdlpService.getSponsorBlockRemovedCategories(sbFlags)
+		: [];
 
 	const serialized = {
 		...download,
@@ -131,6 +147,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		jellyfinUrl: settings?.jellyfinExternalUrl || settings?.jellyfinUrl || '',
 		libraryAction,
 		libraryRequestStatus,
+		sbRemovedCategories,
 		playlistContext,
 		similar,
 		startTimeParam:

@@ -183,12 +183,23 @@
 		saveToLibrary = false,
 	): string[] {
 		const flags: string[] = [];
-		if (opts.sponsorblock) flags.push('--sponsorblock-remove', 'sponsor,selfpromo');
+		// Mark, never remove: cutting the media desyncs the sidecar subtitles, the
+		// chapters, the player and the stored duration from each other. The player
+		// skips these segments at play time instead.
+		if (opts.sponsorblock) flags.push('--sponsorblock-mark', 'sponsor,selfpromo');
 		if (opts.subtitles)
 			flags.push('--write-subs', '--write-auto-subs', '--embed-subs', '--sub-langs', 'en');
 		if (opts.metadata) flags.push('--embed-metadata', '--embed-chapters');
 		if (saveToLibrary) flags.push('--write-thumbnail');
 		return flags;
+	}
+
+	// Older subscriptions still carry --sponsorblock-remove; they show as enabled
+	// and are rewritten to mark on the next save.
+	function hasSponsorBlock(flags: string[] | null | undefined): boolean {
+		return (flags ?? []).some(
+			(f) => f.startsWith('--sponsorblock-mark') || f.startsWith('--sponsorblock-remove'),
+		);
 	}
 
 	function parseOptionsFromFlags(flags: string[]): {
@@ -197,7 +208,7 @@
 		metadata: boolean;
 	} {
 		return {
-			sponsorblock: flags.includes('--sponsorblock-remove'),
+			sponsorblock: hasSponsorBlock(flags),
 			subtitles: flags.includes('--write-subs') || flags.includes('--write-auto-subs'),
 			metadata: flags.includes('--embed-metadata'),
 		};
@@ -981,7 +992,7 @@
 													sub.maxDurationSeconds,
 												)}">≤{formatDurationLimit(sub.maxDurationSeconds)}</span
 											>
-										{/if}{#if sub.customFlags?.includes('--sponsorblock-remove')}
+										{/if}{#if hasSponsorBlock(sub.customFlags)}
 											<span class="option-tag">SB</span>
 										{/if}
 										{#if sub.customFlags?.includes('--write-subs')}

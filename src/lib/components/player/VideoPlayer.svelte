@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CheckIcon from '$lib/components/icons/CheckIcon.svelte';
+	import { mapSegmentsToCutTimeline } from '$lib/utils/sponsorblock-timeline';
 
 	let {
 		src,
@@ -8,6 +9,7 @@
 		downloadId,
 		startTime = 0,
 		subtitles = [],
+		sbRemovedCategories = [],
 		onEnded,
 		onDownload,
 	}: {
@@ -17,6 +19,12 @@
 		downloadId?: string;
 		startTime?: number;
 		subtitles?: { label: string; lang: string; src: string }[];
+		/**
+		 * Categories `--sponsorblock-remove` cut out of this file. Legacy downloads
+		 * have a media file shorter than the YouTube original, so their segments must
+		 * be remapped — and the cut ones must not be skipped a second time.
+		 */
+		sbRemovedCategories?: string[];
 		onEnded?: () => void;
 		onDownload?: () => void;
 	} = $props();
@@ -123,7 +131,7 @@
 			})
 			.then((data: SBSegment[]) => {
 				if (Array.isArray(data)) {
-					segments = data;
+					segments = mapSegmentsToCutTimeline(data, sbRemovedCategories);
 				}
 			})
 			.catch(() => {

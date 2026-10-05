@@ -382,6 +382,7 @@
 					poster={download.thumbnail || undefined}
 					videoId={download.videoId || undefined}
 					downloadId={download.id}
+					sbRemovedCategories={data.sbRemovedCategories}
 					startTime={data.startTimeParam ?? download.watchProgress?.position ?? 0}
 					onEnded={handleVideoEnded}
 					onDownload={() => (downloadPickerOpen = true)}

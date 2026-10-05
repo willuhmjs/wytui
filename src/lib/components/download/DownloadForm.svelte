@@ -820,7 +820,10 @@
 		const isAudioOnly = profile?.audioOnly;
 
 		if (basicOptions.sponsorblock) {
-			result.push('--sponsorblock-remove', 'sponsor,selfpromo');
+			// Mark, never remove: cutting the media desyncs the sidecar subtitles, the
+			// chapters, the player and the stored duration from each other. The player
+			// skips these segments at play time instead.
+			result.push('--sponsorblock-mark', 'sponsor,selfpromo');
 		}
 		if (basicOptions.subtitles) {
 			// Audio-only formats (m4a, mp3, etc.) cannot embed subtitles
