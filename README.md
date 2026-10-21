@@ -1,131 +1,92 @@
+<div align="center">
+
+<img src="static/favicon.svg" alt="wytui logo" width="120">
+
 # wytui
 
-A self-hosted web UI for [yt-dlp](https://github.com/yt-dlp/yt-dlp), built with SvelteKit 5. Download videos from any yt-dlp compatible platform.
+**A self-hosted YouTube downloader: paste a link, pick a quality, keep the video. Runs as a Docker container or Helm chart, works with every platform yt-dlp supports, and files land in a library Jellyfin can serve.**
+
+[![Build](https://github.com/willuhmjs/wytui/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/willuhmjs/wytui/actions/workflows/docker-publish.yml)
+[![License](https://img.shields.io/github/license/willuhmjs/wytui)](LICENSE)
+
+</div>
+
+<!-- TODO: add a hero screenshot at docs/screenshot-main.png - the download form with a video
+     loading, or the library view. The repo has no screenshots; one here would carry the pitch. -->
 
 ## Features
 
-- **Download profiles** — Pre-configured presets (4K, 1080p, 720p, 480p, MP3, AAC, FLAC) and custom profiles
-- **Two-tier storage** — Temporary cache with configurable quota + permanent library organized by uploader
-- **Jellyfin integration** — Auto library scan, thumbnail artwork, and deep-link to Jellyfin search
-- **Subscriptions** — Monitor channels/playlists, auto-download new content on a schedule; backfill by date or download entire channels
-- **YouTube channel & playlist sync** — Link your YouTube account via the browser extension to import your real subscriptions as monitors (with OPML/CSV export) and sync your playlists, including Watch Later and Liked videos
-- **YouTube search** — Search YouTube directly from wytui, filter by type/sort/date/duration, and download results in one click
-- **Livestream monitors** — Watch livestreams, auto-download when live
-- **File reconciliation** — Automatically detects and removes DB records for files deleted externally (e.g. via Jellyfin)
-- **Real-time progress** — Server-Sent Events for live download status
-- **OIDC authentication** — OpenID Connect SSO with admin/user roles
-- **Mobile-friendly** — Web Share API on iOS for save-to-photos
+- **Download from any [yt-dlp](https://github.com/yt-dlp/yt-dlp) platform** with pre-configured profiles (4K, 1080p, 720p, 480p, MP3, AAC, FLAC) or custom ones, with live progress over Server-Sent Events
+- **Two-tier storage**: temporary cache with a configurable quota, plus a permanent library organized by uploader that reconciles itself when files are deleted externally (for example via Jellyfin)
+- **Jellyfin integration**: automatic library setup, episode thumbnails and channel posters, NFO metadata, deep-link to Jellyfin search
+- **Subscriptions**: monitor channels and playlists, auto-download new content on a schedule, backfill by date or grab an entire channel
+- **YouTube account link**: the [browser extension](#browser-extension) imports your real subscriptions as monitors (with OPML/CSV export) and syncs your playlists, including Watch Later and Liked videos
+- **YouTube search in-app**: filter by type, sort, date and duration, download results in one click
+- **Livestream monitors** that auto-download when a stream goes live
+- **Multi-user ready**: OpenID Connect SSO with admin and user roles; mobile-friendly, with save-to-photos on iOS via the Web Share API
 
-## Quick Start
+<!-- TODO: add a screenshots gallery at docs/screenshots/ - download form, library, subscription
+     monitors, search results. -->
 
-### Docker Compose
+## Install
 
-The `docker-init.sh` script automatically generates secure random credentials on first run:
+**Docker Compose** — generates secure random credentials on first run:
 
 ```bash
 ./docker-init.sh up -d
 ```
 
-This creates a `.env` file with secure random passwords. The file is auto-generated if it doesn't exist.
+That creates a `.env` with fresh secrets; back the file up, it holds your database password. Manual setup and the full compose file: [docker-compose.yml](docker-compose.yml).
 
-**Manual setup** (if you prefer):
-
-```bash
-# Generate secure secrets
-export POSTGRES_PASSWORD=$(openssl rand -hex 32)
-export AUTH_SECRET=$(openssl rand -hex 32)
-
-# Save to .env file
-echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" > .env
-echo "AUTH_SECRET=$AUTH_SECRET" >> .env
-
-docker compose up -d
-```
-
-> 💾 **Important**: The `.env` file contains your database password. Back it up securely!
-
-### Helm
+**Helm**:
 
 ```bash
 helm install wytui oci://ghcr.io/willuhmjs/wytui
 ```
 
-With custom values:
+The chart bundles PostgreSQL by default; use an external database with `postgresql.enabled: false` and a secret URL. Classic `helm repo add` flow: `helm repo add wytui https://charts.wytui.willuhmjs.com`.
 
-```bash
-helm install wytui oci://ghcr.io/willuhmjs/wytui -f values.yaml
-```
+**Configuration** (everything else is optional):
 
-Or via the classic chart repository, if you prefer `helm repo add`/`helm search`:
+| Variable | Description |
+|---|---|
+| `ORIGIN` | Public URL of the app (defaults to `http://localhost:3000`) |
+| `AUTH_TRUST_HOST` | Set `true` behind a reverse proxy |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Skip the setup wizard with a pre-made admin |
+| `OIDC_ISSUER_URL` | OIDC issuer URL |
+| `OIDC_CLIENT_ID` | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | OIDC client secret |
+| `OIDC_DISPLAY_NAME` | Provider display name (defaults to "SSO") |
 
-```bash
-helm repo add wytui https://charts.wytui.willuhmjs.com
-helm repo update
-helm install wytui wytui/wytui
-```
+`DATABASE_URL` and `AUTH_SECRET` are generated by `docker-init.sh`. Redirect URL for your OIDC provider: `https://<your-wytui-domain>/auth/oidc/callback`. OIDC users start with the `user` role; an admin promotes them from the admin panel.
 
-The chart includes a bundled PostgreSQL by default. To use an external database:
+## Browser extension
 
-```yaml
-postgresql:
-  enabled: false
-  secret:
-    url: 'postgresql://user:pass@host:5432/wytui?schema=public'
-```
+Links your YouTube account to wytui for subscription and playlist sync. Ships as `wytui-<version>.zip` on the [releases page](https://github.com/willuhmjs/wytui/releases/latest) (current: `ext-v1.5.0`).
 
-### Environment Variables
+## Jellyfin
 
-| Variable             | Description                                                           |
-| -------------------- | --------------------------------------------------------------------- |
-| `DATABASE_URL`       | PostgreSQL connection string                                          |
-| `AUTH_SECRET`        | Session signing secret                                                |
-| `AUTH_TRUST_HOST`    | Set `true` behind a reverse proxy (optional)                          |
-| `ORIGIN`             | Public URL of the app (optional, defaults to `http://localhost:3000`) |
-| `ADMIN_USERNAME`     | Auto-create admin user, skipping the setup wizard (optional)          |
-| `ADMIN_PASSWORD`     | Password for the auto-created admin user (optional)                   |
-| `OIDC_ISSUER_URL`    | OIDC issuer URL (optional)                                            |
-| `OIDC_CLIENT_ID`     | OIDC client ID (optional)                                             |
-| `OIDC_CLIENT_SECRET` | OIDC client secret (optional)                                         |
-| `OIDC_DISPLAY_NAME`  | OIDC provider display name (optional, defaults to "SSO")              |
+wytui maps the library onto Jellyfin's **TV Shows** model: each channel a show, each video an episode (season = upload year, episode = index within it), with Kodi-compatible NFO files so episodes sort in release order with no online metadata matching. Use a TV Shows library, not Home Videos.
 
-## OIDC Authentication
+1. In Jellyfin: Dashboard → API Keys → create a key
+2. In wytui: Settings → Jellyfin → server URL and API key
+3. Set the path mapping if the containers see the volume differently (for example `/media` → `/media/youtube`); leave both empty if the paths are identical
+4. Click **Set up library**: wytui creates or repairs the library via the API (an existing Home Videos library on the same path is rebuilt; Jellyfin watch history for it resets, media files are untouched)
+5. Click **Write NFO metadata** once to backfill existing videos
 
-wytui supports OpenID Connect for single sign-on. Set the `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` environment variables to enable it.
+From then on it is automatic: artwork, NFO and a library scan trigger for every video saved. A configured music path gets the same treatment.
 
-When configuring your OIDC provider, use the following redirect URL:
+## Tech stack
 
-```
-https://<your-wytui-domain>/auth/oidc/callback
-```
+SvelteKit 5 (runes) · PostgreSQL + Prisma · Auth.js with OIDC · Server-Sent Events · custom dark theme
 
-Users who sign in via OIDC are created with a default `user` role. An admin can promote them from the admin panel.
-
-## Jellyfin Integration
-
-wytui organizes the video library as `<channel>/<video>/<video>.<ext>`, which maps directly onto Jellyfin's **TV Shows** library model: each channel becomes a show, each video an episode. wytui writes Kodi-compatible NFO metadata alongside every video (season = upload year, episode = index within that year), so episodes appear in release order without any online metadata matching. Do **not** use a Home Videos library — it shows folder names in alphabetical order and loses the timeline.
-
-### Setup
-
-1. In Jellyfin: Dashboard → API Keys → create a key.
-2. In wytui: Settings → Jellyfin → enter the server URL and API key.
-3. If wytui and Jellyfin run in different containers, set the **path mapping** so the setup compares and creates paths as Jellyfin sees them: `wytui path` is the mount prefix inside the wytui container, `Jellyfin path` the same volume's prefix inside the Jellyfin container — e.g. `/media` → `/media/youtube` when wytui mounts a subpath of a volume Jellyfin sees whole. Leave both empty when the containers use identical paths.
-4. Click **Set up library**. wytui creates (or repairs) the Jellyfin library via the API: collection type TV Shows, online metadata providers disabled, NFO-only. If an existing library of another type (e.g. Home Videos) points at the same path, it is rebuilt — Jellyfin's watch history for that library resets, media files are untouched.
-5. Click **Write NFO metadata** once to backfill `tvshow.nfo` + per-episode `.nfo` for videos already in the library.
-
-After that everything is automatic: every video saved to the library gets artwork (16:9 episode thumbs + a 2:3 channel poster), an NFO file, and a Jellyfin library scan trigger. If a music library path is configured, the same button sets up a Music library for it.
-
-## Tech Stack
-
-- **Frontend**: SvelteKit 5 (Svelte with runes)
-- **Database**: PostgreSQL with Prisma ORM
-- **Auth**: Auth.js with OIDC support
-- **Real-time**: Server-Sent Events (SSE)
-- **Styling**: Custom dark theme CSS
-
-## Legal Disclaimer
-
-This software is provided "as is" for personal and educational use. Users are solely responsible for ensuring their use complies with all applicable laws, terms of service, and copyright regulations. The developers assume no liability for misuse.
+> [!NOTE]
+> This software is provided "as is" for personal and educational use. Users are solely responsible for ensuring their use complies with all applicable laws, terms of service, and copyright regulations. The developers assume no liability for misuse.
 
 ## License
 
-MIT License — see LICENSE file for details. The MIT license covers this software's code only; it does not grant rights to any third-party content.
+[MIT](LICENSE), covers this software's code only; it does not grant rights to any third-party content.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=willuhmjs/wytui&type=Date)](https://star-history.com/#willuhmjs/wytui&Date)
