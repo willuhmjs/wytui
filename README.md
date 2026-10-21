@@ -11,8 +11,8 @@
 
 </div>
 
-<!-- TODO: add a hero screenshot at docs/screenshot-main.png - the download form with a video
-     loading, or the library view. The repo has no screenshots; one here would carry the pitch. -->
+![wytui download queue with live progress, quality presets and cache meter](docs/images/screenshot-downloads.png)
+*The download view: pick a quality preset, paste URLs, watch live progress.*
 
 ## Features
 
@@ -25,8 +25,9 @@
 - **Livestream monitors** that auto-download when a stream goes live
 - **Multi-user ready**: OpenID Connect SSO with admin and user roles; mobile-friendly, with save-to-photos on iOS via the Web Share API
 
-<!-- TODO: add a screenshots gallery at docs/screenshots/ - download form, library, subscription
-     monitors, search results. -->
+| | |
+|---|---|
+| ![Channels view grouping downloads by uploader](docs/images/screenshot-channels.png)<br>Channels: downloads grouped by uploader | ![Settings with YouTube and Jellyfin integrations](docs/images/screenshot-settings.png)<br>Settings: YouTube and Jellyfin integrations |
 
 ## Install
 
