@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="static/favicon.svg" alt="wytui logo" width="120">
+<a href="https://wytui.willuhmjs.com"><img src="static/favicon.svg" alt="wytui logo" width="120"></a>
 
 # wytui
 
@@ -8,6 +8,8 @@
 
 [![Build](https://github.com/willuhmjs/wytui/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/willuhmjs/wytui/actions/workflows/docker-publish.yml)
 [![License](https://img.shields.io/github/license/willuhmjs/wytui)](LICENSE)
+
+Website: [wytui.willuhmjs.com](https://wytui.willuhmjs.com)
 
 </div>
 
@@ -76,6 +78,10 @@ wytui maps the library onto Jellyfin's **TV Shows** model: each channel a show, 
 5. Click **Write NFO metadata** once to backfill existing videos
 
 From then on it is automatic: artwork, NFO and a library scan trigger for every video saved. A configured music path gets the same treatment.
+
+## Community
+
+Issues and feature requests: [GitHub issues](https://github.com/willuhmjs/wytui/issues)
 
 ## Tech stack
 
