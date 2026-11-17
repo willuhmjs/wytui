@@ -95,6 +95,7 @@ vi.mock('./youtube-link.service', () => ({
 
 import { subscriptionService } from './subscription.service';
 import { queueService } from './queue.service';
+import { prisma } from '../db';
 import { ytdlpService } from './ytdlp.service';
 import { RateLimitError, runYtdlpJson } from '../utils/ytdlp-json';
 import { isRateLimitCooldownActive, resetRateLimitCooldown } from '../utils/rate-limit-cooldown';
@@ -285,6 +286,28 @@ describe('subscription job handler', () => {
 
 		checkSpy.mockRestore();
 		scheduleSpy.mockRestore();
+	});
+
+	it('survives a reschedule path that throws — the original error must win', async () => {
+		// The same DB outage that fails a check can fail the reschedule lookup
+		// in the finally block; if that error were allowed to propagate it
+		// would replace the check error and still leave the chain dead.
+		const registerSpy = vi.spyOn(queueService, 'registerHandler');
+		await subscriptionService.startScheduler();
+		const handler = registerSpy.mock.calls.find((c: any[]) => c[0] === 'subscription')?.[1] as any;
+		registerSpy.mockRestore();
+
+		const checkSpy = vi
+			.spyOn(subscriptionService, 'checkSubscription')
+			.mockRejectedValue(new Error('boom'));
+		const findSpy = vi
+			.spyOn(prisma.subscription, 'findUnique')
+			.mockRejectedValue(new Error('getaddrinfo EAI_AGAIN'));
+
+		await expect(handler({ payload: { subscriptionId: SUB_ID } })).rejects.toThrow('boom');
+
+		checkSpy.mockRestore();
+		findSpy.mockRestore();
 	});
 
 	it('does not reschedule a disabled subscription', async () => {

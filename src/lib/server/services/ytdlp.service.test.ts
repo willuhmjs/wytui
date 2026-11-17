@@ -222,6 +222,22 @@ describe('findDangerousFlag', () => {
 	});
 });
 
+describe('buildArgs codec priority', () => {
+	it('injects the H.264-first format sort by default', () => {
+		const args = ytdlpService.buildArgs(URL, OUT, [], {});
+		const i = args.indexOf('--format-sort');
+		expect(i).toBeGreaterThan(-1);
+		expect(args[i + 1]).toBe('vcodec:h264,vcodec:vp9.2');
+	});
+
+	it('does not override a caller-provided sort', () => {
+		for (const own of [['-S', 'res'], ['--format-sort=res'], ['--format-sort-reset'], ['-Sres']]) {
+			const args = ytdlpService.buildArgs(URL, OUT, own, {});
+			expect(args).not.toContain('vcodec:h264,vcodec:vp9.2');
+		}
+	});
+});
+
 describe('buildArgs', () => {
 	it('appends the official kill switches after user flags', () => {
 		const args = ytdlpService.buildArgs('https://www.youtube.com/watch?v=abc', '/tmp/downloads', [

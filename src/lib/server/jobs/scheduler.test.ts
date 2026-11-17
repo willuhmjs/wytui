@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../db', () => ({
 	prisma: {
-		settings: { findUnique: vi.fn(async () => null) },
+		settings: {
+			findUnique: vi.fn(async () => null),
+			update: vi.fn(async () => ({})),
+		},
 		scheduledJobRun: {
 			create: vi.fn(async ({ data }: any) => ({ id: 'run-1', ...data })),
 			update: vi.fn(async () => ({})),
@@ -39,6 +42,7 @@ vi.mock('../services/subscription.service', () => ({
 		startScheduler: vi.fn(async () => {}),
 		stopAll: vi.fn(),
 		checkSubscription: vi.fn(async () => {}),
+		scheduleSubscription: vi.fn(async () => {}),
 	},
 }));
 vi.mock('../services/monitor.service', () => ({
@@ -91,6 +95,7 @@ import { jobScheduler } from './scheduler';
 import { prisma } from '../db';
 import { queueService } from '../services/queue.service';
 import { subscriptionService } from '../services/subscription.service';
+import { ytdlpService } from '../services/ytdlp.service';
 
 beforeEach(() => {
 	vi.restoreAllMocks();
@@ -281,5 +286,88 @@ describe('auto-heal job enablement (Settings.autoHealEnabled)', () => {
 		(prisma.jobQueue.deleteMany as any).mockClear();
 		await jobScheduler.scheduleNextRun('heal-failed-downloads');
 		expect(queueService.enqueue).not.toHaveBeenCalled();
+	});
+});
+
+describe('scheduling-rescue', () => {
+	it('re-arms stalled system jobs and subscription checks', async () => {
+		await jobScheduler.start();
+		(queueService.enqueue as any).mockClear();
+		(prisma.jobQueue.findMany as any).mockResolvedValueOnce([]);
+		(prisma.jobQueue.findMany as any).mockResolvedValue([]);
+		(prisma.subscription.findMany as any).mockResolvedValueOnce([
+			{ id: 'sub-1', name: 'Chan', enabled: true },
+		]);
+
+		await (jobScheduler as any).rescueStalledSchedules();
+
+		const enqueued = (queueService.enqueue as any).mock.calls
+			.filter((c: any[]) => c[0] === 'system')
+			.map((c: any[]) => c[1]);
+		expect(enqueued).toEqual(
+			expect.arrayContaining([{ name: 'cache-cleanup' }, { name: 'youtube-sync' }]),
+		);
+		// Its own row is RUNNING while the sweep body executes — no double-booking.
+		expect(enqueued).not.toContainEqual({ name: 'scheduling-rescue' });
+		expect(subscriptionService.scheduleSubscription).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'sub-1' }),
+		);
+
+		(prisma.jobQueue.findMany as any).mockReset();
+		(prisma.jobQueue.findMany as any).mockImplementation(async () => []);
+		(prisma.subscription.findMany as any).mockReset();
+		(prisma.subscription.findMany as any).mockImplementation(async () => []);
+	});
+
+	it('leaves jobs that still have a PENDING successor alone', async () => {
+		await jobScheduler.start();
+		(queueService.enqueue as any).mockClear();
+		(prisma.jobQueue.findMany as any).mockImplementation(async () => [
+			{ type: 'system', status: 'PENDING', payload: { name: 'cache-cleanup' } },
+		]);
+
+		await (jobScheduler as any).rescueStalledSchedules();
+
+		const enqueued = (queueService.enqueue as any).mock.calls
+			.filter((c: any[]) => c[0] === 'system')
+			.map((c: any[]) => c[1]);
+		expect(enqueued).not.toContainEqual({ name: 'cache-cleanup' });
+
+		(prisma.jobQueue.findMany as any).mockReset();
+		(prisma.jobQueue.findMany as any).mockImplementation(async () => []);
+	});
+});
+
+describe('ytdlp version reconciliation', () => {
+	it('stores the binary version when the running binary differs from the DB', async () => {
+		(prisma.settings.findUnique as any).mockResolvedValueOnce({
+			autoUpdateYtdlp: true,
+			ytdlpVersion: '2026.03.17',
+		});
+		(ytdlpService.getVersion as any).mockResolvedValue('2026.10.21');
+		(prisma.settings.update as any).mockClear();
+
+		await (jobScheduler as any).checkYtdlpUpdate();
+
+		expect(prisma.settings.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ ytdlpVersion: '2026.10.21' }),
+			}),
+		);
+
+		(ytdlpService.getVersion as any).mockReset();
+		(ytdlpService.getVersion as any).mockImplementation(async () => '1.0');
+	});
+
+	it('does not write when the stored version already matches', async () => {
+		(prisma.settings.findUnique as any).mockResolvedValueOnce({
+			autoUpdateYtdlp: true,
+			ytdlpVersion: '1.0',
+		});
+		(prisma.settings.update as any).mockClear();
+
+		await (jobScheduler as any).checkYtdlpUpdate();
+
+		expect(prisma.settings.update).not.toHaveBeenCalled();
 	});
 });

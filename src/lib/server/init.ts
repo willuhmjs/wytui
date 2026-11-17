@@ -111,10 +111,10 @@ const DEFAULT_PROFILES = [
 	},
 	{
 		name: 'Smallest Size',
-		description: 'Lowest quality for minimal file size',
+		description: 'Smallest H.264 file for minimal size',
 		isSystem: true,
 		isDefault: false,
-		customFlags: ['-f', 'worstvideo+worstaudio/worst'],
+		customFlags: ['-f', 'bv*+ba/b', '-S', 'vcodec:h264,+size,+br'],
 	},
 ];
 
@@ -255,25 +255,26 @@ export async function ensureDefaults(): Promise<void> {
 		}
 	}
 
-	// System profiles seeded before the flag denylist carry
-	// --postprocessor-args (a ffmpeg-arg-injection vector, now rejected at
-	// spawn time) — every download using such a profile fails at the download
-	// step. Repair them to the current seeded preset. Only rows that still
-	// carry the forbidden flag are touched, so user-customized system profiles
-	// keep their other edits.
+	// Repair system rows seeded by older versions: --postprocessor-args (an
+	// ffmpeg-arg-injection vector, now rejected at spawn time) makes every
+	// download using such a profile fail, and worst* selectors pick the
+	// lowest-sort format — with the app's codec-priority sort that is AV1.
+	// Only rows that still carry the stale flags are touched, so user-
+	// customized system profiles keep their other edits.
 	const systemProfiles = await prisma.downloadProfile.findMany({
 		where: { userId: null },
 	});
 	for (const existing of systemProfiles) {
-		if (!existing.customFlags.includes('--postprocessor-args')) continue;
+		const stale =
+			existing.customFlags.includes('--postprocessor-args') ||
+			existing.customFlags.some((f) => f.includes('worst'));
+		if (!stale) continue;
 		const preset = DEFAULT_PROFILES.find((p) => p.name === existing.name);
 		if (!preset) continue;
 		await prisma.downloadProfile.update({
 			where: { id: existing.id },
 			data: { customFlags: preset.customFlags },
 		});
-		console.log(
-			`[Init] Repaired system profile "${existing.name}" (removed forbidden --postprocessor-args)`,
-		);
+		console.log(`[Init] Repaired system profile "${existing.name}" (stale seed flags)`);
 	}
 }

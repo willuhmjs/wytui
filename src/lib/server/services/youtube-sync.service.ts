@@ -188,7 +188,18 @@ class YouTubeSyncService {
 			if ('needsRelink' in result) return { needsRelink: true };
 			entries = result;
 		} catch (err) {
-			return { error: `Watch Later sync failed: ${describeError(err)}` };
+			const text = describeError(err);
+			// "Playlist does not exist" is YouTube's deterministic answer for an
+			// account without that list — retrying can never fix it, so drop the
+			// toggle instead of failing every later sync.
+			if (/playlist does not exist/i.test(text)) {
+				await prisma.youTubeLink.update({
+					where: { userId },
+					data: { syncWatchLater: false },
+				});
+				return { error: 'Watch Later unavailable for this account — sync disabled' };
+			}
+			return { error: `Watch Later sync failed: ${text}` };
 		}
 		const { addedItems } = await playlistService.syncYouTubePlaylists(userId, [
 			{ title: 'Watch Later', entries },

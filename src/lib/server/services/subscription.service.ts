@@ -44,15 +44,21 @@ class SubscriptionService {
 			// Always reschedule, even when the check fails — a failed check must
 			// not permanently kill the channel's self-rescheduling check chain
 			// until the next server restart (mirrors the system handler in
-			// jobs/scheduler.ts).
+			// jobs/scheduler.ts). The reschedule itself must survive the same
+			// transient DB outage that failed the check; the scheduling-rescue
+			// job re-arms anything dropped here.
 			try {
 				await this.checkSubscription(payload.subscriptionId);
 			} finally {
-				const sub = await prisma.subscription.findUnique({
-					where: { id: payload.subscriptionId },
-				});
-				if (sub && sub.enabled) {
-					await this.scheduleSubscription(sub);
+				try {
+					const sub = await prisma.subscription.findUnique({
+						where: { id: payload.subscriptionId },
+					});
+					if (sub && sub.enabled) {
+						await this.scheduleSubscription(sub);
+					}
+				} catch (e) {
+					console.error(`[Subscriptions] Reschedule of ${payload.subscriptionId} failed:`, e);
 				}
 			}
 		});

@@ -11,6 +11,8 @@ import {
 	isAuthError,
 } from '../utils/ytdlp-json';
 
+export const DEFAULT_FORMAT_SORT = 'vcodec:h264,vcodec:vp9.2';
+
 export class YtdlpService {
 	private ytdlpPath: string;
 	private aria2cAvailableCache: boolean | null = null;
@@ -545,6 +547,13 @@ export class YtdlpService {
 		// External downloader (aria2c) when enabled and present on PATH
 		if (options?.useAria2c && options.aria2cAvailable) {
 			args.push('--downloader', 'aria2c', '--downloader-args', 'aria2c:-x16 -s16 -k1M');
+		}
+
+		// yt-dlp's default order prefers av01, which J4125-class boxes cannot
+		// hardware-decode: pin H.264 first and AV1 last unless the flags carry
+		// their own -S/--format-sort.
+		if (!customFlags.some((f) => f === '-S' || /^-S\S/.test(f) || f.startsWith('--format-sort'))) {
+			args.push('--format-sort', DEFAULT_FORMAT_SORT);
 		}
 
 		// Add custom flags

@@ -125,6 +125,14 @@ class JobScheduler {
 			enabled: true,
 			description: 'Monitor livestreams',
 		});
+		// Re-arms check chains that died without scheduling a successor (e.g. a
+		// DB outage on the reschedule path); cheap enough to run often.
+		this.jobRegistry.set('scheduling-rescue', {
+			name: 'scheduling-rescue',
+			cron: '*/10 * * * *',
+			enabled: true,
+			description: 'Re-arm stalled subscription and system check chains',
+		});
 		// `heal-failed-downloads` is registered by restartHealTask() below — its enablement comes from Settings.
 
 		const settings = await prisma.settings.findUnique({
@@ -169,6 +177,7 @@ class JobScheduler {
 		await this.scheduleNextRun('auto-delete');
 		await this.scheduleNextRun('cache-cleanup');
 		await this.scheduleNextRun('youtube-sync');
+		await this.scheduleNextRun('scheduling-rescue');
 
 		await this.restartHealTask();
 
@@ -297,6 +306,10 @@ class JobScheduler {
 					break;
 				}
 
+				case 'scheduling-rescue':
+					await this.rescueStalledSchedules();
+					break;
+
 				default:
 					throw new Error(`Unknown job: ${jobName}`);
 			}
@@ -353,6 +366,38 @@ class JobScheduler {
 		}
 	}
 
+	/**
+	 * Both check chains (system jobs, subscriptions) schedule their successor
+	 * from inside their own handler, so any failure on that path stalls the
+	 * chain until restart. Re-arm anything enabled that has no PENDING row.
+	 */
+	async rescueStalledSchedules(): Promise<void> {
+		const pending = await prisma.jobQueue.findMany({
+			where: { type: { in: ['system', 'subscription'] }, status: 'PENDING' },
+		});
+		const pendingSystem = new Set(
+			pending.filter((j) => j.type === 'system').map((j) => (j.payload as any)?.name),
+		);
+		const pendingSubs = new Set(
+			pending
+				.filter((j) => j.type === 'subscription')
+				.map((j) => (j.payload as any)?.subscriptionId),
+		);
+
+		for (const [name, reg] of this.jobRegistry) {
+			if (name === 'scheduling-rescue' || !reg.enabled || pendingSystem.has(name)) continue;
+			console.log(`[Scheduler] Rescue: re-arming stalled job ${name}`);
+			await this.scheduleNextRun(name);
+		}
+
+		const subscriptions = await prisma.subscription.findMany({ where: { enabled: true } });
+		for (const sub of subscriptions) {
+			if (pendingSubs.has(sub.id)) continue;
+			console.log(`[Scheduler] Rescue: re-arming stalled subscription check ${sub.name}`);
+			await subscriptionService.scheduleSubscription(sub);
+		}
+	}
+
 	private async checkYtdlpUpdate(): Promise<void> {
 		const settings = await prisma.settings.findUnique({
 			where: { id: 'singleton' },
@@ -370,16 +415,20 @@ class JobScheduler {
 
 		if (currentVersion !== newVersion) {
 			console.log(`[Scheduler] Updated yt-dlp: ${currentVersion} → ${newVersion}`);
+		} else {
+			console.log('[Scheduler] yt-dlp is up to date');
+		}
 
+		// Reconcile the stored version even without an in-job update — a new
+		// image can swap the binary underneath the running instance.
+		if (settings.ytdlpVersion !== newVersion) {
 			await prisma.settings.update({
 				where: { id: 'singleton' },
 				data: {
 					ytdlpVersion: newVersion,
-					lastYtdlpUpdate: new Date(),
+					...(currentVersion !== newVersion && { lastYtdlpUpdate: new Date() }),
 				},
 			});
-		} else {
-			console.log('[Scheduler] yt-dlp is up to date');
 		}
 	}
 

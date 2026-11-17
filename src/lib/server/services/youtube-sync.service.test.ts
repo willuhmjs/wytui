@@ -337,6 +337,21 @@ describe('syncWatchLaterList', () => {
 
 		const res: any = await youtubeSyncService.syncWatchLaterList('u1');
 		expect(res.error).toContain('proxy refused');
+		expect(links['u1'].syncWatchLater).toBeUndefined();
+	});
+
+	it('drops the toggle when YouTube says the playlist does not exist', async () => {
+		// A permanent account-level answer — retrying every cycle only spams
+		// failures, so the sync turns itself off instead.
+		const { youtubeService } = await import('./youtube.service');
+		(youtubeService.fetchWatchLater as any).mockRejectedValueOnce(
+			new Error('ERROR: [youtube:tab] WL: YouTube said: The playlist does not exist.'),
+		);
+		links['u1'] = { userId: 'u1', syncWatchLater: true };
+
+		const res: any = await youtubeSyncService.syncWatchLaterList('u1');
+		expect(res.error).toMatch(/sync disabled/i);
+		expect(links['u1'].syncWatchLater).toBe(false);
 	});
 });
 

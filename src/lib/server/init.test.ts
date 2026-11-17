@@ -107,6 +107,24 @@ describe('ensureDefaults system profiles', () => {
 		);
 	});
 
+	it('repairs system profiles still carrying worst* selectors', async () => {
+		// worst* picks the lowest-sort format, which under the app's
+		// codec-priority sort is AV1 — the seed switched to an explicit
+		// size sort within H.264.
+		profileDb.push({
+			id: 'legacy-small',
+			name: 'Smallest Size',
+			userId: null,
+			customFlags: ['-f', 'worstvideo+worstaudio/worst'],
+		});
+
+		await ensureDefaults();
+
+		expect(profileDb.find((p) => p.id === 'legacy-small').customFlags).toEqual(
+			DEFAULT_PROFILES.find((p) => p.name === 'Smallest Size')!.customFlags,
+		);
+	});
+
 	it('leaves clean system profiles and user-owned profiles untouched', async () => {
 		profileDb.push(
 			{ id: 'clean', name: '720p', userId: null, customFlags: ['-f', 'bv+ba'] },
