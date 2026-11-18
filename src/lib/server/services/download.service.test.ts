@@ -67,6 +67,7 @@ vi.mock('../db', () => {
 				return false;
 			}
 		}
+		if (where.uploader !== undefined && d.uploader !== where.uploader) return false;
 		if (where.filepath?.not === null && d.filepath == null) return false;
 		// Auto-heal selection: nextHealAt { not: null, lte } and healAttempts { lt }.
 		if (where.nextHealAt !== undefined) {
@@ -111,19 +112,35 @@ vi.mock('../db', () => {
 					// Single-key orderBy only (all callers use one); createdAt is the default.
 					const order = Array.isArray(orderBy) ? orderBy[0] : orderBy;
 					const key = order ? Object.keys(order)[0] : 'createdAt';
-					const dir = order?.[key] === 'desc' ? -1 : 1;
+					const spec = order?.[key];
+					const dir = (typeof spec === 'string' ? spec : spec?.sort) === 'desc' ? -1 : 1;
+					const nullsLast = typeof spec === 'object' && spec?.nulls === 'last';
+					const isText = key === 'uploader';
+					const isNumber = key === 'filesize' || key === 'duration';
+					const valueOf = (row: any) => {
+						const v = row[key];
+						if (v == null) return null;
+						if (isText) return String(v);
+						if (isNumber) return Number(v);
+						return toTime(v);
+					};
 					rows.sort((a: any, b: any) => {
-						const av = toTime(a[key]);
-						const bv = toTime(b[key]);
+						const av = valueOf(a);
+						const bv = valueOf(b);
 						if (av === null && bv === null) return 0;
-						if (av === null) return -1; // nulls first on asc, last on desc
-						if (bv === null) return 1;
-						return dir * (av - bv);
+						if (av === null) return nullsLast ? 1 : -1; // nulls first unless asked otherwise
+						if (bv === null) return nullsLast ? -1 : 1;
+						if (isText) return String(av).localeCompare(String(bv)) * dir;
+						return dir * ((av as number) - (bv as number));
 					});
 					const paged = skip ? rows.slice(skip) : rows;
 					const limited = take != null ? paged.slice(0, take) : paged;
 					return limited.map((d: any) => ({ ...d }));
 				}),
+				count: vi.fn(
+					async ({ where }: any) =>
+						Object.values(downloads).filter((d: any) => matchesWhere(d, where)).length,
+				),
 				findFirst: vi.fn(async () => null),
 			},
 			archive: {
@@ -1740,5 +1757,249 @@ describe('per-owner cookie resolution', () => {
 		await (downloadService as any).fetchMetadata(ID);
 
 		expect(linkExpiredCalls()).toHaveLength(1);
+	});
+});
+
+describe('destination progress', () => {
+	let dir: string;
+	let partialPath: string;
+	let mergedPath: string;
+	let vttPath: string;
+
+	beforeEach(() => {
+		// Real temp paths: the completion path stats the media file itself.
+		dir = mkdtempSync(join(tmpdir(), 'wytui-dst-'));
+		partialPath = join(dir, 'Some Video.f137.mp4');
+		mergedPath = join(dir, 'Some Video.mp4');
+		vttPath = join(dir, 'Some Video.en.vtt');
+		writeFileSync(partialPath, Buffer.alloc(2048, 1));
+		writeFileSync(mergedPath, Buffer.alloc(2048, 1));
+		existingFiles.add(partialPath);
+		existingFiles.add(mergedPath);
+		// Completion runs cache-quota enforcement, whose prisma aggregate this mock lacks.
+		vi.spyOn(libraryService, 'enforceCacheQuota').mockResolvedValue(undefined as any);
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	/**
+	 * Feeds destination events through the progress callback the service hands to
+	 * spawnDownload — the callback yt-dlp's parsed output actually reaches — then
+	 * lets the run finish. yt-dlp repeats the in-progress filename on every progress
+	 * tick, so each distinct path is fed several times.
+	 */
+	async function runRepeatedDestinations() {
+		seedDownload({
+			status: DownloadStatus.DOWNLOADING,
+			profileId: 'p1',
+			videoId: 'vid1',
+			storagePool: 'cache',
+			customFlags: [],
+			filepath: mergedPath,
+		});
+		const download = { ...downloads[ID], profile: { customFlags: [] } };
+		const proc = new EventEmitter() as any;
+		vi.spyOn(ytdlpService, 'spawnDownload').mockImplementation((() => {
+			for (let i = 0; i < 5; i++) {
+				(downloadService as any).handleProgress(ID, { type: 'destination', filepath: partialPath });
+			}
+			for (let i = 0; i < 5; i++) {
+				(downloadService as any).handleProgress(ID, { type: 'destination', filepath: mergedPath });
+			}
+			for (let i = 0; i < 5; i++) {
+				(downloadService as any).handleProgress(ID, { type: 'destination', filepath: vttPath });
+			}
+			return proc;
+		}) as any);
+		vi.spyOn(ytdlpService, 'buildArgs').mockReturnValue(['--dummy']);
+
+		const settings = {
+			downloadPath: dir,
+			useAria2c: false,
+			downloadStallTimeoutSeconds: 0,
+		} as any;
+		const ctx = {
+			cookiePath: null,
+			proxyUrl: null,
+			source: 'none',
+			needsRelink: false,
+			extraFlags: [],
+			defaultExtraFlags: [],
+		} as any;
+
+		(prisma.download.update as any).mockClear();
+		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+		const done = (downloadService as any).runYtdlpDownload(download, settings, ctx);
+		// A later macrotask so the fire-and-forget destination writes land.
+		setTimeout(() => proc.emit('close', 0), 10);
+		await done;
+
+		return {
+			partialWrites: (prisma.download.update as any).mock.calls
+				.map((c: any[]) => c[0]?.data)
+				.filter((d: any) => d?.filepath === partialPath),
+			capturedLogs: logSpy.mock.calls.filter((c: any[]) => String(c[0]).includes('Captured file')),
+		};
+	}
+
+	it('records each destination once no matter how many ticks repeat it', async () => {
+		const { partialWrites } = await runRepeatedDestinations();
+
+		// Five identical ticks of the partial format write once. Without the
+		// last-destination guard this is five writes per tick burst.
+		expect(partialWrites).toHaveLength(1);
+		expect(partialWrites[0].filename).toBe('Some Video.f137.mp4');
+	});
+
+	it('logs each distinct destination and nothing for the repeats', async () => {
+		const { capturedLogs } = await runRepeatedDestinations();
+
+		// Partial format, merged file, subtitle file — 15 fed ticks, 3 lines.
+		expect(capturedLogs).toHaveLength(3);
+	});
+
+	it('forgets the last destination when the download state is cleared', () => {
+		(downloadService as any).lastDestination.set(ID, '/downloads/Gone.mp4');
+
+		(downloadService as any).clearDownloadState(ID);
+
+		expect((downloadService as any).lastDestination.has(ID)).toBe(false);
+	});
+});
+
+describe('download list query', () => {
+	const OWNER = 'owner-list';
+	let seq = 0;
+
+	/** Seed one row directly: the shared seedDownload helper only ever fills one id. */
+	function seed(extra: Record<string, any> = {}) {
+		const id = extra.id ?? `list-${seq++}`;
+		downloads[id] = {
+			id,
+			url: `https://www.youtube.com/watch?v=${id}`,
+			title: id,
+			status: DownloadStatus.COMPLETED,
+			userId: OWNER,
+			storagePool: 'library',
+			uploader: 'Channel A',
+			filesize: 100,
+			duration: 60,
+			filepath: `/downloads/${id}.mp4`,
+			createdAt: new Date('2026-01-01T00:00:00Z'),
+			completedAt: new Date('2026-01-01T00:00:00Z'),
+			updatedAt: new Date('2026-01-01T00:00:00Z'),
+			...extra,
+		};
+		return id;
+	}
+
+	it('filters by storage pool across the whole set, not just a loaded page', async () => {
+		seed({ storagePool: 'library' });
+		seed({ storagePool: 'library' });
+		seed({ storagePool: 'cache' });
+		seed({ storagePool: 'cache' });
+
+		const page = await downloadService.listDownloads(
+			OWNER,
+			DownloadStatus.COMPLETED,
+			50,
+			0,
+			undefined,
+			{
+				storagePool: 'cache',
+			},
+		);
+		const total = await downloadService.countDownloads(OWNER, DownloadStatus.COMPLETED, undefined, {
+			storagePool: 'cache',
+		});
+
+		expect(page.map((d: any) => d.storagePool)).toEqual(['cache', 'cache']);
+		// The header/pagination count is the filtered set, not the page it holds.
+		expect(total).toBe(2);
+	});
+
+	it('reaches a channel whose rows sit past the first page', async () => {
+		for (let i = 0; i < 4; i++) seed({ uploader: 'Channel A' });
+		seed({ uploader: 'Channel B', filesize: 900 });
+		seed({ uploader: 'Channel B', filesize: 901 });
+
+		const page = await downloadService.listDownloads(
+			OWNER,
+			DownloadStatus.COMPLETED,
+			2,
+			0,
+			undefined,
+			{
+				uploader: 'Channel B',
+			},
+		);
+		const total = await downloadService.countDownloads(OWNER, DownloadStatus.COMPLETED, undefined, {
+			uploader: 'Channel B',
+		});
+
+		// Selecting Channel B shows Channel B even though Channel A owns the newest rows.
+		expect(page.map((d: any) => d.uploader)).toEqual(['Channel B', 'Channel B']);
+		expect(total).toBe(2);
+	});
+
+	it('sorts by the whole set so page one holds the real largest rows', async () => {
+		seed({ filesize: 10 });
+		seed({ filesize: 5000 });
+		seed({ filesize: 2000 });
+
+		const page = await downloadService.listDownloads(
+			OWNER,
+			DownloadStatus.COMPLETED,
+			2,
+			0,
+			undefined,
+			{},
+			'largest',
+		);
+
+		// Sorting a loaded page could only ever order that page.
+		// serializeDownload reports filesize as a string.
+		expect(page.map((d: any) => Number(d.filesize))).toEqual([5000, 2000]);
+	});
+
+	it('orders a completed list by completion date, which backfilling separates from creation date', async () => {
+		seed({
+			id: 'backfilled',
+			title: 'backfilled',
+			createdAt: new Date('2020-01-01T00:00:00Z'),
+			completedAt: new Date('2026-06-01T00:00:00Z'),
+		});
+		seed({
+			id: 'fresh',
+			title: 'fresh',
+			createdAt: new Date('2026-05-01T00:00:00Z'),
+			completedAt: new Date('2026-05-02T00:00:00Z'),
+		});
+
+		const page = await downloadService.listDownloads(OWNER, DownloadStatus.COMPLETED, 10, 0);
+
+		expect(page.map((d: any) => d.title)).toEqual(['backfilled', 'fresh']);
+	});
+
+	it('keeps ordering failures by most recent failure', async () => {
+		seed({
+			status: DownloadStatus.FAILED,
+			title: 'old-but-retried',
+			updatedAt: new Date('2026-11-01T00:00:00Z'),
+			createdAt: new Date('2026-01-01T00:00:00Z'),
+		});
+		seed({
+			status: DownloadStatus.FAILED,
+			title: 'recently-created',
+			updatedAt: new Date('2026-02-01T00:00:00Z'),
+			createdAt: new Date('2026-10-01T00:00:00Z'),
+		});
+
+		const page = await downloadService.listDownloads(OWNER, DownloadStatus.FAILED, 10, 0);
+
+		expect(page.map((d: any) => d.title)).toEqual(['old-but-retried', 'recently-created']);
 	});
 });

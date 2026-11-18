@@ -26,6 +26,28 @@ secret:
 #     value: "4"
 extraEnv: []
 
+# The app container runs its own downloads: yt-dlp, ffmpeg and the JS solver are
+# its children, and the page cache for the media they write is charged to the same
+# cgroup. A limit sized for a plain web process gets the container OOM-killed in
+# the middle of a download, and everything queued behind it restarts.
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+# V8 sizes its heap from the host's memory unless told otherwise, so inside a
+# memory-limited container it keeps growing instead of collecting until the kernel
+# kills it. Keep this below resources.limits.memory.
+nodeOptions: "--max-old-space-size=1024"
+
+# TCP probes on the app port: readiness holds traffic off the pod until it listens
+# again, liveness retires a pod whose process is gone.
+probes:
+  enabled: true
+
 oidc:
   enabled: false
   name: oidc

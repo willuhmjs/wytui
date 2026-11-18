@@ -89,6 +89,20 @@ const MODULE_TO_TASK_TYPE: Record<string, string> = {
 	FixupStretchedRatio: 'merge',
 };
 
+/** Filters the download list endpoints accept; mirrors the UI's Completed filters. */
+export type DownloadListFilters = {
+	minHeight?: number;
+	maxHeight?: number;
+	dateFrom?: Date;
+	dateTo?: Date;
+	storagePool?: 'cache' | 'library';
+	uploader?: string;
+};
+
+/** Sort orders the Completed list offers, applied by the database so pagination and sorting agree. */
+export type DownloadListSort =
+	'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'uploader';
+
 class DownloadService {
 	// Track active download processes
 	private activeProcesses = new Map<string, ChildProcess>();
@@ -132,6 +146,12 @@ class DownloadService {
 	// non-zero exit code fails the download (see executeDownload).
 	private lastErrorLine = new Map<string, string>();
 
+	// Last destination path reported for a download. The progress template
+	// repeats the in-progress filename on every progress tick, so the same
+	// destination arrives many times a second; only a change of path is a new
+	// destination (format switch, subtitle/thumbnail output, merged file).
+	private lastDestination = new Map<string, string>();
+
 	// Timestamp of the last cookies.invalidated event this process recorded
 	// (0 = never). Throttles markCookiesInvalidated.
 	private lastCookieInvalidationAt = 0;
@@ -148,6 +168,7 @@ class DownloadService {
 		this.lastErrorLine.delete(downloadId);
 		this.lastActivity.delete(downloadId);
 		this.lastCookieSource.delete(downloadId);
+		this.lastDestination.delete(downloadId);
 	}
 
 	/** Cancel and forget any pending debounced progress write for a download. */
@@ -972,6 +993,14 @@ class DownloadService {
 		// Handle file destination info (only for media files, not subtitles/thumbnails)
 		if (data.type === 'destination' && data.filepath) {
 			const filepath = data.filepath;
+
+			// yt-dlp stamps the current output filename on every progress tick, so a
+			// single download repeats its destination several times a second. Nothing
+			// downstream changes between repeats — the row already holds this exact
+			// filename/filepath — so a repeat is dropped before it can log or write.
+			if (this.lastDestination.get(downloadId) === filepath) return;
+			this.lastDestination.set(downloadId, filepath);
+
 			const filename = filepath.split('/').pop() || '';
 			const ext = filename.split('.').pop()?.toLowerCase() || '';
 			console.log('[DownloadService] Captured file:', filename, 'at', filepath);
@@ -2086,21 +2115,15 @@ class DownloadService {
 	}
 
 	/**
-	 * List downloads with filters
+	 * Filters shared by listDownloads and countDownloads. Keeping one shape means
+	 * a page of rows and the total it paginates over are built from the same rules.
 	 */
-	async listDownloads(
+	private buildDownloadListWhere(
 		userId?: string,
 		status?: DownloadStatus,
-		limit = 50,
-		offset = 0,
 		watchState?: 'watched' | 'unwatched' | 'in_progress',
-		filters?: {
-			minHeight?: number;
-			maxHeight?: number;
-			dateFrom?: Date;
-			dateTo?: Date;
-		},
-	): Promise<Download[]> {
+		filters?: DownloadListFilters,
+	): any {
 		const where: any = {};
 
 		// Only add fields if they have actual values
@@ -2163,24 +2186,85 @@ class DownloadService {
 			}
 		}
 
-		const downloads = await prisma.download.findMany({
-			where,
-			include: { profile: true },
-			// The failed section renders failure time (updatedAt, bumped by the
-			// terminal-failure write) and is refetched on every download:failed,
-			// so order FAILED by most recent failure — a retried old row that
-			// fails again must surface at the top, not below newer-created
-			// failures. Every other status keeps creation order, which the
-			// completed list's offset pagination depends on.
-			orderBy:
-				status === DownloadStatus.FAILED
+		if (filters?.storagePool) {
+			where.storagePool = filters.storagePool;
+		}
+		if (filters?.uploader) {
+			where.uploader = filters.uploader;
+		}
+
+		return where;
+	}
+
+	/**
+	 * FAILED sorts by most recent failure (updatedAt, bumped by the terminal-failure
+	 * write) because the failed section is refetched on every download:failed and a
+	 * retried old row that fails again must surface at the top. A finished list is
+	 * read in completion order — Newest/Oldest means completed then, not queued
+	 * then, which for backfilled channels are different dates. Everything else has
+	 * no completion, so creation order is all it has. Each option is one total
+	 * order, which offset pagination needs to stay consistent across pages.
+	 */
+	private resolveListOrderBy(status?: DownloadStatus, sort?: DownloadListSort): any[] {
+		const timeKey =
+			status === DownloadStatus.COMPLETED ? ('completedAt' as const) : ('createdAt' as const);
+
+		switch (sort) {
+			case 'oldest':
+				return [{ [timeKey]: 'asc' as const }];
+			case 'largest':
+				return [{ filesize: { sort: 'desc' as const, nulls: 'last' as const } }];
+			case 'smallest':
+				return [{ filesize: { sort: 'asc' as const, nulls: 'last' as const } }];
+			case 'longest':
+				return [{ duration: { sort: 'desc' as const, nulls: 'last' as const } }];
+			case 'shortest':
+				return [{ duration: { sort: 'asc' as const, nulls: 'last' as const } }];
+			case 'uploader':
+				return [{ uploader: { sort: 'asc' as const, nulls: 'last' as const } }];
+			default:
+				return status === DownloadStatus.FAILED
 					? [{ updatedAt: 'desc' as const }]
-					: [{ createdAt: 'desc' as const }],
+					: [{ [timeKey]: 'desc' as const }];
+		}
+	}
+
+	/**
+	 * List downloads with filters
+	 */
+	async listDownloads(
+		userId?: string,
+		status?: DownloadStatus,
+		limit = 50,
+		offset = 0,
+		watchState?: 'watched' | 'unwatched' | 'in_progress',
+		filters?: DownloadListFilters,
+		sort?: DownloadListSort,
+	): Promise<Download[]> {
+		const downloads = await prisma.download.findMany({
+			where: this.buildDownloadListWhere(userId, status, watchState, filters),
+			include: { profile: true },
+			orderBy: this.resolveListOrderBy(status, sort),
 			take: limit,
 			skip: offset,
 		});
 
 		return downloads.map(serializeDownload);
+	}
+
+	/**
+	 * How many downloads the same filters match in total, so a paginated list can
+	 * say what it holds instead of counting the page it happens to have loaded.
+	 */
+	async countDownloads(
+		userId?: string,
+		status?: DownloadStatus,
+		watchState?: 'watched' | 'unwatched' | 'in_progress',
+		filters?: DownloadListFilters,
+	): Promise<number> {
+		return prisma.download.count({
+			where: this.buildDownloadListWhere(userId, status, watchState, filters),
+		});
 	}
 
 	/**

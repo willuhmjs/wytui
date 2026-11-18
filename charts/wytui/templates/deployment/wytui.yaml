@@ -60,15 +60,29 @@ spec:
             drop: ["ALL"]
           readOnlyRootFilesystem: false  # Need write access for tmp files
         resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
+          {{- toYaml .Values.resources | nindent 10 }}
         ports:
         - containerPort: 3000
+        {{- if .Values.probes.enabled }}
+        readinessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        livenessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 45
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 5
+        {{- end }}
         env:
+        # The shared helper also feeds the migrate init container, whose memory
+        # limit is far lower, so the heap cap is set here on the app only.
+        - name: NODE_OPTIONS
+          value: {{ .Values.nodeOptions | quote }}
         {{- include "wytui.appEnv" . | nindent 8 }}
         volumeMounts:
         - name: downloads

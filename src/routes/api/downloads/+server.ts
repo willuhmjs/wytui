@@ -1,9 +1,20 @@
 import { json, error } from '@sveltejs/kit';
 import { downloadService } from '$lib/server/services/download.service';
+import type { DownloadListFilters, DownloadListSort } from '$lib/server/services/download.service';
 import { prisma } from '$lib/server/db';
 import { apiRoute } from '$lib/server/openapi';
 import { checkUrlHost, describeUrlHostCheck } from '$lib/server/utils/ssrf-guard';
 import type { RequestHandler } from './$types';
+
+const LIST_SORTS: readonly DownloadListSort[] = [
+	'newest',
+	'oldest',
+	'largest',
+	'smallest',
+	'longest',
+	'shortest',
+	'uploader',
+];
 
 export const POST = apiRoute(
 	'/api/downloads',
@@ -144,6 +155,18 @@ export const GET = apiRoute(
 			offset: { type: 'integer', description: 'Pagination offset', minimum: 0, default: 0 },
 			minHeight: { type: 'integer', description: 'Minimum video height (e.g. 720)' },
 			maxHeight: { type: 'integer', description: 'Maximum video height (e.g. 1080)' },
+			storagePool: {
+				type: 'string',
+				description: 'Filter by storage pool',
+				enum: ['cache', 'library'],
+			},
+			uploader: { type: 'string', description: 'Filter by exact uploader/channel name' },
+			sort: {
+				type: 'string',
+				description: 'Sort order applied by the database, stable across pages',
+				enum: ['newest', 'oldest', 'largest', 'smallest', 'longest', 'shortest', 'uploader'],
+				default: 'newest',
+			},
 			dateFrom: {
 				type: 'string',
 				format: 'date',
@@ -157,7 +180,8 @@ export const GET = apiRoute(
 		},
 		responses: {
 			200: {
-				description: 'List of downloads',
+				description:
+					'List of downloads. X-Total-Count reports how many downloads the filters match in total, not just this page.',
 				schema: {
 					type: 'array',
 					items: {
@@ -222,13 +246,11 @@ export const GET = apiRoute(
 			const maxHeightParam = url.searchParams.get('maxHeight');
 			const dateFromParam = url.searchParams.get('dateFrom');
 			const dateToParam = url.searchParams.get('dateTo');
+			const storagePoolParam = url.searchParams.get('storagePool');
+			const uploaderParam = url.searchParams.get('uploader')?.trim();
+			const sortParam = url.searchParams.get('sort') as DownloadListSort | null;
 
-			const filters: {
-				minHeight?: number;
-				maxHeight?: number;
-				dateFrom?: Date;
-				dateTo?: Date;
-			} = {};
+			const filters: DownloadListFilters = {};
 
 			if (minHeightParam) {
 				const v = parseInt(minHeightParam);
@@ -246,17 +268,35 @@ export const GET = apiRoute(
 				const d = new Date(dateToParam);
 				if (!isNaN(d.getTime())) filters.dateTo = d;
 			}
+			if (storagePoolParam === 'cache' || storagePoolParam === 'library') {
+				filters.storagePool = storagePoolParam;
+			}
+			if (uploaderParam) filters.uploader = uploaderParam;
 
-			const downloads = await downloadService.listDownloads(
-				userId,
-				statusParam as any,
-				limit,
-				offset,
-				watchStateParam || undefined,
-				Object.keys(filters).length > 0 ? filters : undefined,
-			);
+			const sort = sortParam && LIST_SORTS.includes(sortParam) ? sortParam : undefined;
 
-			return json(downloads);
+			// Rows and total come from the same filters: the Completed header reports
+			// the library size rather than the loaded page, and pagination knows when
+			// nothing is left to fetch.
+			const [downloads, total] = await Promise.all([
+				downloadService.listDownloads(
+					userId,
+					statusParam as any,
+					limit,
+					offset,
+					watchStateParam || undefined,
+					filters,
+					sort,
+				),
+				downloadService.countDownloads(
+					userId,
+					statusParam as any,
+					watchStateParam || undefined,
+					filters,
+				),
+			]);
+
+			return json(downloads, { headers: { 'X-Total-Count': String(total) } });
 		} catch (e: any) {
 			console.error('Failed to list downloads:', e);
 			if (e.status) throw e;

@@ -24,11 +24,20 @@
 	let sseState = getSSEState();
 
 	const DOWNLOADS_PAGE_SIZE = 50;
+	// A list request that never answers would otherwise hold the skeleton up
+	// forever, which reads as an empty library rather than a stalled server.
+	const COMPLETED_FETCH_TIMEOUT_MS = 30_000;
 	let completedDownloads = $state<any[]>([]);
 	let completedLoading = $state(false);
 	let completedOffset = $state(0);
 	let hasMoreDownloads = $state(false);
 	let loadingMoreDownloads = $state(false);
+	// Why the Completed list has nothing to show: a failed request says so instead
+	// of leaving the skeleton up forever or claiming an empty library.
+	let completedError = $state<string | null>(null);
+	// Rows matching the current filters, from the server, not the loaded page.
+	let completedTotal = $state(0);
+	let channels = $state<string[]>([]);
 	let completedFilter = $state<'all' | 'cache' | 'library'>('all');
 	let watchStateFilter = $state<'all' | 'watched' | 'unwatched' | 'in_progress'>('all');
 	let channelFilter = $state<string>('all');
@@ -55,6 +64,11 @@
 	let bulkActing = $state(false);
 	let bulkSuccess = $state(false);
 	let bulkSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Deep link from a channel page: apply the uploader before the first load so
+	// the initial request is already the filtered one.
+	const uploaderParam = $page.url.searchParams.get('uploader');
+	if (uploaderParam) channelFilter = uploaderParam;
 
 	function flashBulkSuccess() {
 		bulkSuccess = true;
@@ -92,36 +106,10 @@
 			: 0,
 	);
 
-	let poolFilteredDownloads = $derived(
-		completedFilter === 'all'
-			? completedDownloads
-			: completedDownloads.filter((d) => d.storagePool === completedFilter),
-	);
-
-	let availableChannels = $derived(
-		[...new Set(poolFilteredDownloads.map((d) => d.uploader).filter(Boolean))].sort() as string[],
-	);
-
-	$effect(() => {
-		if (
-			!completedLoading &&
-			channelFilter !== 'all' &&
-			completedDownloads.length > 0 &&
-			!availableChannels.includes(channelFilter)
-		) {
-			channelFilter = 'all';
-		}
-	});
-
-	// Reload downloads when watch state filter changes
-	let prevWatchState = $state(watchStateFilter);
-	$effect(() => {
-		const ws = watchStateFilter;
-		if (ws !== prevWatchState) {
-			prevWatchState = ws;
-			loadCompletedDownloads();
-		}
-	});
+	// The channel choices come from the server-side grouping over every completed
+	// download; the loaded page only contains one page and would offer whichever
+	// channels happen to appear on it.
+	let availableChannels = $derived(channels);
 
 	// The SSE store reconnects silently; completions and deletions that
 	// happened during the gap never arrive as events. Refetch when the
@@ -140,17 +128,26 @@
 		prevConnected = c;
 	});
 
-	let filtersInitialized = false;
+	// Every filter and sort the query applies, in one effect: changing several at once
+	// (Clear filters) reloads once rather than once per control, so the request that
+	// reflects the final selection is the only one in flight.
+	const listFilterKey = () =>
+		[
+			completedFilter,
+			channelFilter,
+			sortOption,
+			watchStateFilter,
+			resolutionFilter,
+			dateFrom,
+			dateTo,
+		].join('|');
+	let prevFilterKey = $state(listFilterKey());
 
-	// Reload when resolution or date filters change
 	$effect(() => {
-		// Track these values to trigger reload
-		const _r = resolutionFilter;
-		const _df = dateFrom;
-		const _dt = dateTo;
-		if (filtersInitialized) {
-			loadCompletedDownloads();
-		}
+		const key = listFilterKey();
+		if (key === prevFilterKey) return;
+		prevFilterKey = key;
+		loadCompletedDownloads();
 	});
 
 	function buildSearchParams(
@@ -285,75 +282,40 @@
 		searchDebounceTimer = setTimeout(() => runSearch(q, sp, uf, ws, rf, df, dt), 300);
 	});
 
-	let filteredCompletedDownloads = $derived.by(() => {
-		// Use search results if searching
-		if (searchQuery.trim()) {
-			return searchResults;
-		}
-
-		// Otherwise use normal filtering
-		let filtered =
-			channelFilter === 'all'
-				? poolFilteredDownloads
-				: poolFilteredDownloads.filter((d) => d.uploader === channelFilter);
-
-		const sorted = [...filtered];
-		switch (sortOption) {
-			case 'oldest':
-				sorted.sort(
-					(a, b) =>
-						new Date(a.completedAt || a.createdAt).getTime() -
-						new Date(b.completedAt || b.createdAt).getTime(),
-				);
-				break;
-			case 'newest':
-				sorted.sort(
-					(a, b) =>
-						new Date(b.completedAt || b.createdAt).getTime() -
-						new Date(a.completedAt || a.createdAt).getTime(),
-				);
-				break;
-			case 'largest':
-				sorted.sort((a, b) => Number(b.filesize || 0) - Number(a.filesize || 0));
-				break;
-			case 'smallest':
-				sorted.sort((a, b) => Number(a.filesize || 0) - Number(b.filesize || 0));
-				break;
-			case 'longest':
-				sorted.sort((a, b) => (b.duration || 0) - (a.duration || 0));
-				break;
-			case 'shortest':
-				sorted.sort((a, b) => (a.duration || 0) - (b.duration || 0));
-				break;
-			case 'uploader':
-				sorted.sort((a, b) => (a.uploader || '').localeCompare(b.uploader || ''));
-				break;
-		}
-		return sorted;
-	});
+	// Storage pool, channel, sort, watch state, resolution and dates are all applied
+	// by the query (see buildCompletedParams), so these rows arrive ready to render.
+	// Only free-text search swaps in a different result set.
+	let filteredCompletedDownloads = $derived(
+		searchQuery.trim() ? searchResults : completedDownloads,
+	);
 
 	onMount(() => {
-		// Pre-apply uploader filter from URL (e.g. from /channels page)
-		const uploaderParam = $page.url.searchParams.get('uploader');
-		if (uploaderParam) channelFilter = uploaderParam;
-
 		loadSettings();
-		loadCompletedDownloads().then(() => {
-			filtersInitialized = true;
-		});
+		loadCompletedDownloads();
+		loadChannels();
 		loadCacheUsage();
 		loadDiskInfo();
 
 		const unsubComplete = onSSEEvent('download:complete', ({ download }) => {
-			const exists = completedDownloads.find((d) => d.id === download.id);
-			if (!exists) {
-				completedDownloads = [download, ...completedDownloads];
+			if (completedDownloads.some((d) => d.id === download.id)) return;
+			completedTotal += 1;
+			// The server ordered and filtered this list, so a completion is only
+			// spliced in when it belongs at the front as it stands; under any pool,
+			// channel or sort choice it is fetched instead of guessed at.
+			if (completedFilter === 'all' && channelFilter === 'all' && sortOption === 'newest') {
+				completedDownloads = [download, ...completedDownloads].slice(0, DOWNLOADS_PAGE_SIZE);
+			} else {
+				loadCompletedDownloads();
 			}
 			loadCacheUsage();
 			loadDiskInfo();
 		});
 		const unsubDeleted = onSSEEvent('download:deleted', ({ id }) => {
+			const before = completedDownloads.length;
 			completedDownloads = completedDownloads.filter((d) => d.id !== id);
+			if (completedDownloads.length !== before) {
+				completedTotal = Math.max(0, completedTotal - 1);
+			}
 			loadCacheUsage();
 			loadDiskInfo();
 		});
@@ -363,6 +325,18 @@
 			unsubDeleted();
 		};
 	});
+
+	async function loadChannels() {
+		try {
+			const res = await fetch('/api/channels');
+			if (res.ok) {
+				const data: { name: string }[] = await res.json();
+				channels = data.map((c) => c.name).filter(Boolean);
+			}
+		} catch (e) {
+			console.error('Failed to load channels:', e);
+		}
+	}
 
 	async function loadSettings() {
 		try {
@@ -383,6 +357,9 @@
 			limit: String(DOWNLOADS_PAGE_SIZE),
 			offset: String(offset),
 		});
+		if (completedFilter !== 'all') params.set('storagePool', completedFilter);
+		if (channelFilter !== 'all') params.set('uploader', channelFilter);
+		if (sortOption !== 'newest') params.set('sort', sortOption);
 		if (watchStateFilter !== 'all') {
 			params.set('watchState', watchStateFilter);
 		}
@@ -394,19 +371,36 @@
 		return params;
 	}
 
+	/** Turns a failed completed-list request into something the user can act on. */
+	function describeCompletedFetchFailure(e: any): string {
+		if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+			return 'Completed downloads took too long to load.';
+		}
+		return 'Could not reach the server.';
+	}
+
 	async function loadCompletedDownloads() {
 		// Fresh load: reset pagination and replace the list from offset 0.
 		completedLoading = true;
+		completedError = null;
 		completedOffset = 0;
 		try {
-			const res = await fetch(`/api/downloads?${buildCompletedParams(0)}`);
-			if (res.ok) {
+			const res = await fetch(`/api/downloads?${buildCompletedParams(0)}`, {
+				signal: AbortSignal.timeout(COMPLETED_FETCH_TIMEOUT_MS),
+			});
+			if (!res.ok) {
+				completedError = `Completed downloads failed to load (HTTP ${res.status}).`;
+				hasMoreDownloads = false;
+			} else {
 				const page: any[] = await res.json();
 				completedDownloads = page;
 				completedOffset = page.length;
+				const total = Number(res.headers.get('X-Total-Count'));
+				completedTotal = Number.isFinite(total) ? total : page.length;
 				hasMoreDownloads = page.length === DOWNLOADS_PAGE_SIZE;
 			}
 		} catch (e) {
+			completedError = describeCompletedFetchFailure(e);
 			console.error('Failed to load completed downloads:', e);
 		} finally {
 			completedLoading = false;
@@ -416,15 +410,21 @@
 	async function loadMoreCompletedDownloads() {
 		if (loadingMoreDownloads || !hasMoreDownloads) return;
 		loadingMoreDownloads = true;
+		completedError = null;
 		try {
-			const res = await fetch(`/api/downloads?${buildCompletedParams(completedOffset)}`);
+			const res = await fetch(`/api/downloads?${buildCompletedParams(completedOffset)}`, {
+				signal: AbortSignal.timeout(COMPLETED_FETCH_TIMEOUT_MS),
+			});
 			if (res.ok) {
 				const page: any[] = await res.json();
 				completedDownloads = [...completedDownloads, ...page];
 				completedOffset += page.length;
 				hasMoreDownloads = page.length === DOWNLOADS_PAGE_SIZE;
+			} else {
+				completedError = `More downloads failed to load (HTTP ${res.status}).`;
 			}
 		} catch (e) {
+			completedError = describeCompletedFetchFailure(e);
 			console.error('Failed to load more completed downloads:', e);
 		} finally {
 			loadingMoreDownloads = false;
@@ -937,7 +937,7 @@
 		<div class="section-header">
 			<div class="section-header-left">
 				<h2>
-					Completed ({searchQuery ? searchTotal : filteredCompletedDownloads.length})
+					Completed ({searchQuery ? searchTotal : completedTotal})
 				</h2>
 				<ViewToggle bind:view={viewMode} />
 				<button
@@ -1177,12 +1177,21 @@
 			</div>
 		{/if}
 		<div class="completed-body">
+			{#if completedError && !completedLoading && filteredCompletedDownloads.length > 0}
+				<ErrorMessage error={completedError} compact onRetry={loadCompletedDownloads} />
+			{/if}
 			{#if completedLoading && completedDownloads.length === 0}
 				{#if viewMode === 'grid'}
 					<Skeleton count={6} variant="card" />
 				{:else}
 					<Skeleton count={8} variant="table-row" columns={4} />
 				{/if}
+			{:else if completedError && filteredCompletedDownloads.length === 0}
+				<ErrorMessage
+					error={completedError}
+					retryLabel="Try again"
+					onRetry={loadCompletedDownloads}
+				/>
 			{:else if filteredCompletedDownloads.length === 0}
 				{@const noFilters =
 					completedFilter === 'all' &&
